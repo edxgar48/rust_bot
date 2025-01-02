@@ -1,10 +1,10 @@
-> # Estudando Rust e a biblioteca playwrigth em Rust
+# Estudando Rust e a biblioteca playwrigth em Rust
 
-## Objetivo de criar spiders e bots com a bilblioteca playwrigth , para automatizar tarefas e coletar dados de sites web
+> ## Objetivo de criar spiders e bots com a bilblioteca playwrigth , para automatizar tarefas e coletar dados de sites web
 
 [ ] Estudando paginas dinamicas com javascript - tentativa de capturar elementos e seletores renderizados com javascript (arquivo main.rs)
 
-[x] Navegação web - clicks e preenchimentos de formularios e campos textfield (arquivo spidr_exemplo.rs)
+[x] Navegação web - clicks e preenchimentos de formularios e campos textfield (arquivo spider_exemplo.rs)
 
 [ ] Coleta de dados - captura de dados de sites web, como preços, produtos e salvar em um JSON (arquivo spider.rs)
 
