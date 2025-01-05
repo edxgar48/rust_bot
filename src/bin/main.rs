@@ -14,11 +14,10 @@ async fn main() -> Result<(), playwright::Error> {
     page.goto_builder("https://loterias.caixa.gov.br/Paginas/Lotofacil.aspx").goto().await?;
 
     //page.wait_for_timeout(5000).await?;
-    //page.screenshot("screenshot.png").await?;
     //page.wait_for_timeout(5000).await;
-    page.wait_for_timeout(5000.0);
-    page.screenshot("screenshot.png").await?;
+    page.wait_for_timeout(5000.0).await;// dessa maneira ele compila sem erro até aqui
     
+    //page.screenshot("screenshot.png").await?; <<-- ISSO não funciona para verficação doque está sendo apresentado até o momento dos 5 sec. -->>
 
     // Espera pela presença da <ul>
     page.wait_for_selector("ul.simple-container lista-dezenas lotofacil").await?;

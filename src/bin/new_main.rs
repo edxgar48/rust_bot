@@ -1,5 +1,6 @@
 use playwright::Playwright;
 use std::time::Duration;
+use serde_json::Value;
 
 #[tokio::main]
 async fn main() -> Result<(), playwright::Error> {
@@ -17,7 +18,10 @@ async fn main() -> Result<(), playwright::Error> {
     
     let context = browser
         .context_builder()
-        .viewport_size(1920, 1080)
+        .viewport(Some(playwright::api::Viewport {
+            width: 1920,
+            height: 1080,
+        }))
         .build()
         .await?;
     
@@ -29,7 +33,7 @@ async fn main() -> Result<(), playwright::Error> {
         .await?;
 
     // Aguarda um tempo fixo para garantir que o JavaScript execute
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(35)).await;
 
     // Tenta diferentes seletores que podem estar presentes após o carregamento dinâmico
     let numeros = page
@@ -64,7 +68,7 @@ async fn main() -> Result<(), playwright::Error> {
 
     // Exibe os números encontrados
     match numeros {
-        playwright::Value::Array(arr) => {
+        Value::Array(arr) => {
             println!("Números encontrados:");
             for (i, numero) in arr.iter().enumerate() {
                 if let Some(num) = numero.as_str() {
@@ -77,14 +81,14 @@ async fn main() -> Result<(), playwright::Error> {
 
     // Captura screenshot para debug
     page.screenshot_builder()
-        .path("lottery-debug.png")
+        .path("lottery-debug.png".into())
         .full_page(true)
         .screenshot()
         .await?;
 
     // Cleanup
     browser.close().await?;
-    playwright.stop()?;
+   // playwright.stop().await?;
 
     Ok(())
 }
