@@ -1,53 +1,87 @@
 use playwright::Playwright;
+//use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), playwright::Error> {
-    // Inicializa o Playwright e o navegador Chromium
     let playwright = Playwright::initialize().await?;
-    playwright.prepare()?; // Instala navegadores
+    playwright.prepare()?;
     let chromium = playwright.chromium();
     let browser = chromium.launcher().headless(true).launch().await?;
     let context = browser.context_builder().build().await?;
     let page = context.new_page().await?;
 
     // Navegar para a página
-    page.goto_builder("https://loterias.caixa.gov.br/Paginas/Lotofacil.aspx").goto().await?;
+    page.goto_builder("https://loterias.caixa.gov.br/Paginas/Lotofacil.aspx")
+        .goto()
+        .await?;
 
-    //page.wait_for_timeout(5000).await?;
-    //page.screenshot("screenshot.png").await?;
-    //page.wait_for_timeout(5000).await;
-    page.wait_for_timeout(5000.0);
-    page.screenshot("screenshot.png").await?;
-    
+    // Aguarda sem o operador ?, já que wait_for_timeout retorna ()
+    page.wait_for_timeout(5000.0).await;
 
-    // Espera pela presença da <ul>
-    page.wait_for_selector("ul.simple-container lista-dezenas lotofacil").await?;
-
-    // Extrai os valores de todos os <li> dentro da <ul>
+    // Tenta diferentes seletores para encontrar os números
     let valores: Vec<String> = page
         .eval(
             r#"
             () => {
-                // Encontra a <ul> pela classe 'simple-container lista-dezenas lotofacil'
-                const ul = document.querySelector('ul.simple-container lista-dezenas lotofacil');
-                if (!ul) return []; // Retorna vazio se a <ul> não existir
-                
-                // Coleta os valores dos <li> filhos
-                const items = ul.querySelectorAll('li.ng-binding dezena ng-scope');
-                return Array.from(items).map(item => item.textContent.trim());
+                // Tenta diferentes estratégias de seleção
+                const dezenas = document.querySelectorAll('.dezena');
+                if (dezenas.length > 0) {
+                    return Array.from(dezenas).map(d => d.textContent.trim());
+                }
+
+                // Segunda tentativa com seletor mais específico
+                const dezenasAlt = document.querySelectorAll('div[class*="dezena"]');
+                if (dezenasAlt.length > 0) {
+                    return Array.from(dezenasAlt).map(d => d.textContent.trim());
+                }
+
+                // Terceira tentativa, procurando qualquer elemento com número
+                const resultado = document.querySelector('#ulDezenas');
+                if (resultado) {
+                    return Array.from(resultado.children).map(d => d.textContent.trim());
+                }
+
+                return [];
             }
             "#,
         )
         .await?;
 
-    // Exibe os valores extraídos no console
     println!("Valores extraídos:");
     for (i, valor) in valores.iter().enumerate() {
         println!("Valor {}: {}", i + 1, valor);
     }
 
-    // Verifica se encontrou os 15 valores esperados
-    assert_eq!(valores.len(), 15, "O número de valores extraídos não é 15!");
+    // Debug: imprimir o HTML da página
+    let html_content = page.content().await?;
+    println!("\nEstrutura da página:");
+    println!("{}", html_content);
+
+    // Debug: tentar encontrar elementos que contêm números
+    let debug_info = page
+        .eval(
+            r#"
+            () => {
+                const elements = document.querySelectorAll('*');
+                const numerosElements = Array.from(elements).filter(el => 
+                    el.textContent && /\d{2}/.test(el.textContent.trim())
+                ).map(el => ({
+                    tag: el.tagName,
+                    classes: el.className,
+                    id: el.id,
+                    texto: el.textContent.trim()
+                }));
+                return JSON.stringify(numerosElements, null, 2);
+            }
+            "#,
+        )
+        .await?;
+    
+    println!("\nElementos encontrados com números:");
+    println!("{}", debug_info);
+
+    // Fecha o navegador
+    browser.close().await?;
 
     Ok(())
 }
