@@ -2,7 +2,10 @@
 
 > ## Objetivo de criar spiders e bots com a bilblioteca playwrigth , para automatizar tarefas e coletar dados de sites web
 
-[ ] Estudando paginas dinamicas com javascript - tentativa de capturar elementos e seletores renderizados com javascript (arquivo main.rs)
+[!] Estudando paginas dinamicas com javascript - tentativa de capturar elementos e seletores renderizados com javascript (src\bin: arquivo main.rs e new_main.rs)
+    - parcialmente conseguido, consigo navegar por elementos e até salvar paginas em .png, porém está faltando a parte dos seletores corretos.
+
+    [ ] Tentar mudar para outros links, estudar outras features, como buscas no tiktok
 
 [x] Navegação web - clicks e preenchimentos de formularios e campos textfield (arquivo spider_exemplo.rs)
 
