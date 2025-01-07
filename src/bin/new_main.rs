@@ -35,7 +35,7 @@ async fn main() -> Result<(), playwright::Error> {
         .await?;
 
     // Aguarda um tempo fixo para garantir que o JavaScript execute
-    tokio::time::sleep(Duration::from_secs(35)).await;
+    tokio::time::sleep(Duration::from_secs(20)).await; //diminui para 20 seg
 
     // Tenta diferentes seletores que podem estar presentes após o carregamento dinâmico
     let numeros = page
@@ -43,10 +43,17 @@ async fn main() -> Result<(), playwright::Error> {
             () => {
                 // Tenta diferentes padrões de seletores que podem existir
                 const seletores = [
-                    'div.resultado-loteria',
-                    'div[id*="resultados"]',
-                    'ul.numbers',
-                    'div[class*="numero"]',
+                    'li.ng-binding.dezena.ng-scope'
+                    'simple-container.lista-dezenas.lotofacil'
+                    'li.dezena'
+                    'ul.simple-container.lista-dezenas.lotofacil'
+
+                    //.simple-container.lista-dezenas.lotofacil li.dezena (peguei na estrutura styles)
+                    
+                    //'div.resultado-loteria',
+                    //'div[id*="resultados"]',
+                    //'ul.numbers',
+                    //'div[class*="numero"]',
                     // Adicione mais seletores conforme necessário
                 ];
 
