@@ -1,4 +1,4 @@
-/* FUNCIOAA PARCIALMENTE PRECISO FAZER ALTEREAÇÔES, QUE ESTÃO AO FINAL DESTE CÓDIGO 
+/* FUNCIOAA PARCIALMENTE FALTA TESTAR
 */
 use playwright::Playwright;
 use std::time::Duration;
@@ -131,7 +131,7 @@ tokio = { version = "1.0", features = ["full"] }
 
 Algumas sugestões para melhorar ainda mais:
 
-1. Você pode ajustar o tempo de sleep conforme necessário (35 não deu certo nesse caso , pois a página tem proteção para contra spiders)
+1. Ajustar o tempo de sleep conforme necessário (35 não deu certo nesse caso , pois a página tem proteção para contra spiders)
 2. Pode adicionar mais seletores no array `seletores` baseado na sua inspeção da página (presiso achar os seletores corretos, parce que a renderização do Javascript muda alguma coisa nas classes de seletores)
 3. Pode implementar um sistema de retry caso a primeira tentativa falhe
 4. Pode adicionar logging mais detalhado para debug (Não sei ainda do que se trata e preciso estudar isso)
