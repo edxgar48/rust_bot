@@ -191,3 +191,18 @@ Algumas sugestões para melhorar ainda mais:
 4. Pode adicionar logging mais detalhado para debug (Não sei ainda do que se trata e preciso estudar isso)
 
 */
+/* Algumas sugestões adicionais:
+
+Adicione estas dependências no seu Cargo.toml:
+
+tomlCopy[dependencies]
+rand = "0.8"
+
+Considere implementar algumas destas técnicas:
+
+Rotacionar user agents
+Adicionar headers comuns como Accept, Accept-Language
+Implementar sistema de retry com backoff exponencial
+Usar proxy rotation se necessário
+Considerar usar stealth mode se disponível no Playwright Rust
+*/
