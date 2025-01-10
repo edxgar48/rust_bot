@@ -43,10 +43,10 @@ async fn main() -> Result<(), playwright::Error> {
             () => {
                 // Tenta diferentes padrões de seletores que podem existir
                 const seletores = [
-                    'li.ng-binding.dezena.ng-scope'
-                    'simple-container.lista-dezenas.lotofacil'
-                    'li.dezena'
-                    'ul.simple-container.lista-dezenas.lotofacil'
+                    'li.ng-binding.dezena.ng-scope',
+                    'simple-container.lista-dezenas.lotofacil',
+                    'li.dezena',
+                    'ul.simple-container.lista-dezenas.lotofacil',
 
                     //.simple-container.lista-dezenas.lotofacil li.dezena (peguei na estrutura styles)
                     
