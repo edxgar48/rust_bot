@@ -1,5 +1,66 @@
-/* FUNCIOAA PARCIALMENTE FALTA TESTAR
+/* FUNCIOAA PARCIALMENTE ,TESTEI , FUNCIONA MAIS PRECISA DE ALTERAÇÕES
+ESTÁ SENDO DETECTADO COMO BOT E A PÁGINA EM DETERMINADO MOMENTO É BLOQUEADA
+
+TEM UMA SUGESTÃO DO CLAUDE, QUE PRECISO TESTAR
+
+-->>> AQUI ESTÁ  <<<---
+
+// ... imports anteriores ...
+use std::time::Duration;
+use rand::Rng; // Adicione esta dependência no Cargo.toml
+
+#[tokio::main]
+async fn main() -> Result<(), playwright::Error> {
+    let playwright = Playwright::initialize().await?;
+    playwright.prepare()?;
+    let chromium = playwright.chromium();
+    
+    // Configurar um user agent mais comum
+    let context = chromium
+        .launcher()
+        .headless(false) // Mudar para false pode ajudar
+        .launch()
+        .await?
+        .context_builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .viewport(Some(playwright::api::Viewport {
+            width: 1920,
+            height: 1080,
+        }))
+        .build()
+        .await?;
+
+    let page = context.new_page().await?;
+
+    // Adicionar delays aleatórios para simular comportamento humano
+    let mut rng = rand::thread_rng();
+    
+    // Navegar para a página com timeout maior
+    page.goto_builder("https://loterias.caixa.gov.br/Paginas/Lotofacil.aspx")
+        .timeout(Duration::from_secs(30))
+        .goto()
+        .await?;
+
+    // Delay aleatório entre 2 e 5 segundos
+    tokio::time::sleep(Duration::from_secs_f64(rng.gen_range(2.0..5.0))).await;
+
+    // Simular movimento do mouse (opcional)
+    page.mouse()
+        .move_to(rng.gen_range(100.0..500.0), rng.gen_range(100.0..500.0), None)
+        .await?;
+
+    // Seu código de extração de dados aqui...
+    // ... resto do código ...
+
+    // Adicionar delay antes de fechar
+    tokio::time::sleep(Duration::from_secs_f64(rng.gen_range(1.0..3.0))).await;
+
+    browser.close().await?;
+    Ok(())
+}
 */
+
+
 use playwright::Playwright;
 use std::time::Duration;
 use serde_json::Value;
@@ -35,45 +96,38 @@ async fn main() -> Result<(), playwright::Error> {
         .await?;
 
     // Aguarda um tempo fixo para garantir que o JavaScript execute
-    tokio::time::sleep(Duration::from_secs(20)).await; //diminui para 20 seg
+    tokio::time::sleep(Duration::from_secs(5)).await; //diminui para 5 seg
 
     // Tenta diferentes seletores que podem estar presentes após o carregamento dinâmico
     let numeros = page
-        .eval(r#"
-            () => {
-                // Tenta diferentes padrões de seletores que podem existir
-                const seletores = [
-                    'li.ng-binding.dezena.ng-scope',
-                    'simple-container.lista-dezenas.lotofacil',
-                    'li.dezena',
-                    'ul.simple-container.lista-dezenas.lotofacil',
+    .eval(r#"
+        () => {
+            const seletores = [
+                //'li.ng-binding.dezena.ng-scope',
+                //'simple-container.lista-dezenas.lotofacil',
+                //'li.dezena',
+                'ul.simple-container.lista-dezenas.lotofacil'
+            ];
 
-                    //.simple-container.lista-dezenas.lotofacil li.dezena (peguei na estrutura styles)
-                    
-                    //'div.resultado-loteria',
-                    //'div[id*="resultados"]',
-                    //'ul.numbers',
-                    //'div[class*="numero"]',
-                    // Adicione mais seletores conforme necessário
-                ];
-
-                for (const seletor of seletores) {
-                    const elementos = document.querySelectorAll(seletor);
-                    if (elementos.length > 0) {
-                        return Array.from(elementos)
-                            .map(el => el.textContent.trim())
-                            .filter(texto => texto.match(/^\d+$/));
-                    }
+            for (const seletor of seletores) {
+                const elementos = document.querySelectorAll(seletor);
+                if (elementos.length > 0) {
+                    return Array.from(elementos)
+                        .map(el => el.textContent.trim())
+                        .filter(texto => texto.includes('>') && texto.includes('<'))
+                        .map(texto => texto.replace('>', '').replace('<', ''));
                 }
-                
-                // Se nenhum seletor funcionar, tenta buscar todos os números visíveis
-                return Array.from(document.querySelectorAll('*'))
-                    .map(el => el.textContent.trim())
-                    .filter(texto => texto.match(/^\d+$/))
-                    .slice(0, 15); // Limita aos primeiros 15 números encontrados
             }
-        "#)
-        .await?;
+            
+            // Fallback para busca geral
+            return Array.from(document.querySelectorAll('*'))
+                .map(el => el.textContent.trim())
+                .filter(texto => texto.includes('>') && texto.includes('<'))
+                .map(texto => texto.replace('>', '').replace('<', ''))
+                .slice(0, 15);
+        }
+    "#)
+    .await?;
 
     // Exibe os números encontrados
     match numeros {
