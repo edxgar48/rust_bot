@@ -61,7 +61,7 @@ Comando para Extrair e Salvar em JSON:
 ```
 JSON Exemplo
 
-Se você usar extract com sucesso, o arquivo output.json terá um conteúdo como:
+Se usar extract com sucesso, o arquivo output.json terá um conteúdo como:
     
 
 ````json
@@ -72,7 +72,6 @@ Se você usar extract com sucesso, o arquivo output.json terá um conteúdo como
 ]
 ```
 Melhorias Futuras
-Suporte a mais navegadores (Firefox, Webkit).
+
 Tratamento de erros mais robusto para casos em que o seletor não encontra elementos.
 Feedback visual com logs detalhados.
-Pronto para explorar suas páginas dinâmicas! 🚀
