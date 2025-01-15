@@ -3,7 +3,10 @@
 > ## Objetivo de criar spiders e bots com a bilblioteca playwrigth , para automatizar tarefas e coletar dados de sites web
 
 [!] Estudando paginas dinamicas com javascript - tentativa de capturar elementos e seletores renderizados com javascript (src\bin: arquivo main.rs e new_main.rs)
-    - parcialmente conseguido, consigo navegar por elementos e até salvar paginas em .png, porém está faltando a parte dos seletores corretos.
+
+    - parcialmente conseguido, consigo navegar por elementos e até salvar paginas em .png, os seletores estão correto, PRECISO agora implementar e testar lógica anti-detecção.
+
+    - verificar como pode ser melhor usar Xpaths ao inves de seletores, conforme dica recebida
 
     [ ] Tentar mudar para outros links, estudar outras features, como buscas no tiktok
 
