@@ -153,8 +153,8 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 | # | Tarefa |
 |---|---|
 | 0.1 | `LoteriaConfig` ganha faixa de dezenas (`dezena_min`/`dezena_max`) e layout do volante (grade linhas × colunas: Lotofácil 5×5, Mega-Sena 6×10, Quina 8×10; dezenas em ordem crescente, preenchendo linha por linha) |
-| 0.2 | Comando `validar <loteria>`: quantidade de dezenas, faixa, repetidas no concurso, buracos na numeração, datas fora de ordem |
-| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`) |
+| 0.2 | Comando `validar <loteria>`: quantidade de dezenas, faixa, repetidas no concurso, buracos na numeração, datas fora de ordem (esta última é **aviso**, não erro). Erros conhecidos da planilha da Caixa ficam numa lista de correções por loteria + concurso (`CORRECOES_DATA`), aplicada antes de gravar |
+| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`). Buraco detectado pelo `atualizar` continua só gerando aviso (decisão de 2026-10-03) |
 | 0.4 | Testes do parser com fixtures pequenas de cada loteria (`tests/fixtures/`) |
 | 0.5 | `todas` aceito no lugar do slug |
 | 0.6 | Corrigir textos da CLI que ainda falam em ".htm" |

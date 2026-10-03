@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rust_spider::{config, db, downloader, parser};
+use rust_spider::{config, correcoes, db, downloader, parser, validacao};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -62,7 +62,20 @@ enum Comando {
         #[arg(long)]
         visivel: bool,
     },
+    /// Confere a integridade dos resultados salvos: quantidade de dezenas,
+    /// faixa, repetidas, datas, buracos na numeração e datas fora de ordem.
+    /// Sai com erro se encontrar algum erro; datas fora de ordem são só avisos.
+    Validar {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        loteria: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
+
+/// Quantos problemas imprimir antes de resumir o restante numa contagem.
+const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -111,7 +124,11 @@ async fn main() -> anyhow::Result<()> {
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
 
             println!("Verificando o último resultado de {}...", cfg.nome_exibicao);
-            let resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
+            let mut resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
+            imprimir_correcoes(&correcoes::aplicar(
+                cfg.slug,
+                std::slice::from_mut(&mut resultado),
+            ));
 
             let mut conn = db::abrir(&db_caminho)?;
             let ultimo_salvo = db::ultimo_concurso(&conn, cfg.slug)?;
@@ -141,9 +158,78 @@ async fn main() -> anyhow::Result<()> {
                 db_caminho.display()
             );
         }
+        Comando::Validar { loteria, db } => {
+            let cfg = buscar_config(&loteria)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            validar_banco(cfg, &db_caminho)?;
+        }
     }
 
     Ok(())
+}
+
+fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
+    // `db::abrir` cria o arquivo se não existir; validar não deve criar banco vazio.
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let conn = db::abrir(db_caminho)?;
+    let resultados = db::listar(&conn, cfg.slug)?;
+
+    println!(
+        "Validando {} em {}...",
+        cfg.nome_exibicao,
+        db_caminho.display()
+    );
+    let (Some(menor), Some(maior)) = (
+        resultados.iter().map(|r| r.concurso).min(),
+        resultados.iter().map(|r| r.concurso).max(),
+    ) else {
+        anyhow::bail!("nenhum concurso de {} no banco", cfg.slug);
+    };
+    println!(
+        "{} concurso(s) salvo(s), do {menor} ao {maior}.",
+        resultados.len()
+    );
+
+    let problemas = validacao::validar(cfg, &resultados);
+    let (erros, avisos): (Vec<_>, Vec<_>) = problemas
+        .iter()
+        .partition(|p| p.severidade() == validacao::Severidade::Erro);
+
+    imprimir_problemas("aviso(s)", &avisos);
+    imprimir_problemas("erro(s)", &erros);
+
+    if erros.is_empty() {
+        if avisos.is_empty() {
+            println!("Nenhum problema encontrado.");
+        } else {
+            println!("Nenhum erro encontrado ({} aviso(s)).", avisos.len());
+        }
+        return Ok(());
+    }
+    anyhow::bail!(
+        "{}: {} erro(s) de integridade em {}",
+        cfg.slug,
+        erros.len(),
+        db_caminho.display()
+    )
+}
+
+fn imprimir_problemas(rotulo: &str, problemas: &[&validacao::Problema]) {
+    if problemas.is_empty() {
+        return;
+    }
+    println!("{} {rotulo}:", problemas.len());
+    for p in problemas.iter().take(LIMITE_PROBLEMAS_IMPRESSOS) {
+        println!("  - {p}");
+    }
+    if problemas.len() > LIMITE_PROBLEMAS_IMPRESSOS {
+        println!(
+            "  ... e mais {} não exibido(s).",
+            problemas.len() - LIMITE_PROBLEMAS_IMPRESSOS
+        );
+    }
 }
 
 fn buscar_config(slug: &str) -> anyhow::Result<&'static config::LoteriaConfig> {
@@ -164,8 +250,9 @@ fn processar_e_salvar(
     cfg: &config::LoteriaConfig,
     db_caminho: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let resultados = parser::parsear_arquivo(arquivo, cfg)?;
+    let mut resultados = parser::parsear_arquivo(arquivo, cfg)?;
     println!("{} concurso(s) extraído(s) do arquivo.", resultados.len());
+    imprimir_correcoes(&correcoes::aplicar(cfg.slug, &mut resultados));
 
     let mut conn = db::abrir(db_caminho)?;
     let gravados = db::salvar_resultados(&mut conn, &resultados)?;
@@ -175,4 +262,13 @@ fn processar_e_salvar(
     );
 
     Ok(())
+}
+
+fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
+    for o in ocorrencias {
+        match o {
+            correcoes::Ocorrencia::Aplicada(_) => println!("Correção conhecida: {o}"),
+            correcoes::Ocorrencia::Divergente { .. } => eprintln!("{o}"),
+        }
+    }
 }

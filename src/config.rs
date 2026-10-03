@@ -31,6 +31,34 @@ pub struct LoteriaConfig {
     pub primeira_coluna_dezena: usize,
 }
 
+/// Erro conhecido na planilha oficial da Caixa, corrigido antes de gravar.
+/// Só é aplicado se a data recebida for exatamente `data_original`: se a
+/// Caixa corrigir a planilha, a correção vira no-op; se a data mudar para
+/// outro valor, é emitido um aviso (ver `correcoes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CorrecaoData {
+    pub loteria: &'static str,
+    pub concurso: u32,
+    pub data_original: &'static str,
+    pub data_corrigida: &'static str,
+    pub motivo: &'static str,
+}
+
+/// Lista de exceções conhecidas. Para adicionar uma, confirme a data correta
+/// pelo calendário de sorteios da época (concursos vizinhos) e registre o
+/// motivo; `sync validar` aponta candidatas como aviso de data fora de ordem.
+/// No máximo uma correção por (loteria, concurso) — entradas não são
+/// encadeadas. Não remova uma entrada enquanto a planilha mantiver o erro:
+/// o próximo `baixar` gravaria a data errada de volta.
+pub const CORRECOES_DATA: &[CorrecaoData] = &[CorrecaoData {
+    loteria: "quina",
+    concurso: 380,
+    data_original: "1997-03-12",
+    data_corrigida: "1998-03-12",
+    motivo: "ano digitado errado na planilha: 379 é 1998-03-08 e 381 é \
+             1998-03-15 (sorteios às quintas e domingos)",
+}];
+
 /// Grade do volante impresso: as dezenas aparecem em ordem crescente,
 /// preenchendo linha por linha.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

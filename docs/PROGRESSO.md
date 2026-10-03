@@ -9,7 +9,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 0 — Consolidar a base · `engenheiro-dados`
 
 - [x] 0.1 Faixa de dezenas e layout do volante no `LoteriaConfig`
-- [ ] 0.2 Comando `validar <loteria>`
+- [x] 0.2 Comando `validar <loteria>`
 - [ ] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
 - [ ] 0.4 Testes do parser com fixtures
 - [ ] 0.5 `todas` no lugar do slug
@@ -86,3 +86,34 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `src/downloader.rs` (só formatação, sem mudança de lógica — dispensa teste manual
   do downloader). Adicionado `posicao_no_volante()` + 2 testes. Gate aprovado:
   fmt ok, clippy ok, 9 testes passando.
+- 2026-10-03 — 0.2: interpretação adotada pelo orquestrador (revisável): buracos contados
+  de 1 até o maior concurso e reportados em faixas; data não pode ser anterior à do
+  concurso anterior (datas iguais são permitidas); duplicatas na entrada contam como problema.
+  Implementada em `src/validacao.rs` (funções puras `validar`, `validar_resultado`,
+  `validar_sequencia`, reutilizáveis na 0.3) + subcomando `validar` em `sync.rs`.
+  Desvios: regras extras `LoteriaDiferente` e `ConcursoZero`; banco vazio ou inexistente dá erro.
+  Gate de código ok: fmt, clippy e 27 testes. Revisão: aprovada com ressalvas, só achados BAIXA.
+  Limitações registradas: `listar` filtra por loteria, então `LoteriaDiferente` não dispara
+  pela CLI; quando a data errada é posterior, o problema aponta o concurso seguinte.
+  **Fica `[~]`: os dados reais reprovam.** megasena ok. lotofacil: falta o 3793.
+  quina: falta o 7131, e o 380 tem data 1997-03-12 entre 1998-03-08 e 1998-03-15
+  (provável erro de digitação na planilha da Caixa). Aguarda decisão do usuário.
+- 2026-10-03 — 0.2: **decisões do usuário.** (1) Erros conhecidos da planilha da Caixa
+  são corrigidos antes de gravar, por uma lista de exceções por loteria + concurso
+  (`config::CORRECOES_DATA`, aplicada por `src/correcoes.rs` em `importar`, `baixar` e
+  `atualizar`). A correção só é aplicada se a data vier exatamente com o erro conhecido;
+  se vier com outro valor, gera aviso no stderr e não altera nada. Primeira entrada:
+  Quina 380, 1997-03-12 → 1998-03-12. (2) Regra ajustada: data fora de ordem passa a ser
+  **aviso** (não reprova o `validar`) e a mensagem orienta a cadastrar a correção; os
+  demais problemas continuam sendo erro. (3) `sync baixar lotofacil` e `sync baixar quina`
+  executados: entraram lotofacil 3793 e quina 7131, e a quina 380 foi corrigida.
+  `validar` nos três bancos: nenhum problema (lotofacil 1–3795, megasena 1–3065,
+  quina 1–7133). Gate: fmt ok, clippy ok, 34 testes. **0.2 concluída.**
+- 2026-10-03 — 0.3: decisão do usuário: `atualizar` mantém a regra atual para buracos
+  (avisa e sugere `baixar`, sem recusar a gravação) por enquanto.
+- 2026-10-03 — 0.2: segunda revisão (só das mudanças novas): aprovada com ressalvas, sem
+  achado ALTA. Corrigidos: unicidade de (loteria, concurso) em `CORRECOES_DATA` garantida
+  por teste (MÉDIA); texto do `--help` do `validar`; comentário orientando a não remover
+  correções enquanto a planilha mantiver o erro. **Limitação para a 0.3:** com data fora
+  de ordem sendo aviso, uma data no futuro no último concurso (ex.: 2062 em vez de 2026)
+  não gera problema nenhum — avaliar um erro para "data posterior a hoje" ao gravar.
