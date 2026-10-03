@@ -33,9 +33,10 @@ pub fn salvar_resultados(conn: &mut Connection, resultados: &[Resultado]) -> Res
              WHERE data_sorteio != excluded.data_sorteio OR dezenas != excluded.dezenas",
         )?;
         for r in resultados {
-            let dezenas_json =
-                serde_json::to_string(&r.dezenas).map_err(|e| SpiderError::LinhaInvalida(e.to_string()))?;
-            gravados += stmt.execute(params![r.loteria, r.concurso, r.data_sorteio, dezenas_json])?;
+            let dezenas_json = serde_json::to_string(&r.dezenas)
+                .map_err(|e| SpiderError::LinhaInvalida(e.to_string()))?;
+            gravados +=
+                stmt.execute(params![r.loteria, r.concurso, r.data_sorteio, dezenas_json])?;
         }
     }
     tx.commit()?;
@@ -69,8 +70,8 @@ pub fn listar(conn: &Connection, loteria: &str) -> Result<Vec<Resultado>> {
     let mut resultados = Vec::new();
     for linha in linhas {
         let (loteria, concurso, data_sorteio, dezenas_json) = linha?;
-        let dezenas: Vec<u32> =
-            serde_json::from_str(&dezenas_json).map_err(|e| SpiderError::LinhaInvalida(e.to_string()))?;
+        let dezenas: Vec<u32> = serde_json::from_str(&dezenas_json)
+            .map_err(|e| SpiderError::LinhaInvalida(e.to_string()))?;
         resultados.push(Resultado {
             loteria,
             concurso,

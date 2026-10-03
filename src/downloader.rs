@@ -141,10 +141,13 @@ async fn tentativa_unica(
         .to_string();
     let destino = dir_destino.join(format!("{}_{}.{}", config.slug, timestamp, extensao));
 
-    download.save_as(&destino).await.map_err(|e| SpiderError::Io {
-        caminho: destino.clone(),
-        origem: std::io::Error::other(e.to_string()),
-    })?;
+    download
+        .save_as(&destino)
+        .await
+        .map_err(|e| SpiderError::Io {
+            caminho: destino.clone(),
+            origem: std::io::Error::other(e.to_string()),
+        })?;
 
     let _ = browser.close().await;
 
@@ -223,7 +226,9 @@ async fn raspar_tentativa_unica(config: &LoteriaConfig, headless: bool) -> Resul
         .timeout(TIMEOUT_SELETOR_MS)
         .wait_for_selector()
         .await
-        .map_err(|_| SpiderError::ElementoNaoEncontrado(config.seletor_concurso_data.to_string()))?;
+        .map_err(|_| {
+            SpiderError::ElementoNaoEncontrado(config.seletor_concurso_data.to_string())
+        })?;
 
     // O elemento pode existir antes do Angular preencher o binding com os
     // dados reais (chega vazio por um instante) — tenta ler algumas vezes
@@ -263,11 +268,13 @@ async fn raspar_tentativa_unica(config: &LoteriaConfig, headless: bool) -> Resul
 
     let mut dezenas = Vec::with_capacity(config.qtd_dezenas);
     for elemento in &elementos_dezenas {
-        let texto = elemento.inner_text().await.map_err(|e| erro_navegador(e.to_string()))?;
-        let valor: u32 = texto
-            .trim()
-            .parse()
-            .map_err(|_| SpiderError::LinhaInvalida(format!("dezena inválida na página: {texto:?}")))?;
+        let texto = elemento
+            .inner_text()
+            .await
+            .map_err(|e| erro_navegador(e.to_string()))?;
+        let valor: u32 = texto.trim().parse().map_err(|_| {
+            SpiderError::LinhaInvalida(format!("dezena inválida na página: {texto:?}"))
+        })?;
         dezenas.push(valor);
     }
 

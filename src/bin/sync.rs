@@ -80,12 +80,17 @@ async fn main() -> anyhow::Result<()> {
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
 
             println!("Baixando resultados de {}...", cfg.nome_exibicao);
-            let arquivo = downloader::baixar_resultado(cfg, seletor.as_deref(), &dir, !visivel).await?;
+            let arquivo =
+                downloader::baixar_resultado(cfg, seletor.as_deref(), &dir, !visivel).await?;
             println!("Arquivo salvo em {}", arquivo.display());
 
             processar_e_salvar(&arquivo, cfg, &db_caminho)?;
         }
-        Comando::Importar { loteria, arquivo, db } => {
+        Comando::Importar {
+            loteria,
+            arquivo,
+            db,
+        } => {
             let cfg = buscar_config(&loteria)?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             processar_e_salvar(&arquivo, cfg, &db_caminho)?;
@@ -97,7 +102,11 @@ async fn main() -> anyhow::Result<()> {
             let resultados = db::listar(&conn, cfg.slug)?;
             println!("{}", serde_json::to_string_pretty(&resultados)?);
         }
-        Comando::Atualizar { loteria, db, visivel } => {
+        Comando::Atualizar {
+            loteria,
+            db,
+            visivel,
+        } => {
             let cfg = buscar_config(&loteria)?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
 
@@ -160,7 +169,10 @@ fn processar_e_salvar(
 
     let mut conn = db::abrir(db_caminho)?;
     let gravados = db::salvar_resultados(&mut conn, &resultados)?;
-    println!("{gravados} registro(s) novo(s)/atualizado(s) em {}", db_caminho.display());
+    println!(
+        "{gravados} registro(s) novo(s)/atualizado(s) em {}",
+        db_caminho.display()
+    );
 
     Ok(())
 }
