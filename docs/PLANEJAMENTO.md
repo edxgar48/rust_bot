@@ -250,3 +250,6 @@ com o planejamento do front-end.
 - Outras loterias (Dupla Sena, Timemania, Dia de Sorte, +Milionária, Lotomania).
 - API própria (axum), se o front-end precisar de algo dinâmico.
 - Modelos de ML rodando em Rust (`burn`, `candle` ou ONNX).
+- Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
+  CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
+  automatizado.
