@@ -8,7 +8,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 0 — Consolidar a base · `engenheiro-dados`
 
-- [ ] 0.1 Faixa de dezenas e layout do volante no `LoteriaConfig`
+- [x] 0.1 Faixa de dezenas e layout do volante no `LoteriaConfig`
 - [ ] 0.2 Comando `validar <loteria>`
 - [ ] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
 - [ ] 0.4 Testes do parser com fixtures
@@ -69,3 +69,20 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Notas
 
 <!-- O orquestrador registra aqui bloqueios, desvios do plano e decisões tomadas, com data. -->
+
+- 2026-10-03 — 0.1: "layout do volante" não está detalhado no plano. Interpretação
+  adotada (sem decisão do usuário, revisável): grade linhas × colunas do volante
+  oficial — Lotofácil 5×5 (1–25), Mega-Sena 6×10 (1–60), Quina 8×10 (1–80).
+  **Confirmado pelo usuário em 2026-10-03**: dezenas em ordem crescente,
+  preenchendo linha por linha (`posicao_no_volante`).
+- 2026-10-03 — 0.1: implementada em `src/config.rs` (`dezena_min`/`dezena_max: u32`,
+  struct `Volante`, `qtd_dezenas_possiveis()`, `dezenas()`, `contem()`, 7 testes).
+  Desvios: `u32` em vez de `u8` (casa com `Resultado::dezenas`); struct `Volante`
+  em vez de campos soltos. Revisão: aprovada com ressalvas, achado MÉDIA (doc comment)
+  corrigido em uma rodada. clippy e testes ok. Fica `[~]`: `cargo fmt --check` falha
+  por formatação pré-existente em `src/bin/sync.rs`, `src/db.rs`, `src/downloader.rs`
+  (arquivos não tocados); aguarda autorização do usuário para um commit só de `cargo fmt`.
+- 2026-10-03 — 0.1 concluída. `cargo fmt` aplicado em `src/bin/sync.rs`, `src/db.rs`,
+  `src/downloader.rs` (só formatação, sem mudança de lógica — dispensa teste manual
+  do downloader). Adicionado `posicao_no_volante()` + 2 testes. Gate aprovado:
+  fmt ok, clippy ok, 9 testes passando.

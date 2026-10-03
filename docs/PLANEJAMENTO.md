@@ -152,7 +152,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 | # | Tarefa |
 |---|---|
-| 0.1 | `LoteriaConfig` ganha faixa de dezenas (`dezena_min`/`dezena_max`) e layout do volante |
+| 0.1 | `LoteriaConfig` ganha faixa de dezenas (`dezena_min`/`dezena_max`) e layout do volante (grade linhas × colunas: Lotofácil 5×5, Mega-Sena 6×10, Quina 8×10; dezenas em ordem crescente, preenchendo linha por linha) |
 | 0.2 | Comando `validar <loteria>`: quantidade de dezenas, faixa, repetidas no concurso, buracos na numeração, datas fora de ordem |
 | 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`) |
 | 0.4 | Testes do parser com fixtures pequenas de cada loteria (`tests/fixtures/`) |
