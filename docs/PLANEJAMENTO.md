@@ -154,10 +154,11 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 |---|---|
 | 0.1 | `LoteriaConfig` ganha faixa de dezenas (`dezena_min`/`dezena_max`) e layout do volante (grade linhas × colunas: Lotofácil 5×5, Mega-Sena 6×10, Quina 8×10; dezenas em ordem crescente, preenchendo linha por linha) |
 | 0.2 | Comando `validar <loteria>`: quantidade de dezenas, faixa, repetidas no concurso, buracos na numeração, datas fora de ordem (esta última é **aviso**, não erro). Erros conhecidos da planilha da Caixa ficam numa lista de correções por loteria + concurso (`CORRECOES_DATA`), aplicada antes de gravar |
-| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`). Buraco detectado pelo `atualizar` continua só gerando aviso (decisão de 2026-10-03) |
+| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`). Buraco na numeração é só aviso na gravação (decisão de 2026-10-03); no `validar`, continua sendo erro |
 | 0.4 | Testes do parser com fixtures pequenas de cada loteria (`tests/fixtures/`) |
 | 0.5 | `todas` aceito no lugar do slug |
 | 0.6 | Corrigir textos da CLI que ainda falam em ".htm" |
+| 0.7 | Fechar buracos à mão: `sync buracos` lista os concursos que faltam (com as datas dos vizinhos) e `sync inserir` grava um concurso por vez, com a validação normal e data fora de ordem tratada como erro. Cada inserção fica em `cache/manuais_<loteria>.json` (versionado no git, ordenado por data de sorteio), que `importar`/`baixar` reaplicam e conciliam com a fonte oficial: igual → sai do cache; diferente → aviso |
 
 **Pronto quando:** `sync validar todas` passa nos três bancos e `cargo test` está verde.
 
@@ -221,7 +222,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 | # | Tarefa |
 |---|---|
-| 3.1 | `sync ciclo`: atualizar → backfill automático se houver buraco → validar → features (incremental) → índice → exportar → publicar (só se mudou) |
+| 3.1 | `sync ciclo`: atualizar → backfill automático se houver buraco (buscando os concursos que faltam e gravando pelo mesmo caminho do `inserir`, no cache de 0.7) → validar → features (incremental) → índice → exportar → publicar (só se mudou) |
 | 3.2 | Calendário de sorteios por loteria no `config.rs` |
 | 3.3 | Retentativas com backoff (sorteio ~20h, tentativas até ~23h, nova tentativa no dia seguinte) |
 | 3.4 | Arquivo de trava contra execução simultânea |

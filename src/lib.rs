@@ -3,6 +3,7 @@ pub mod correcoes;
 pub mod db;
 pub mod downloader;
 pub mod error;
+pub mod manuais;
 pub mod model;
 pub mod parser;
 pub mod validacao;

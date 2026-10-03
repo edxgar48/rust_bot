@@ -68,6 +68,13 @@ cargo run --bin sync -- listar lotofacil
 
 # raspa só o último resultado da página e atualiza o banco (sem baixar a planilha inteira)
 cargo run --bin sync -- atualizar lotofacil
+
+# confere a integridade do banco
+cargo run --bin sync -- validar lotofacil
+
+# lista os concursos que faltam e fecha um deles à mão
+cargo run --bin sync -- buracos lotofacil
+cargo run --bin sync -- inserir lotofacil 3793 --data 2026-09-30 --dezenas 1,2,3,...
 ```
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
@@ -75,6 +82,15 @@ banco daquela loteria: se não houver novidade, não grava nada; se o salto for
 maior que 1 (ex.: ficou alguns dias sem rodar e perdeu um concurso no meio),
 avisa e sugere rodar `baixar` para preencher o histórico completo — raspagem
 só traz o mais recente, não faz backfill de concursos intermediários.
+
+Buracos na numeração nunca impedem uma gravação (só geram aviso), mas
+reprovam o `validar` até serem fechados. Para fechá-los um a um, `buracos`
+lista os concursos que faltam com as datas dos vizinhos, e `inserir` grava um
+concurso digitado à mão. Cada inserção também vai para
+`cache/manuais_<loteria>.json` (versionado no git, em ordem de data de
+sorteio): `importar`/`baixar` reaplicam essas entradas num banco recriado e,
+quando a planilha oficial passa a trazer o concurso, removem a entrada se for
+igual ou avisam se for diferente.
 
 Por padrão cada loteria grava em um banco SQLite separado —
 `resultados_<loteria>.db` (ex.: `resultados_lotofacil.db`,

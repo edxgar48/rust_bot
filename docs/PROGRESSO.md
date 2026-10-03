@@ -14,6 +14,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] 0.4 Testes do parser com fixtures
 - [ ] 0.5 `todas` no lugar do slug
 - [ ] 0.6 Textos da CLI sem ".htm"
+- [x] 0.7 Fechar buracos à mão (`buracos`, `inserir`) com cache de inserções manuais
 
 ## Fase 1a — Features · `engenheiro-motor`
 
@@ -65,7 +66,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] Destino da publicação — bloqueia 2.4
 - [ ] Canal de alerta — bloqueia 3.6
 - [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
-- [ ] Buraco já existente no banco deve bloquear `importar`/`baixar`? (ver nota 0.3) — relevante para 3.1
+- [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
 
 ## Notas
@@ -136,3 +137,27 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   o 105 com o banco em 100) faz `baixar` recusar o lote inteiro se a planilha ainda não chegou ao
   104, inclusive os concursos que reduziriam o buraco. Alternativa sugerida pela revisão: em
   `importar`/`baixar`, tratar como erro só o buraco abaixo do maior concurso do lote.
+- 2026-10-03 — 0.7: **decisões do usuário.** Buraco na numeração vira só aviso em toda
+  gravação (`importar`, `baixar`, `atualizar`); no `validar` continua erro, para o buraco
+  não ficar esquecido. Buracos podem ser fechados à mão, um a um, e as inserções ficam num
+  cache versionado no git. A busca automática dos concursos que faltam fica para a 3.1,
+  gravando no mesmo cache.
+  Implementado: `src/manuais.rs` (cache `cache/manuais_<loteria>.json`, uma entrada por
+  linha, ordenado por data de sorteio e concurso, dezenas em ordem crescente; conciliação
+  com a fonte oficial), subcomandos `buracos` e `inserir`, opção `--cache` em `importar`,
+  `baixar`, `atualizar` e `inserir`. `ModoGravacao` removido de `validacao.rs` (deixou de
+  ter diferença entre os modos). `inserir` recusa concurso que já está no banco e trata
+  data fora de ordem como erro. Gate: fmt ok, clippy ok, 60 testes. Teste de ponta a ponta
+  em cópias dos bancos (scratchpad): `buracos`, `inserir` (data errada, concurso existente,
+  dezena fora da faixa e caso certo), reaplicação do cache em banco recriado, conciliação
+  igual (removida do cache) e divergente (aviso, mantida).
+- 2026-10-03 — 0.7: revisão do `revisor-arquitetura`: aprovada com ressalvas, sem ALTA.
+  Corrigidos: (MÉDIA) `inserir` grava o cache antes do banco, que é a fonte da verdade do
+  dado digitado; (MÉDIA) entrada manual nunca sobrescreve concurso que já está no banco:
+  `pendentes` considera o banco e, se o conteúdo diferir, gera aviso `DifereDoBanco`
+  (testado de ponta a ponta com planilha antiga sem o concurso); (BAIXA) `atualizar`
+  concilia o cache também quando já está atualizado; (BAIXA) erro próprio
+  `CacheManualInvalido`; (BAIXA) `carregar` ordena as dezenas e recusa concurso repetido
+  no cache; (BAIXA) `.gitattributes` com `cache/*.json text eol=lf`. Mantido de propósito:
+  `inserir` aceita concurso acima do maior do banco (só avisa o buraco que cria).
+  Gate: fmt ok, clippy ok, 63 testes.

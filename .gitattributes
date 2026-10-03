@@ -1,0 +1,2 @@
+# O cache de inserções manuais é gerado com LF; mantém os bytes iguais no checkout.
+cache/*.json text eol=lf

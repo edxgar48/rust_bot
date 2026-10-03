@@ -34,6 +34,9 @@ pub enum SpiderError {
     #[error("dado inválido: {0}")]
     LinhaInvalida(String),
 
+    #[error("cache de inserções manuais `{caminho}` inválido: {motivo}")]
+    CacheManualInvalido { caminho: PathBuf, motivo: String },
+
     #[error("erro de banco de dados: {0}")]
     Db(#[from] rusqlite::Error),
 }
