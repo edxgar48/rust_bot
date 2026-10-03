@@ -10,7 +10,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 0.1 Faixa de dezenas e layout do volante no `LoteriaConfig`
 - [x] 0.2 Comando `validar <loteria>`
-- [ ] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
+- [x] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
 - [ ] 0.4 Testes do parser com fixtures
 - [ ] 0.5 `todas` no lugar do slug
 - [ ] 0.6 Textos da CLI sem ".htm"
@@ -65,6 +65,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] Destino da publicação — bloqueia 2.4
 - [ ] Canal de alerta — bloqueia 3.6
 - [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
+- [ ] Buraco já existente no banco deve bloquear `importar`/`baixar`? (ver nota 0.3) — relevante para 3.1
+- [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
 
 ## Notas
 
@@ -117,3 +119,20 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   correções enquanto a planilha mantiver o erro. **Limitação para a 0.3:** com data fora
   de ordem sendo aviso, uma data no futuro no último concurso (ex.: 2062 em vez de 2026)
   não gera problema nenhum — avaliar um erro para "data posterior a hoje" ao gravar.
+- 2026-10-03 — 0.3: interpretação adotada pelo orquestrador (revisável): validar depois das
+  correções e antes de gravar, em `importar`, `baixar` e `atualizar`; erro em qualquer registro
+  → nada é gravado e o comando sai com exit ≠ 0; a sequência é validada sobre banco existente +
+  lote (o lote substitui concursos iguais); duplicata no lote é erro; data fora de ordem é aviso
+  (só os pares que envolvem concursos do lote, para não repetir avisos antigos); buraco é erro em
+  `importar`/`baixar` e aviso em `atualizar`. Nenhuma regra nova.
+  Implementada em `src/validacao.rs` (função pura `avaliar_gravacao`, `ModoGravacao`,
+  `DecisaoGravacao`) e `src/bin/sync.rs` (`validar_lote`, `carregar_existentes`). O banco só é
+  aberto/criado depois de a validação aprovar, então um lote recusado não deixa `.db` vazio.
+  Mudanças de comportamento: `atualizar` com banco vazio agora avisa o buraco 1..N-1 e grava;
+  `atualizar` lê o histórico inteiro para validar. `db::ultimo_concurso` ficou sem uso (mantida).
+  Gate: fmt ok, clippy ok, 50 testes, `validar` sem problemas nos três bancos. Revisão: 1ª aprovada
+  com ressalvas (1 MÉDIA, achados BAIXA corrigidos em uma rodada); 2ª aprovada.
+  **Pendente de decisão (achado MÉDIA):** um buraco que já está no banco (ex.: `atualizar` gravou
+  o 105 com o banco em 100) faz `baixar` recusar o lote inteiro se a planilha ainda não chegou ao
+  104, inclusive os concursos que reduziriam o buraco. Alternativa sugerida pela revisão: em
+  `importar`/`baixar`, tratar como erro só o buraco abaixo do maior concurso do lote.

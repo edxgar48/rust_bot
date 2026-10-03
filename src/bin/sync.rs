@@ -130,8 +130,8 @@ async fn main() -> anyhow::Result<()> {
                 std::slice::from_mut(&mut resultado),
             ));
 
-            let mut conn = db::abrir(&db_caminho)?;
-            let ultimo_salvo = db::ultimo_concurso(&conn, cfg.slug)?;
+            let existentes = carregar_existentes(cfg, &db_caminho)?;
+            let ultimo_salvo = existentes.iter().map(|r| r.concurso).max();
 
             if let Some(u) = ultimo_salvo {
                 if u >= resultado.concurso {
@@ -141,16 +141,31 @@ async fn main() -> anyhow::Result<()> {
                     );
                     return Ok(());
                 }
-                if resultado.concurso - u > 1 {
-                    println!(
-                        "Atenção: faltam concurso(s) entre {u} e {} — a raspagem só traz o mais \
-                         recente. Rode `baixar {loteria}` para preencher o histórico completo.",
-                        resultado.concurso
-                    );
-                }
             }
 
-            let gravados = db::salvar_resultados(&mut conn, std::slice::from_ref(&resultado))?;
+            let lote = std::slice::from_ref(&resultado);
+            let decisao = validar_lote(
+                cfg,
+                &existentes,
+                lote,
+                validacao::ModoGravacao::UltimoConcurso,
+                &db_caminho,
+            )?;
+            // O buraco já saiu na lista de avisos; aqui só a orientação.
+            if decisao
+                .avisos
+                .iter()
+                .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
+            {
+                println!(
+                    "A raspagem só traz o concurso mais recente. Rode `baixar {loteria}` para \
+                     preencher o histórico completo."
+                );
+            }
+
+            // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
+            let mut conn = db::abrir(&db_caminho)?;
+            let gravados = db::salvar_resultados(&mut conn, lote)?;
             println!(
                 "Concurso {} ({}) gravado em {} ({gravados} registro(s) novo(s)/atualizado(s)).",
                 resultado.concurso,
@@ -197,8 +212,8 @@ fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> a
         .iter()
         .partition(|p| p.severidade() == validacao::Severidade::Erro);
 
-    imprimir_problemas("aviso(s)", &avisos);
-    imprimir_problemas("erro(s)", &erros);
+    imprimir_problemas("aviso(s)", &avisos, Saida::Padrao);
+    imprimir_problemas("erro(s)", &erros, Saida::Padrao);
 
     if erros.is_empty() {
         if avisos.is_empty() {
@@ -216,20 +231,68 @@ fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> a
     )
 }
 
-fn imprimir_problemas(rotulo: &str, problemas: &[&validacao::Problema]) {
+/// Onde imprimir: `validar` é um relatório e usa a saída padrão; a recusa de
+/// um lote ao gravar é falha do comando e vai para a saída de erro.
+#[derive(Clone, Copy)]
+enum Saida {
+    Padrao,
+    Erro,
+}
+
+fn imprimir_problemas<P: std::fmt::Display>(rotulo: &str, problemas: &[P], saida: Saida) {
     if problemas.is_empty() {
         return;
     }
-    println!("{} {rotulo}:", problemas.len());
+    let imprimir = |linha: String| match saida {
+        Saida::Padrao => println!("{linha}"),
+        Saida::Erro => eprintln!("{linha}"),
+    };
+    imprimir(format!("{} {rotulo}:", problemas.len()));
     for p in problemas.iter().take(LIMITE_PROBLEMAS_IMPRESSOS) {
-        println!("  - {p}");
+        imprimir(format!("  - {p}"));
     }
     if problemas.len() > LIMITE_PROBLEMAS_IMPRESSOS {
-        println!(
+        imprimir(format!(
             "  ... e mais {} não exibido(s).",
             problemas.len() - LIMITE_PROBLEMAS_IMPRESSOS
+        ));
+    }
+}
+
+/// Valida o lote contra o que já está no banco antes de gravar. Imprime os
+/// avisos; se houver erro, imprime-os e falha sem gravar nada (tudo ou nada).
+fn validar_lote(
+    cfg: &config::LoteriaConfig,
+    existentes: &[rust_spider::Resultado],
+    novos: &[rust_spider::Resultado],
+    modo: validacao::ModoGravacao,
+    db_caminho: &std::path::Path,
+) -> anyhow::Result<validacao::DecisaoGravacao> {
+    let decisao = validacao::avaliar_gravacao(cfg, existentes, novos, modo);
+    imprimir_problemas("aviso(s)", &decisao.avisos, Saida::Padrao);
+    if !decisao.pode_gravar() {
+        imprimir_problemas("erro(s)", &decisao.erros, Saida::Erro);
+        anyhow::bail!(
+            "{}: lote recusado por {} erro(s) de integridade; nada foi gravado em {}",
+            cfg.slug,
+            decisao.erros.len(),
+            db_caminho.display()
         );
     }
+    Ok(decisao)
+}
+
+/// O que já está gravado, sem criar o banco: `db::abrir` cria o arquivo, e um
+/// lote recusado sobre banco inexistente não deve deixar um `.db` vazio.
+fn carregar_existentes(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+) -> anyhow::Result<Vec<rust_spider::Resultado>> {
+    if !db_caminho.exists() {
+        return Ok(Vec::new());
+    }
+    let conn = db::abrir(db_caminho)?;
+    Ok(db::listar(&conn, cfg.slug)?)
 }
 
 fn buscar_config(slug: &str) -> anyhow::Result<&'static config::LoteriaConfig> {
@@ -254,6 +317,15 @@ fn processar_e_salvar(
     println!("{} concurso(s) extraído(s) do arquivo.", resultados.len());
     imprimir_correcoes(&correcoes::aplicar(cfg.slug, &mut resultados));
 
+    let existentes = carregar_existentes(cfg, db_caminho)?;
+    validar_lote(
+        cfg,
+        &existentes,
+        &resultados,
+        validacao::ModoGravacao::HistoricoCompleto,
+        db_caminho,
+    )?;
+    // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
     let mut conn = db::abrir(db_caminho)?;
     let gravados = db::salvar_resultados(&mut conn, &resultados)?;
     println!(

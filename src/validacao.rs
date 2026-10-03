@@ -10,12 +10,14 @@
 //! - [`validar_sequencia`]: o que depende do conjunto (duplicatas, buracos na
 //!   numeração, datas fora de ordem).
 //!
-//! [`validar`] aplica as duas.
+//! [`validar`] aplica as duas (comando `validar`); [`avaliar_gravacao`]
+//! aplica as duas a um lote antes de gravá-lo (`importar`, `baixar`,
+//! `atualizar`).
 
 use crate::config::LoteriaConfig;
 use crate::model::Resultado;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// Um problema de integridade encontrado nos resultados.
@@ -308,6 +310,91 @@ pub fn validar_sequencia(resultados: &[Resultado]) -> Vec<Problema> {
     }
 
     problemas
+}
+
+/// Como o lote chegou, o que define o tratamento de buracos na numeração.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModoGravacao {
+    /// `importar` e `baixar`: a planilha traz o histórico inteiro, então um
+    /// buraco no estado resultante indica arquivo incompleto ou mal lido e
+    /// é erro.
+    HistoricoCompleto,
+    /// `atualizar`: a raspagem só traz o concurso mais recente, então buraco
+    /// é esperado quando o banco está atrasado. Por decisão do usuário
+    /// (2026-10-03), só avisa e grava assim mesmo.
+    UltimoConcurso,
+}
+
+/// Resultado de [`avaliar_gravacao`]: problemas já classificados para o modo
+/// de gravação. Se houver qualquer erro, nada do lote deve ser gravado.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisaoGravacao {
+    pub erros: Vec<Problema>,
+    pub avisos: Vec<Problema>,
+}
+
+impl DecisaoGravacao {
+    /// Tudo ou nada: um único erro bloqueia o lote inteiro.
+    pub fn pode_gravar(&self) -> bool {
+        self.erros.is_empty()
+    }
+}
+
+/// Decide se o lote `novos` pode ser gravado sobre `existentes` (o que já
+/// está no banco).
+///
+/// - Cada registro novo passa por [`validar_resultado`]; concurso repetido
+///   dentro do próprio lote também é erro.
+/// - A sequência é validada sobre o estado que o banco teria depois da
+///   gravação (existentes + novos, com o novo substituindo o existente de
+///   mesmo concurso), porque é esse estado que precisa ficar íntegro.
+/// - Data fora de ordem é aviso, e só é reportada se envolver algum concurso
+///   do lote (como atual ou como anterior): avisos antigos do banco não se
+///   repetem a cada gravação. Buraco é erro ou aviso conforme `modo` e é
+///   sempre reportado, mesmo que já exista no banco.
+///
+/// Os registros existentes não são revalidados individualmente: problemas
+/// antigos são assunto do `validar`, não do lote atual.
+pub fn avaliar_gravacao(
+    cfg: &LoteriaConfig,
+    existentes: &[Resultado],
+    novos: &[Resultado],
+    modo: ModoGravacao,
+) -> DecisaoGravacao {
+    let mut problemas: Vec<Problema> = novos
+        .iter()
+        .flat_map(|r| validar_resultado(cfg, r))
+        .collect();
+    problemas.extend(
+        validar_sequencia(novos)
+            .into_iter()
+            .filter(|p| matches!(p, Problema::ConcursoDuplicado { .. })),
+    );
+
+    // BTreeMap: estado resultante em ordem de concurso, sem duplicatas (as
+    // do lote já foram reportadas acima).
+    let mut estado: BTreeMap<u32, &Resultado> =
+        existentes.iter().map(|r| (r.concurso, r)).collect();
+    estado.extend(novos.iter().map(|r| (r.concurso, r)));
+    let estado: Vec<Resultado> = estado.into_values().cloned().collect();
+    let concursos_novos: BTreeSet<u32> = novos.iter().map(|r| r.concurso).collect();
+    problemas.extend(validar_sequencia(&estado).into_iter().filter(|p| match p {
+        Problema::DataForaDeOrdem {
+            concurso,
+            concurso_anterior,
+            ..
+        } => concursos_novos.contains(concurso) || concursos_novos.contains(concurso_anterior),
+        _ => true,
+    }));
+
+    problemas.sort_by_key(Problema::concurso);
+
+    let (erros, avisos) = problemas.into_iter().partition(|p| {
+        let buraco_tolerado =
+            modo == ModoGravacao::UltimoConcurso && matches!(p, Problema::ConcursosFaltando { .. });
+        p.severidade() == Severidade::Erro && !buraco_tolerado
+    });
+    DecisaoGravacao { erros, avisos }
 }
 
 /// `true` se `data` está no formato `AAAA-MM-DD` e representa um dia que
@@ -644,6 +731,252 @@ mod tests {
                 },
             ]
         );
+    }
+
+    use ModoGravacao::{HistoricoCompleto, UltimoConcurso};
+
+    #[test]
+    fn gravacao_valida_sobre_banco_vazio() {
+        let d = avaliar_gravacao(mega(), &[], &validos(), HistoricoCompleto);
+        assert!(d.pode_gravar());
+        assert_eq!(d, DecisaoGravacao::default());
+    }
+
+    #[test]
+    fn gravacao_de_lote_vazio() {
+        let d = avaliar_gravacao(mega(), &[], &[], HistoricoCompleto);
+        assert!(d.pode_gravar());
+        assert_eq!(d, DecisaoGravacao::default());
+        let d = avaliar_gravacao(mega(), &validos(), &[], UltimoConcurso);
+        assert!(d.pode_gravar());
+        assert_eq!(d, DecisaoGravacao::default());
+    }
+
+    #[test]
+    fn um_registro_invalido_bloqueia_o_lote_inteiro() {
+        let mut novos = validos();
+        novos[1].dezenas = vec![9, 37, 39, 41, 43, 61];
+        for modo in [HistoricoCompleto, UltimoConcurso] {
+            let d = avaliar_gravacao(mega(), &[], &novos, modo);
+            assert!(!d.pode_gravar());
+            assert_eq!(
+                d.erros,
+                vec![Problema::DezenaForaDaFaixa {
+                    concurso: 2,
+                    dezena: 61,
+                    min: 1,
+                    max: 60
+                }]
+            );
+            assert_eq!(d.avisos, vec![]);
+        }
+    }
+
+    #[test]
+    fn registro_de_outra_loteria_bloqueia() {
+        let mut novos = validos();
+        novos[2].loteria = "quina".to_string();
+        let d = avaliar_gravacao(mega(), &[], &novos, UltimoConcurso);
+        assert!(!d.pode_gravar());
+        assert!(matches!(
+            d.erros[..],
+            [Problema::LoteriaDiferente { concurso: 3, .. }]
+        ));
+    }
+
+    #[test]
+    fn concurso_duplicado_no_lote_bloqueia() {
+        let mut novos = validos();
+        novos.push(res(2, "1996-03-18", &[1, 2, 3, 4, 5, 6]));
+        let d = avaliar_gravacao(mega(), &[], &novos, UltimoConcurso);
+        assert_eq!(
+            d.erros,
+            vec![Problema::ConcursoDuplicado {
+                concurso: 2,
+                ocorrencias: 2
+            }]
+        );
+    }
+
+    #[test]
+    fn buraco_bloqueia_em_historico_completo() {
+        let novos = vec![
+            res(1, "1996-03-11", &[4, 5, 30, 33, 41, 52]),
+            res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
+        ];
+        let d = avaliar_gravacao(mega(), &[], &novos, HistoricoCompleto);
+        assert!(!d.pode_gravar());
+        assert_eq!(
+            d.erros,
+            vec![Problema::ConcursosFaltando { inicio: 2, fim: 2 }]
+        );
+        assert_eq!(d.avisos, vec![]);
+    }
+
+    #[test]
+    fn buraco_so_avisa_em_ultimo_concurso() {
+        let existentes = &validos()[..2];
+        let novos = [res(5, "1996-04-15", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), existentes, &novos, UltimoConcurso);
+        assert!(d.pode_gravar());
+        assert_eq!(d.erros, vec![]);
+        assert_eq!(
+            d.avisos,
+            vec![Problema::ConcursosFaltando { inicio: 3, fim: 4 }]
+        );
+    }
+
+    #[test]
+    fn buraco_em_ultimo_concurso_nao_tolera_outros_erros() {
+        let novos = [res(5, "1996-04-15", &[1, 2, 3, 4, 5])];
+        let d = avaliar_gravacao(mega(), &validos(), &novos, UltimoConcurso);
+        assert!(!d.pode_gravar());
+        assert!(matches!(
+            d.erros[..],
+            [Problema::QuantidadeDezenas { concurso: 5, .. }]
+        ));
+        assert_eq!(
+            d.avisos,
+            vec![Problema::ConcursosFaltando { inicio: 4, fim: 4 }]
+        );
+    }
+
+    #[test]
+    fn lote_que_fecha_buraco_do_banco_e_aceito() {
+        let existentes = vec![
+            res(1, "1996-03-11", &[4, 5, 30, 33, 41, 52]),
+            res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
+        ];
+        let novos = [res(2, "1996-03-18", &[9, 37, 39, 41, 43, 49])];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert_eq!(d, DecisaoGravacao::default());
+    }
+
+    #[test]
+    fn data_fora_de_ordem_so_avisa() {
+        let mut novos = validos();
+        novos[2].data_sorteio = "1996-03-01".to_string();
+        for modo in [HistoricoCompleto, UltimoConcurso] {
+            let d = avaliar_gravacao(mega(), &[], &novos, modo);
+            assert!(d.pode_gravar());
+            assert_eq!(d.erros, vec![]);
+            assert!(matches!(
+                d.avisos[..],
+                [Problema::DataForaDeOrdem { concurso: 3, .. }]
+            ));
+        }
+    }
+
+    #[test]
+    fn novo_substitui_existente_de_mesmo_concurso() {
+        // No banco, o 3 tem data fora de ordem; o lote traz o 3 corrigido.
+        let mut existentes = validos();
+        existentes[2].data_sorteio = "1996-03-01".to_string();
+        let novos = [res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47])];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert_eq!(d, DecisaoGravacao::default());
+
+        // E o contrário: o lote traz a data errada sobre um banco correto.
+        let novos = [res(3, "1996-03-01", &[10, 11, 29, 30, 36, 47])];
+        let d = avaliar_gravacao(mega(), &validos(), &novos, HistoricoCompleto);
+        assert!(d.pode_gravar());
+        assert!(matches!(
+            d.avisos[..],
+            [Problema::DataForaDeOrdem { concurso: 3, .. }]
+        ));
+    }
+
+    #[test]
+    fn existente_igual_ao_novo_nao_conta_como_duplicado() {
+        let d = avaliar_gravacao(mega(), &validos(), &validos(), HistoricoCompleto);
+        assert_eq!(d, DecisaoGravacao::default());
+    }
+
+    #[test]
+    fn primeiro_concurso_em_banco_vazio_avisa_buraco_em_ultimo_concurso() {
+        let d = avaliar_gravacao(
+            mega(),
+            &[],
+            &[res(5, "1996-04-15", &[1, 2, 3, 4, 5, 6])],
+            UltimoConcurso,
+        );
+        assert!(d.pode_gravar());
+        assert_eq!(d.erros, vec![]);
+        assert_eq!(
+            d.avisos,
+            vec![Problema::ConcursosFaltando { inicio: 1, fim: 4 }]
+        );
+    }
+
+    #[test]
+    fn buraco_so_nos_existentes_bloqueia_em_historico_completo() {
+        // Comportamento atual (aguarda decisão): um buraco antigo do banco,
+        // fora do lote, bloqueia `importar`/`baixar` que não o preencham.
+        let existentes = vec![
+            res(1, "1996-03-11", &[4, 5, 30, 33, 41, 52]),
+            res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
+        ];
+        let novos = [res(4, "1996-04-01", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert!(!d.pode_gravar());
+        assert_eq!(
+            d.erros,
+            vec![Problema::ConcursosFaltando { inicio: 2, fim: 2 }]
+        );
+        assert_eq!(d.avisos, vec![]);
+    }
+
+    #[test]
+    fn novo_de_outra_loteria_substituindo_existente_valido_bloqueia() {
+        let mut novo = validos()[1].clone();
+        novo.loteria = "quina".to_string();
+        for modo in [HistoricoCompleto, UltimoConcurso] {
+            let d = avaliar_gravacao(mega(), &validos(), std::slice::from_ref(&novo), modo);
+            assert!(!d.pode_gravar());
+            assert!(matches!(
+                d.erros[..],
+                [Problema::LoteriaDiferente { concurso: 2, .. }]
+            ));
+        }
+    }
+
+    #[test]
+    fn data_fora_de_ordem_antiga_do_banco_nao_se_repete() {
+        // No banco, o 2 tem data anterior à do 1 (aviso antigo).
+        let mut existentes = validos();
+        existentes[1].data_sorteio = "1996-03-01".to_string();
+
+        // Lote que não toca o 1 nem o 2: o aviso antigo não aparece.
+        let novos = [res(4, "1996-04-01", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert_eq!(d, DecisaoGravacao::default());
+
+        // Lote cujo concurso novo fica fora de ordem: aparece.
+        let novos = [res(4, "1996-03-20", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert!(d.pode_gravar());
+        assert_eq!(
+            d.avisos,
+            vec![Problema::DataForaDeOrdem {
+                concurso: 4,
+                data: "1996-03-20".to_string(),
+                concurso_anterior: 3,
+                data_anterior: "1996-03-25".to_string(),
+            }]
+        );
+
+        // Lote que regrava o concurso anterior ao par fora de ordem (o 1)
+        // também o envolve: aparece.
+        let novos = [validos()[0].clone()];
+        let d = avaliar_gravacao(mega(), &existentes, &novos, HistoricoCompleto);
+        assert!(matches!(
+            d.avisos[..],
+            [Problema::DataForaDeOrdem {
+                concurso: 2,
+                concurso_anterior: 1,
+                ..
+            }]
+        ));
     }
 
     #[test]
