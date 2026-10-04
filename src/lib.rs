@@ -5,6 +5,7 @@ pub mod downloader;
 pub mod error;
 pub mod manuais;
 pub mod model;
+pub mod motor;
 pub mod parser;
 pub mod validacao;
 

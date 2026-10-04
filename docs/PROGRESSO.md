@@ -18,7 +18,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1a — Features · `engenheiro-motor`
 
-- [ ] 1a.1 Estado incremental por dezena e janela (`src/motor/`)
+- [x] 1a.1 Estado incremental por dezena e janela (`src/motor/`)
 - [ ] 1a.2 Tabela `features_dezena` + `motor_estado` + comando `sync features`
 - [ ] 1a.3 Testes: golden, vazamento, incremental = completo
 
@@ -68,6 +68,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Pontos ambíguos da especificação das features — bloqueia 1a.1 → resolvidos (ver notas de 2026-10-04)
 
 ## Notas
 
@@ -212,3 +213,36 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   parece `.htm`. Revisão: aprovada, só 1 BAIXA (cópias de trabalho em LF enquanto boa parte de `src/`
   está em CRLF; sem efeito no commit). Gate: fmt ok, clippy ok, 92 testes (71 lib + 11 sync +
   10 parser, 1 ignorado), `validar todas` sem problemas nos três bancos. **Fase 0 concluída.**
+- 2026-10-04 — 1a.1 não iniciada: a especificação das features tem pontos ambíguos que mudam
+  valores calculados (e o golden de bordas). Perguntas devolvidas ao usuário: (1) `repeticao_atual`
+  é limitada pela janela? (2) `espaco_final` de dezena que nunca saiu antes de *t*: `NULL` ou outro
+  valor? (3) janela pelo número do concurso, com o motor recusando histórico com buraco? (4) o motor
+  gera também o snapshot de *t* = último + 1 (estado atual, `saiu` = `NULL`) para o app? (5) como a
+  janela "total" é identificada na coluna `janela`?
+- 2026-10-04 — Respostas do usuário, registradas no PLANEJAMENTO.md (Convenções, Componentes e
+  Casos de borda): (1) `repeticao_atual` é limitada pela janela (no máximo *J*); (2) `espaco_final`
+  de dezena que nunca saiu antes de *t* = `NULL`; (3) janela pelo número do concurso, motor recusa
+  histórico com buraco e `sync features` recusa rodar se o `validar` apontar buraco; (4) o motor
+  gera também o snapshot de *t* = último + 1, com `saiu` = `NULL` (gravar ou calcular na hora fica
+  para a 1a.2); (5) janela total = `janela = 0`, por constante. 1a.1 desbloqueada.
+- 2026-10-04 — 1a.1 concluída. `src/motor/` (`mod.rs`, `features.rs`, `estado.rs`, `tests.rs`), puro,
+  sem I/O nem SQL: `FEATURE_VERSION = 1`, `JANELA_TOTAL = 0`, `JANELAS = [0, 10, 50, 100]`,
+  `calcular(cfg, &[Resultado])`, `EstadoMotor` (serde; `novo`, `adicionar`, `avancar` tudo ou nada,
+  `snapshot` do próximo concurso com `saiu = None`, `verificar_compatibilidade`), `FeaturesDezena`.
+  Um único cálculo (`Acumulado::incorporar`): janela total incremental, janelas 10/50/100 recalculadas
+  sobre as aparições dos últimos 100 concursos. Erros novos em `src/error.rs` (`MotorBuraco`,
+  `MotorConcursoRepetido`, `MotorForaDeOrdem`, `MotorResultadoInvalido`, `MotorEstadoIncompativel`).
+  Desvios (aceitos pela revisão, revisáveis): histórico precisa começar no concurso 1; `JANELAS` em
+  ordem crescente, para casar com a PK; o motor recusa resultado que reprove em `validar_resultado`
+  (inclusive data); `feature_version` fica no estado, não em `FeaturesDezena`.
+  Medição (release, cópias dos bancos): Quina 7133 concursos → 2.282.560 linhas em ~125 ms.
+  29 testes no módulo (golden, bordas, oráculo independente, vazamento em 7 valores de t,
+  incremental = completo com retomada via JSON, erros). verificador-vazamento: sem vazamento.
+  Revisão: aprovada com ressalvas, só BAIXA. Gate: fmt ok, clippy ok, 121 testes (100 lib + 11 sync +
+  10 parser, 1 ignorado), `validar todas` ok nos três bancos.
+  **Entrada para a 1a.2:** `db::listar` devolve `ORDER BY concurso DESC` — ordenar crescente antes
+  do motor; ao carregar `motor_estado`, verificar uma vez (ex.: `EstadoMotor::retomar`), inclusive
+  antes de `snapshot()`; o estado não detecta `resultados` corrigido abaixo do último concurso
+  incorporado (guardar impressão dos resultados ou regenerar do zero); gravar `feature_version` a
+  partir do estado. Opcional: reexport em `lib.rs`. Lacunas para a 1a.3: corte k=0/k=n no
+  incremental = completo, vazamento na Lotofácil.
