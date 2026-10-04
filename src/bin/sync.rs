@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[command(
     author,
     version,
-    about = "Baixa e processa resultados de loterias da Caixa (arquivo .htm -> SQLite/JSON)"
+    about = "Baixa e processa resultados de loterias da Caixa (planilha .xlsx -> SQLite/JSON)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -15,11 +15,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Comando {
-    /// Navega até o site oficial, baixa o .htm de resultados e já grava no banco.
+    /// Navega até o site oficial, baixa a planilha (.xlsx) de resultados e já grava no banco.
     Baixar {
         /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
-        /// Pasta onde salvar o .htm baixado
+        /// Pasta onde salvar a planilha (.xlsx) baixada
         #[arg(long, default_value = "downloads")]
         dir: PathBuf,
         /// Caminho do banco SQLite. Por padrão, um arquivo por loteria
@@ -38,12 +38,12 @@ enum Comando {
         #[arg(long, default_value = "cache")]
         cache: PathBuf,
     },
-    /// Processa um arquivo .htm já baixado manualmente, sem abrir navegador.
+    /// Processa uma planilha (.xlsx) de resultados já baixada manualmente, sem abrir navegador.
     Importar {
         /// Slug da loteria (define como interpretar as colunas da tabela);
         /// não aceita `todas`, pois o arquivo é de uma loteria só
         loteria: String,
-        /// Caminho do arquivo .htm
+        /// Caminho da planilha (.xlsx) de resultados
         arquivo: PathBuf,
         /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
         #[arg(long)]

@@ -14,7 +14,7 @@ const TENTATIVAS_MAX: u32 = 3;
 const TIMEOUT_SELETOR_MS: f64 = 20_000.0;
 
 /// Abre a página da loteria, clica no link/botão de download e salva o
-/// arquivo .htm resultante em `dir_destino`. Faz algumas tentativas com
+/// arquivo resultante (planilha .xlsx) em `dir_destino`. Faz algumas tentativas com
 /// backoff, já que o site é conhecido por bloquear acessos automatizados.
 pub async fn baixar_resultado(
     config: &LoteriaConfig,

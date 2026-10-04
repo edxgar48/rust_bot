@@ -13,7 +13,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
 - [x] 0.4 Testes do parser com fixtures
 - [x] 0.5 `todas` no lugar do slug
-- [ ] 0.6 Textos da CLI sem ".htm"
+- [x] 0.6 Textos da CLI sem ".htm"
 - [x] 0.7 Fechar buracos à mão (`buracos`, `inserir`) com cache de inserções manuais
 
 ## Fase 1a — Features · `engenheiro-motor`
@@ -205,3 +205,10 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   de existir. PLANEJAMENTO.md (0.5) e README atualizados com os comandos em que `todas` vale.
   `src/bin/sync.rs` voltou a LF, igual ao commitado. Gate: fmt ok, clippy ok, 92 testes
   (71 lib + 11 sync + 10 parser, 1 ignorado).
+- 2026-10-04 — 0.6 concluída. Textos do `--help` em `src/bin/sync.rs` (`about`, `baixar`, `--dir`,
+  `importar`, `<ARQUIVO>`) e o doc comment de `baixar_resultado` em `src/downloader.rs` passam a falar
+  em "planilha (.xlsx)". Só texto: nenhuma flag, nome ou lógica mudou. Mantidos de propósito
+  `src/downloader.rs:136`, `src/parser.rs:7` e `README.md:18`, que explicam corretamente por que o link
+  parece `.htm`. Revisão: aprovada, só 1 BAIXA (cópias de trabalho em LF enquanto boa parte de `src/`
+  está em CRLF; sem efeito no commit). Gate: fmt ok, clippy ok, 92 testes (71 lib + 11 sync +
+  10 parser, 1 ignorado), `validar todas` sem problemas nos três bancos. **Fase 0 concluída.**
