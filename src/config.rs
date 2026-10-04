@@ -164,6 +164,26 @@ pub fn buscar(slug: &str) -> Option<&'static LoteriaConfig> {
     LOTERIAS.iter().find(|l| l.slug.eq_ignore_ascii_case(slug))
 }
 
+/// Palavra aceita no lugar do slug para aplicar um comando a todas as
+/// loterias configuradas (ex.: `sync validar todas`).
+pub const TODAS: &str = "todas";
+
+/// Indica se o argumento de loteria é `todas` (sem diferenciar maiúsculas,
+/// como `buscar`).
+pub fn eh_todas(argumento: &str) -> bool {
+    argumento.eq_ignore_ascii_case(TODAS)
+}
+
+/// Resolve o argumento de loteria da CLI: `todas` vira todas as loterias, na
+/// ordem de `LOTERIAS`; um slug conhecido vira só a sua; um desconhecido dá
+/// `None`.
+pub fn resolver(argumento: &str) -> Option<Vec<&'static LoteriaConfig>> {
+    if eh_todas(argumento) {
+        return Some(LOTERIAS.iter().collect());
+    }
+    buscar(argumento).map(|l| vec![l])
+}
+
 pub fn slugs_disponiveis() -> String {
     LOTERIAS
         .iter()
@@ -223,6 +243,47 @@ mod tests {
                 l.slug
             );
         }
+    }
+
+    #[test]
+    fn nenhum_slug_colide_com_todas() {
+        for l in LOTERIAS {
+            assert!(!eh_todas(l.slug), "slug reservado: {}", l.slug);
+        }
+    }
+
+    #[test]
+    fn resolver_todas_devolve_todas_na_ordem_do_config() {
+        let esperado: Vec<&str> = LOTERIAS.iter().map(|l| l.slug).collect();
+        for argumento in ["todas", "TODAS", "Todas"] {
+            let slugs: Vec<&str> = resolver(argumento)
+                .expect("todas é aceito")
+                .iter()
+                .map(|l| l.slug)
+                .collect();
+            assert_eq!(slugs, esperado, "{argumento}");
+        }
+        assert_eq!(esperado, ["lotofacil", "megasena", "quina"]);
+    }
+
+    #[test]
+    fn resolver_slug_devolve_so_a_loteria() {
+        for l in LOTERIAS {
+            let resolvidas = resolver(l.slug).expect("slug configurado");
+            assert_eq!(resolvidas.len(), 1, "{}", l.slug);
+            assert_eq!(resolvidas[0].slug, l.slug);
+        }
+        let mega = resolver("MegaSena").expect("sem diferenciar maiúsculas");
+        assert_eq!(mega.len(), 1);
+        assert_eq!(mega[0].slug, "megasena");
+    }
+
+    #[test]
+    fn resolver_desconhecido_devolve_none() {
+        for argumento in ["", "timemania", "toda", "todas ", "lotofacil,quina"] {
+            assert!(resolver(argumento).is_none(), "{argumento:?}");
+        }
+        assert!(!eh_todas("lotofacil"));
     }
 
     #[test]

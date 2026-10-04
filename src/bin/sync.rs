@@ -17,16 +17,18 @@ struct Cli {
 enum Comando {
     /// Navega até o site oficial, baixa o .htm de resultados e já grava no banco.
     Baixar {
-        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
         /// Pasta onde salvar o .htm baixado
         #[arg(long, default_value = "downloads")]
         dir: PathBuf,
         /// Caminho do banco SQLite. Por padrão, um arquivo por loteria
         /// (resultados_<loteria>.db), para não misturar dados de loterias diferentes.
+        /// Não pode ser usado com `todas`.
         #[arg(long)]
         db: Option<PathBuf>,
-        /// Sobrescreve o seletor CSS do botão de download configurado para essa loteria
+        /// Sobrescreve o seletor CSS do botão de download configurado para essa
+        /// loteria. Não pode ser usado com `todas`.
         #[arg(long)]
         seletor: Option<String>,
         /// Mostra a janela do navegador (útil para depurar bloqueios/seletores)
@@ -38,7 +40,8 @@ enum Comando {
     },
     /// Processa um arquivo .htm já baixado manualmente, sem abrir navegador.
     Importar {
-        /// Slug da loteria (define como interpretar as colunas da tabela)
+        /// Slug da loteria (define como interpretar as colunas da tabela);
+        /// não aceita `todas`, pois o arquivo é de uma loteria só
         loteria: String,
         /// Caminho do arquivo .htm
         arquivo: PathBuf,
@@ -51,6 +54,7 @@ enum Comando {
     },
     /// Lista os resultados já salvos no banco, em JSON.
     Listar {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
         loteria: String,
         /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
         #[arg(long)]
@@ -59,9 +63,10 @@ enum Comando {
     /// Lê o último resultado direto da página (sem baixar a planilha inteira)
     /// e grava no banco só se for um concurso novo.
     Atualizar {
-        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
-        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
         #[arg(long)]
         db: Option<PathBuf>,
         /// Mostra a janela do navegador (útil para depurar bloqueios/seletores)
@@ -75,25 +80,27 @@ enum Comando {
     /// faixa, repetidas, datas, buracos na numeração e datas fora de ordem.
     /// Sai com erro se encontrar algum erro; datas fora de ordem são só avisos.
     Validar {
-        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
-        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
         #[arg(long)]
         db: Option<PathBuf>,
     },
     /// Lista os concursos que faltam no banco, com as datas dos vizinhos,
     /// para fechá-los um a um com `inserir`.
     Buracos {
-        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
-        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
         #[arg(long)]
         db: Option<PathBuf>,
     },
     /// Insere à mão um concurso que falta no banco (fecha um buraco) e o
     /// registra no cache de inserções manuais, em ordem de data de sorteio.
     Inserir {
-        /// Slug da loteria (ex.: lotofacil, megasena, quina)
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
         loteria: String,
         /// Número do concurso que falta
         concurso: u32,
@@ -128,15 +135,14 @@ async fn main() -> anyhow::Result<()> {
             visivel,
             cache,
         } => {
-            let cfg = buscar_config(&loteria)?;
-            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-
-            println!("Baixando resultados de {}...", cfg.nome_exibicao);
-            let arquivo =
-                downloader::baixar_resultado(cfg, seletor.as_deref(), &dir, !visivel).await?;
-            println!("Arquivo salvo em {}", arquivo.display());
-
-            processar_e_salvar(&arquivo, cfg, &db_caminho, &cache)?;
+            let alvos = resolver_alvos(&loteria, db, seletor.as_deref())?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                let r = baixar(cfg, &dir, &db_caminho, seletor.as_deref(), visivel, &cache).await;
+                execucao.registrar(cfg, r)?;
+            }
+            execucao.concluir()?;
         }
         Comando::Importar {
             loteria,
@@ -144,15 +150,18 @@ async fn main() -> anyhow::Result<()> {
             db,
             cache,
         } => {
-            let cfg = buscar_config(&loteria)?;
+            let cfg = buscar_config_unica(&loteria, "importar", "o arquivo é de uma loteria só")?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             processar_e_salvar(&arquivo, cfg, &db_caminho, &cache)?;
         }
         Comando::Listar { loteria, db } => {
-            let cfg = buscar_config(&loteria)?;
+            let cfg = buscar_config_unica(
+                &loteria,
+                "listar",
+                "liste uma loteria por vez (cada uma tem seu banco)",
+            )?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-            let conn = db::abrir(&db_caminho)?;
-            let resultados = db::listar(&conn, cfg.slug)?;
+            let resultados = listar(cfg, &db_caminho)?;
             println!("{}", serde_json::to_string_pretty(&resultados)?);
         }
         Comando::Atualizar {
@@ -161,54 +170,32 @@ async fn main() -> anyhow::Result<()> {
             visivel,
             cache,
         } => {
-            let cfg = buscar_config(&loteria)?;
-            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-
-            println!("Verificando o último resultado de {}...", cfg.nome_exibicao);
-            let mut resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
-            imprimir_correcoes(&correcoes::aplicar(
-                cfg.slug,
-                std::slice::from_mut(&mut resultado),
-            ));
-
-            let existentes = carregar_existentes(cfg, &db_caminho)?;
-            let ultimo_salvo = existentes.iter().map(|r| r.concurso).max();
-
-            if let Some(u) = ultimo_salvo {
-                if u >= resultado.concurso {
-                    println!(
-                        "Já está atualizado: último concurso salvo é {u}, a página mostra {}.",
-                        resultado.concurso
-                    );
-                    // Uma inserção manual do mesmo concurso ainda pode ser conciliada.
-                    conciliar_cache(cfg, &cache, std::slice::from_ref(&resultado))?;
-                    return Ok(());
-                }
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                let r = atualizar(cfg, &db_caminho, visivel, &cache).await;
+                execucao.registrar(cfg, r)?;
             }
-
-            let lote = std::slice::from_ref(&resultado);
-            validar_lote(cfg, &existentes, lote, &db_caminho)?;
-
-            // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
-            let mut conn = db::abrir(&db_caminho)?;
-            let gravados = db::salvar_resultados(&mut conn, lote)?;
-            println!(
-                "Concurso {} ({}) gravado em {} ({gravados} registro(s) novo(s)/atualizado(s)).",
-                resultado.concurso,
-                resultado.data_sorteio,
-                db_caminho.display()
-            );
-            conciliar_cache(cfg, &cache, lote)?;
+            execucao.concluir()?;
         }
         Comando::Validar { loteria, db } => {
-            let cfg = buscar_config(&loteria)?;
-            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-            validar_banco(cfg, &db_caminho)?;
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                execucao.registrar(cfg, validar_banco(cfg, &db_caminho))?;
+            }
+            execucao.concluir()?;
         }
         Comando::Buracos { loteria, db } => {
-            let cfg = buscar_config(&loteria)?;
-            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-            listar_buracos(cfg, &db_caminho)?;
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                execucao.registrar(cfg, listar_buracos(cfg, &db_caminho))?;
+            }
+            execucao.concluir()?;
         }
         Comando::Inserir {
             loteria,
@@ -218,7 +205,7 @@ async fn main() -> anyhow::Result<()> {
             db,
             cache,
         } => {
-            let cfg = buscar_config(&loteria)?;
+            let cfg = buscar_config_unica(&loteria, "inserir", "as dezenas são de uma loteria só")?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             let entrada = manuais::EntradaManual {
                 concurso,
@@ -230,6 +217,188 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Loterias a processar por um comando, cada uma com seu banco.
+struct Alvos {
+    /// `true` quando o argumento foi `todas`: decide cabeçalhos e resumo.
+    multiplas: bool,
+    itens: Vec<(&'static config::LoteriaConfig, PathBuf)>,
+}
+
+impl Alvos {
+    fn execucao(&self) -> Execucao {
+        Execucao::nova(self.multiplas)
+    }
+}
+
+/// Resolve o argumento `loteria` (slug ou `todas`) nas loterias a processar.
+/// Concentra as recusas de opções que só valem com slug único: `--db` (um
+/// banco por loteria) e `--seletor` (o seletor é de uma loteria só; só
+/// `baixar` o recebe, os demais comandos passam `None`).
+fn resolver_alvos(
+    loteria: &str,
+    db: Option<PathBuf>,
+    seletor: Option<&str>,
+) -> anyhow::Result<Alvos> {
+    let cfgs = config::resolver(loteria).ok_or_else(|| loteria_desconhecida(loteria, true))?;
+    let multiplas = config::eh_todas(loteria);
+    if multiplas && db.is_some() {
+        anyhow::bail!(
+            "`--db` não pode ser usado com `{}`: cada loteria tem seu próprio banco \
+             (resultados_<loteria>.db); informe o slug para usar outro caminho",
+            config::TODAS
+        );
+    }
+    if multiplas && seletor.is_some() {
+        anyhow::bail!(
+            "`--seletor` não pode ser usado com `{}`: o seletor é de uma \
+             loteria só; informe o slug",
+            config::TODAS
+        );
+    }
+    let itens = cfgs
+        .into_iter()
+        .map(|cfg| {
+            let caminho = db.clone().unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            (cfg, caminho)
+        })
+        .collect();
+    Ok(Alvos { multiplas, itens })
+}
+
+/// Execução de um comando sobre uma ou mais loterias. Com slug único é
+/// transparente (o erro sobe como antes); com `todas`, imprime um cabeçalho
+/// por loteria, segue adiante quando uma falha e resume no fim.
+struct Execucao {
+    multiplas: bool,
+    situacoes: Vec<(&'static str, bool)>,
+}
+
+impl Execucao {
+    fn nova(multiplas: bool) -> Self {
+        Execucao {
+            multiplas,
+            situacoes: Vec::new(),
+        }
+    }
+
+    fn cabecalho(&self, cfg: &config::LoteriaConfig) {
+        if self.multiplas {
+            println!("=== {} ({}) ===", cfg.nome_exibicao, cfg.slug);
+        }
+    }
+
+    fn registrar(
+        &mut self,
+        cfg: &'static config::LoteriaConfig,
+        resultado: anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        if !self.multiplas {
+            return resultado;
+        }
+        if let Err(e) = &resultado {
+            eprintln!("Erro em {}: {e:#}", cfg.slug);
+        }
+        self.situacoes.push((cfg.slug, resultado.is_ok()));
+        Ok(())
+    }
+
+    fn concluir(self) -> anyhow::Result<()> {
+        if !self.multiplas {
+            return Ok(());
+        }
+        println!("=== Resumo ===");
+        for (slug, ok) in &self.situacoes {
+            let situacao = if *ok { "ok" } else { "falhou" };
+            println!("  {slug}: {situacao}");
+        }
+        let falhas: Vec<&str> = self
+            .situacoes
+            .iter()
+            .filter(|(_, ok)| !ok)
+            .map(|(slug, _)| *slug)
+            .collect();
+        if !falhas.is_empty() {
+            anyhow::bail!(
+                "{} de {} loteria(s) falharam: {}",
+                falhas.len(),
+                self.situacoes.len(),
+                falhas.join(", ")
+            );
+        }
+        Ok(())
+    }
+}
+
+async fn baixar(
+    cfg: &'static config::LoteriaConfig,
+    dir: &std::path::Path,
+    db_caminho: &std::path::Path,
+    seletor: Option<&str>,
+    visivel: bool,
+    cache: &std::path::Path,
+) -> anyhow::Result<()> {
+    println!("Baixando resultados de {}...", cfg.nome_exibicao);
+    let arquivo = downloader::baixar_resultado(cfg, seletor, dir, !visivel).await?;
+    println!("Arquivo salvo em {}", arquivo.display());
+
+    processar_e_salvar(&arquivo, cfg, db_caminho, cache)
+}
+
+fn listar(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+) -> anyhow::Result<Vec<rust_spider::Resultado>> {
+    // `db::abrir` cria o arquivo se não existir; listar não deve criar banco
+    // vazio (nem responder `[]` como se a loteria não tivesse concursos).
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let conn = db::abrir(db_caminho)?;
+    Ok(db::listar(&conn, cfg.slug)?)
+}
+
+async fn atualizar(
+    cfg: &'static config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    visivel: bool,
+    cache: &std::path::Path,
+) -> anyhow::Result<()> {
+    println!("Verificando o último resultado de {}...", cfg.nome_exibicao);
+    let mut resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
+    imprimir_correcoes(&correcoes::aplicar(
+        cfg.slug,
+        std::slice::from_mut(&mut resultado),
+    ));
+
+    let existentes = carregar_existentes(cfg, db_caminho)?;
+    let ultimo_salvo = existentes.iter().map(|r| r.concurso).max();
+
+    if let Some(u) = ultimo_salvo {
+        if u >= resultado.concurso {
+            println!(
+                "Já está atualizado: último concurso salvo é {u}, a página mostra {}.",
+                resultado.concurso
+            );
+            // Uma inserção manual do mesmo concurso ainda pode ser conciliada.
+            return conciliar_cache(cfg, cache, std::slice::from_ref(&resultado));
+        }
+    }
+
+    let lote = std::slice::from_ref(&resultado);
+    validar_lote(cfg, &existentes, lote, db_caminho)?;
+
+    // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
+    let mut conn = db::abrir(db_caminho)?;
+    let gravados = db::salvar_resultados(&mut conn, lote)?;
+    println!(
+        "Concurso {} ({}) gravado em {} ({gravados} registro(s) novo(s)/atualizado(s)).",
+        resultado.concurso,
+        resultado.data_sorteio,
+        db_caminho.display()
+    );
+    conciliar_cache(cfg, cache, lote)
 }
 
 fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
@@ -294,14 +463,20 @@ enum Saida {
     Erro,
 }
 
+impl Saida {
+    fn imprimir(self, linha: &str) {
+        match self {
+            Saida::Padrao => println!("{linha}"),
+            Saida::Erro => eprintln!("{linha}"),
+        }
+    }
+}
+
 fn imprimir_problemas<P: std::fmt::Display>(rotulo: &str, problemas: &[P], saida: Saida) {
     if problemas.is_empty() {
         return;
     }
-    let imprimir = |linha: String| match saida {
-        Saida::Padrao => println!("{linha}"),
-        Saida::Erro => eprintln!("{linha}"),
-    };
+    let imprimir = |linha: String| saida.imprimir(&linha);
     imprimir(format!("{} {rotulo}:", problemas.len()));
     for p in problemas.iter().take(LIMITE_PROBLEMAS_IMPRESSOS) {
         imprimir(format!("  - {p}"));
@@ -356,13 +531,34 @@ fn carregar_existentes(
     Ok(db::listar(&conn, cfg.slug)?)
 }
 
-fn buscar_config(slug: &str) -> anyhow::Result<&'static config::LoteriaConfig> {
-    config::buscar(slug).ok_or_else(|| {
-        anyhow::anyhow!(
-            "loteria desconhecida: `{slug}`. Use uma de: {}",
+/// Para comandos que só fazem sentido com uma loteria (`importar`, `inserir`,
+/// `listar`):
+/// recusa `todas` explicando o porquê.
+fn buscar_config_unica(
+    loteria: &str,
+    comando: &str,
+    motivo: &str,
+) -> anyhow::Result<&'static config::LoteriaConfig> {
+    if config::eh_todas(loteria) {
+        anyhow::bail!(
+            "`{comando}` não aceita `{}`: {motivo}. Informe uma de: {}",
+            config::TODAS,
             config::slugs_disponiveis()
-        )
-    })
+        );
+    }
+    config::buscar(loteria).ok_or_else(|| loteria_desconhecida(loteria, false))
+}
+
+fn loteria_desconhecida(loteria: &str, aceita_todas: bool) -> anyhow::Error {
+    let todas = if aceita_todas {
+        format!(" (ou `{}` para todas)", config::TODAS)
+    } else {
+        String::new()
+    };
+    anyhow::anyhow!(
+        "loteria desconhecida: `{loteria}`. Use uma de: {}{todas}",
+        config::slugs_disponiveis()
+    )
 }
 
 fn caminho_db_padrao(slug: &str) -> PathBuf {
@@ -553,5 +749,152 @@ fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
             correcoes::Ocorrencia::Aplicada(_) => println!("Correção conhecida: {o}"),
             correcoes::Ocorrencia::Divergente { .. } => eprintln!("{o}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slugs(alvos: &Alvos) -> Vec<&'static str> {
+        alvos.itens.iter().map(|(cfg, _)| cfg.slug).collect()
+    }
+
+    fn quina() -> &'static config::LoteriaConfig {
+        config::buscar("quina").expect("quina configurada")
+    }
+
+    fn megasena() -> &'static config::LoteriaConfig {
+        config::buscar("megasena").expect("megasena configurada")
+    }
+
+    #[test]
+    fn resolver_alvos_recusa_db_com_todas() {
+        let erro = resolver_alvos("todas", Some(PathBuf::from("x.db")), None)
+            .err()
+            .expect("--db com todas é recusado");
+        assert!(erro.to_string().contains("--db"), "{erro}");
+    }
+
+    #[test]
+    fn resolver_alvos_recusa_seletor_com_todas() {
+        let erro = resolver_alvos("TODAS", None, Some("#botao"))
+            .err()
+            .expect("--seletor com todas é recusado");
+        assert!(erro.to_string().contains("--seletor"), "{erro}");
+    }
+
+    #[test]
+    fn resolver_alvos_slug_unico_usa_db_e_aceita_seletor() {
+        let caminho = PathBuf::from("outro/quina.db");
+        let alvos = resolver_alvos("quina", Some(caminho.clone()), Some("#botao"))
+            .expect("slug único aceita --db e --seletor");
+        assert!(!alvos.multiplas);
+        assert_eq!(slugs(&alvos), ["quina"]);
+        assert_eq!(alvos.itens[0].1, caminho);
+    }
+
+    #[test]
+    fn resolver_alvos_slug_unico_sem_db_usa_padrao() {
+        let alvos = resolver_alvos("MegaSena", None, None).expect("slug conhecido");
+        assert!(!alvos.multiplas);
+        assert_eq!(slugs(&alvos), ["megasena"]);
+        assert_eq!(alvos.itens[0].1, PathBuf::from("resultados_megasena.db"));
+    }
+
+    #[test]
+    fn resolver_alvos_todas_devolve_caminhos_padrao_na_ordem() {
+        let alvos = resolver_alvos("todas", None, None).expect("todas é aceito");
+        assert!(alvos.multiplas);
+        let esperado: Vec<&str> = config::LOTERIAS.iter().map(|l| l.slug).collect();
+        assert_eq!(slugs(&alvos), esperado);
+        let caminhos: Vec<PathBuf> = alvos.itens.iter().map(|(_, p)| p.clone()).collect();
+        assert_eq!(
+            caminhos,
+            [
+                PathBuf::from("resultados_lotofacil.db"),
+                PathBuf::from("resultados_megasena.db"),
+                PathBuf::from("resultados_quina.db"),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolver_alvos_desconhecida_da_erro() {
+        let erro = resolver_alvos("timemania", None, None)
+            .err()
+            .expect("slug desconhecido");
+        assert!(erro.to_string().contains("loteria desconhecida"), "{erro}");
+    }
+
+    #[test]
+    fn execucao_slug_unico_devolve_o_erro_em_registrar() {
+        let mut execucao = Execucao::nova(false);
+        assert!(execucao.registrar(quina(), Ok(())).is_ok());
+        let erro = execucao
+            .registrar(quina(), Err(anyhow::anyhow!("falha original")))
+            .expect_err("slug único propaga o erro");
+        assert_eq!(erro.to_string(), "falha original");
+        assert!(execucao.concluir().is_ok());
+    }
+
+    #[test]
+    fn execucao_todas_segue_adiante_e_concluir_lista_quem_falhou() {
+        let mut execucao = Execucao::nova(true);
+        assert!(execucao
+            .registrar(megasena(), Err(anyhow::anyhow!("sem rede")))
+            .is_ok());
+        assert!(execucao.registrar(quina(), Ok(())).is_ok());
+        let erro = execucao
+            .concluir()
+            .expect_err("alguma falhou: concluir dá erro");
+        let texto = erro.to_string();
+        assert!(texto.contains("1 de 2"), "{texto}");
+        assert!(texto.contains("megasena"), "{texto}");
+        assert!(!texto.contains("quina"), "{texto}");
+    }
+
+    #[test]
+    fn execucao_todas_sem_falhas_conclui_ok() {
+        let mut execucao = Execucao::nova(true);
+        for cfg in config::LOTERIAS {
+            assert!(execucao.registrar(cfg, Ok(())).is_ok());
+        }
+        assert!(execucao.concluir().is_ok());
+    }
+
+    #[test]
+    fn buscar_config_unica_recusa_todas() {
+        let erro = buscar_config_unica("todas", "importar", "o arquivo é de uma loteria só")
+            .expect_err("todas é recusado");
+        let texto = erro.to_string();
+        assert!(texto.contains("importar"), "{texto}");
+        assert!(texto.contains("o arquivo é de uma loteria só"), "{texto}");
+        assert_eq!(
+            buscar_config_unica("quina", "importar", "-")
+                .expect("slug único")
+                .slug,
+            "quina"
+        );
+    }
+
+    #[test]
+    fn listar_banco_inexistente_da_erro_sem_criar_arquivo() {
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let caminho = std::env::temp_dir().join(format!(
+            "rust_spider_listar_{}_{unico}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&caminho);
+
+        let erro = listar(quina(), &caminho).expect_err("banco inexistente dá erro");
+        let existe = caminho.exists();
+        let _ = std::fs::remove_file(&caminho);
+
+        assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
+        assert!(!existe, "listar não deve criar {}", caminho.display());
     }
 }

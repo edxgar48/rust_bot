@@ -75,7 +75,21 @@ cargo run --bin sync -- validar lotofacil
 # lista os concursos que faltam e fecha um deles à mão
 cargo run --bin sync -- buracos lotofacil
 cargo run --bin sync -- inserir lotofacil 3793 --data 2026-09-30 --dezenas 1,2,3,...
+
+# `todas` no lugar do slug percorre todas as loterias configuradas
+cargo run --bin sync -- validar todas
+cargo run --bin sync -- atualizar todas
 ```
+
+`todas` vale em `baixar`, `atualizar`, `validar` e `buracos`, na ordem de
+`LOTERIAS` em `config.rs`. Os bancos não são juntados: o comando roda em cada
+banco padrão, um por vez (por isso `--db` e `--seletor` não podem ser
+combinados com `todas`). Uma loteria que falha não interrompe as demais: no
+fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
+alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
+padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
+`inserir` e `listar` aceitam só uma loteria. `listar`, `validar` e `buracos`
+falham com "banco não encontrado" em vez de criar um banco vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
 banco daquela loteria: se não houver novidade, não grava nada; se o salto for

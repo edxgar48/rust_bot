@@ -11,8 +11,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 0.1 Faixa de dezenas e layout do volante no `LoteriaConfig`
 - [x] 0.2 Comando `validar <loteria>`
 - [x] 0.3 Validação aplicada ao gravar (`importar`, `baixar`, `atualizar`)
-- [ ] 0.4 Testes do parser com fixtures
-- [ ] 0.5 `todas` no lugar do slug
+- [x] 0.4 Testes do parser com fixtures
+- [x] 0.5 `todas` no lugar do slug
 - [ ] 0.6 Textos da CLI sem ".htm"
 - [x] 0.7 Fechar buracos à mão (`buracos`, `inserir`) com cache de inserções manuais
 
@@ -161,3 +161,47 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   no cache; (BAIXA) `.gitattributes` com `cache/*.json text eol=lf`. Mantido de propósito:
   `inserir` aceita concurso acima do maior do banco (só avisa o buraco que cria).
   Gate: fmt ok, clippy ok, 63 testes.
+- 2026-10-03 — 0.4: fixtures em `tests/fixtures/` (concursos 1–5 reais de cada loteria + bordas,
+  ~50 KB), geradas por `tests/comum/mod.rs` imitando o XML que a Caixa publica (prefixo `x:`,
+  dimension só do cabeçalho, linhas sem `r=`, data como texto `DD/MM/AAAA`, números com zero à
+  esquerda lidos como `Float`). Regenerar: `cargo test --test parser -- --ignored gerar_fixtures`.
+  Testes de integração em `tests/parser.rs` e de `normalizar_data` em `src/parser.rs`. Produção
+  não mudou. Desvio: `[dev-dependencies] zip = "8.6"` (mesmo crate/versão que o calamine já usa).
+  Revisão: aprovada com ressalvas, sem ALTA; corrigidos em uma rodada (MÉDIA) teste de fixtures
+  compara o conteúdo descompactado, não o contêiner ZIP; (BAIXA) `tests/fixtures/*.xlsx binary`
+  no `.gitattributes`; (BAIXA) `#![allow(dead_code)]` em `tests/comum/mod.rs`.
+  Gate: fmt ok, clippy ok, 77 testes (1 ignorado: o gerador), `validar` sem problemas nos três bancos.
+  **Pendência (sem tarefa no plano):** fragilidades do parser, sem efeito nos dados atuais —
+  data em célula de data do Excel (`Data::DateTime`) faz a linha ser descartada em silêncio (teste
+  das bordas registra esse comportamento); `normalizar_data` não confere dígitos nem dia/mês
+  (a validação da 0.3 barra na gravação); `as_i64() as u32` trunca `Float` e dá a volta em negativo.
+- 2026-10-04 — 0.5: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): `todas` vale em `baixar`, `atualizar`, `listar`, `validar` e `buracos`,
+  percorrendo `config::LOTERIAS` na ordem do config; `importar` e `inserir` recusam `todas` com erro
+  claro (arquivo e dezenas são de uma loteria só). `--db` com `todas` é erro (um banco por loteria).
+  Uma loteria com falha não interrompe as demais; no fim, resumo por loteria e exit ≠ 0 se alguma
+  falhou. `listar todas` imprime um JSON por loteria (objeto `{slug: [...]}`), sem juntar bancos.
+- 2026-10-04 — 0.5 concluída. `config::TODAS`, `eh_todas`, `resolver` (src/config.rs) e, em
+  src/bin/sync.rs, `resolver_alvos` (devolve `Alvos { multiplas, itens }` e concentra as recusas),
+  `Execucao` (segue adiante por loteria, resumo, exit ≠ 0 se alguma falhou), `PorLoteria` (JSON de
+  `listar todas` na ordem do config), `buscar_config_unica` (importar/inserir recusam `todas`).
+  `baixar`/`atualizar` viraram funções async sem mudança de lógica. README atualizado.
+  Desvios: `--seletor` com `todas` também é erro; cabeçalho e resumo vão para o stdout (exceto em
+  `listar`, onde o stdout só tem o JSON), e o erro de cada loteria vai sempre para o stderr;
+  **mudança de comportamento:** `listar` com banco inexistente agora falha com "banco não encontrado"
+  em vez de criar um `.db` vazio (vale também para slug único). `listar todas` com falha parcial
+  deixa a loteria que falhou fora do objeto (`{}` se todas falharem), com exit 1; rever no
+  `exportar todas` da Fase 2 (o contrato pede null explícito para ausência).
+  Revisão: 1ª aprovada com ressalvas (2 MÉDIA: `listar` criava banco vazio, faltavam testes da
+  orquestração; 2 BAIXA), corrigidas numa rodada; 2ª aprovada com ressalvas, só 1 BAIXA.
+  Gate: fmt ok, clippy ok, 92 testes (71 lib + 11 sync + 10 parser, 1 ignorado), `validar todas`
+  sem problemas nos três bancos (exit 0).
+  **Pendência BAIXA:** o README não diz o que `listar todas` faz numa falha parcial (JSON
+  incompleto, exit 1). Pode entrar junto da 0.6, que também mexe nos textos da CLI.
+- 2026-10-04 — 0.5, decisão do usuário: `listar` não aceita `todas` (cada loteria tem seu banco;
+  um JSON com as três não tem uso). `listar` recusa `todas` via `buscar_config_unica`; saíram
+  `PorLoteria` e o parâmetro `Saida` de `Execucao` (cabeçalho e resumo sempre no stdout). Mantido:
+  `listar` com banco inexistente falha com "banco não encontrado". A pendência BAIXA acima deixa
+  de existir. PLANEJAMENTO.md (0.5) e README atualizados com os comandos em que `todas` vale.
+  `src/bin/sync.rs` voltou a LF, igual ao commitado. Gate: fmt ok, clippy ok, 92 testes
+  (71 lib + 11 sync + 10 parser, 1 ignorado).
