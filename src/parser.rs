@@ -99,3 +99,47 @@ pub(crate) fn normalizar_data(bruto: &str) -> Option<String> {
     }
     Some(format!("{ano}-{mes:0>2}-{dia:0>2}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normaliza_formato_da_caixa() {
+        assert_eq!(normalizar_data("29/09/2003").as_deref(), Some("2003-09-29"));
+        assert_eq!(normalizar_data("01/10/2026").as_deref(), Some("2026-10-01"));
+    }
+
+    #[test]
+    fn completa_dia_e_mes_com_zero() {
+        assert_eq!(normalizar_data("1/3/1996").as_deref(), Some("1996-03-01"));
+        assert_eq!(normalizar_data("9/12/1996").as_deref(), Some("1996-12-09"));
+    }
+
+    #[test]
+    fn ignora_espacos_nas_pontas() {
+        assert_eq!(
+            normalizar_data("  11/03/1996 \t").as_deref(),
+            Some("1996-03-11")
+        );
+    }
+
+    #[test]
+    fn rejeita_formatos_fora_do_padrao() {
+        for bruto in [
+            "",
+            "11/03",
+            "11/03/1996/1",
+            "1996-03-11",
+            "11/03/96",
+            "11/03/19960",
+            "/03/1996",
+            "11//1996",
+            "111/03/1996",
+            "11/003/1996",
+            "11/03/1996 00:00",
+        ] {
+            assert_eq!(normalizar_data(bruto), None, "{bruto:?}");
+        }
+    }
+}

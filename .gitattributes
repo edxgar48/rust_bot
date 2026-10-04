@@ -1,2 +1,4 @@
 # O cache de inserções manuais é gerado com LF; mantém os bytes iguais no checkout.
 cache/*.json text eol=lf
+# Planilhas de teste: nunca converter fim de linha (inclui corrompida.xlsx, que é texto).
+tests/fixtures/*.xlsx binary
