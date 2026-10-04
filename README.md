@@ -42,7 +42,9 @@ src/
 ├── config.rs      # por loteria: URL da página, seletor do botão, layout das colunas
 ├── downloader.rs  # Playwright: abre a página, clica no botão, captura o evento de download
 ├── parser.rs      # calamine: lê a planilha (.xlsx) e extrai os concursos
-├── db.rs          # rusqlite: schema e upsert por (loteria, concurso)
+├── db.rs          # rusqlite: schema, upsert por (loteria, concurso) e tabelas derivadas
+├── motor/         # features por dezena e janela (série temporal), puro: sem I/O nem SQL
+├── orquestracao.rs # `sync features`: validação + motor + gravação numa transação
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
 └── bin/sync.rs    # CLI (clap) que orquestra tudo
@@ -76,6 +78,10 @@ cargo run --bin sync -- validar lotofacil
 cargo run --bin sync -- buracos lotofacil
 cargo run --bin sync -- inserir lotofacil 3793 --data 2026-09-30 --dezenas 1,2,3,...
 
+# calcula as features por dezena e janela e grava em `features_dezena`
+cargo run --bin sync -- features quina
+cargo run --bin sync -- features quina --completo   # ignora o estado salvo e recalcula do zero
+
 # `todas` no lugar do slug percorre todas as loterias configuradas
 cargo run --bin sync -- validar todas
 cargo run --bin sync -- atualizar todas
@@ -88,8 +94,9 @@ combinados com `todas`). Uma loteria que falha não interrompe as demais: no
 fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
 alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
 padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
-`inserir` e `listar` aceitam só uma loteria. `listar`, `validar` e `buracos`
-falham com "banco não encontrado" em vez de criar um banco vazio.
+`inserir`, `listar` e `features` aceitam só uma loteria. `listar`, `validar`,
+`buracos` e `features` falham com "banco não encontrado" em vez de criar um
+banco vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
 banco daquela loteria: se não houver novidade, não grava nada; se o salto for
@@ -105,6 +112,25 @@ concurso digitado à mão. Cada inserção também vai para
 sorteio): `importar`/`baixar` reaplicam essas entradas num banco recriado e,
 quando a planilha oficial passa a trazer o concurso, removem a entrada se for
 igual ou avisam se for diferente.
+
+`features` calcula, para cada concurso *t*, o snapshot de cada dezena em
+cada janela (10, 50, 100 e total, gravada como `janela = 0`) usando só os
+concursos até *t−1* (definições em `docs/PLANEJAMENTO.md`, "Especificação das
+features"), e grava na tabela `features_dezena` do próprio banco da loteria.
+Também grava o snapshot do próximo concurso, ainda não sorteado (último + 1,
+com `saiu` = `NULL`), que é substituído quando esse concurso entra no banco.
+O estado do cálculo fica em `motor_estado`: na execução seguinte só os
+concursos novos são processados. O cálculo recomeça do zero (apagando e
+recriando as linhas) quando não há estado salvo, quando a versão das fórmulas
+(`feature_version`) mudou, quando algum resultado já incorporado foi corrigido,
+quando `features_dezena` não bate com o estado ou com `--completo`. Antes de
+calcular roda a mesma validação do `validar`: havendo erro (buraco incluso), o
+comando recusa sem gravar nada e orienta usar `buracos`/`inserir`; datas fora de
+ordem são só avisos. Tudo é gravado numa única transação (tudo ou nada). No
+fim, imprime o modo (completo ou incremental, com o motivo), os concursos
+incorporados, as linhas gravadas e o próximo concurso. `features_dezena` e
+`motor_estado` são derivadas: podem ser apagadas e regeneradas a qualquer
+momento a partir de `resultados`.
 
 Por padrão cada loteria grava em um banco SQLite separado —
 `resultados_<loteria>.db` (ex.: `resultados_lotofacil.db`,

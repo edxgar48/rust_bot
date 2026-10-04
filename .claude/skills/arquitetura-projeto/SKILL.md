@@ -31,6 +31,8 @@ se o plano estiver errado, proponha a mudança no plano antes do código.
 bin/sync.rs (CLI, anyhow)        ← orquestra; sem regra de negócio
    │
    ├─ downloader, parser          ← coleta (I/O externo)
+   ├─ orquestracao                ← liga db + validacao + motor (ex.: sync features);
+   │                                 decide retomar ou regenerar; sem SQL
    ├─ validacao                   ← regras de integridade dos resultados
    ├─ motor/                      ← features e índice: funções puras sobre &[Resultado]
    ├─ avaliacao/                  ← métricas e baselines: funções puras
@@ -41,6 +43,9 @@ config, model, error             ← compartilhados, sem dependências internas
 
 - `motor/` e `avaliacao/` **não** fazem I/O nem SQL: recebem dados, devolvem structs.
 - Só `db.rs` (ou `db/`) contém SQL.
+- Fluxos que juntam banco, validação e motor ficam em `orquestracao`, na
+  biblioteca (testável com banco em memória); a CLI só abre o banco, chama
+  e imprime.
 - `config.rs` concentra o que é específico de cada loteria; nada de `match slug` espalhado.
 - Adicionar loteria = adicionar um `LoteriaConfig`, sem tocar no motor.
 

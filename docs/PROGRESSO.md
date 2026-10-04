@@ -19,7 +19,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1a — Features · `engenheiro-motor`
 
 - [x] 1a.1 Estado incremental por dezena e janela (`src/motor/`)
-- [ ] 1a.2 Tabela `features_dezena` + `motor_estado` + comando `sync features`
+- [x] 1a.2 Tabela `features_dezena` + `motor_estado` + comando `sync features`
 - [ ] 1a.3 Testes: golden, vazamento, incremental = completo
 
 ## Fase 1b — Índice de força · `engenheiro-motor`
@@ -246,3 +246,40 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   incorporado (guardar impressão dos resultados ou regenerar do zero); gravar `feature_version` a
   partir do estado. Opcional: reexport em `lib.rs`. Lacunas para a 1a.3: corte k=0/k=n no
   incremental = completo, vazamento na Lotofácil.
+- 2026-10-04 — 1a.2: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): (1) o snapshot de *t* = último + 1 é **gravado** em `features_dezena`
+  com `saiu = NULL` e substituído quando o concurso entra (assim `indice` e `exportar` leem tudo
+  da tabela; o dataset da 1.5.1 filtra `saiu IS NOT NULL`); (2) `motor_estado` guarda uma linha
+  com o `EstadoMotor` serializado em JSON, `feature_version`, último concurso incorporado e uma
+  impressão determinística dos resultados incorporados; impressão divergente (resultado corrigido
+  abaixo do último) ou `feature_version` diferente → regenera do zero; (3) `sync features` aceita
+  uma loteria só (o plano, 0.5, não lista `features` entre os comandos com `todas`); (4) recusa
+  rodar se `validar` apontar erro (buraco incluso), sem gravar nada.
+- 2026-10-04 — 1a.2 concluída. `src/orquestracao.rs` (novo, na lib: `sincronizar_features`, sem SQL),
+  `src/db.rs` (`listar_crescente`, funções de `features_dezena`/`motor_estado`, `iniciar_escrita` com
+  BEGIN IMMEDIATE, INSERT em blocos de 64), `src/error.rs` (`ResultadosReprovados`, `SemResultados`),
+  subcomando `features <loteria> [--db] [--completo]` em `src/bin/sync.rs`, README, `tests/features.rs`.
+  Schema: `features_dezena` WITHOUT ROWID com as colunas do plano (`frequencia`, `repeticoes_total`,
+  `repeticao_atual` NOT NULL; demais features e `saiu` aceitam NULL); `motor_estado(id=1, loteria,
+  feature_version, ultimo_concurso, impressao "fnv1a64:<qtd>:<hex>", estado JSON)`. Regenera do zero
+  quando: sem estado, versão diferente, JSON ilegível, incompatível, impressão dos resultados ≤ último
+  mudou, contagem de linhas de features incoerente, ou `--completo`. Tudo numa transação; recusa e
+  banco vazio não gravam nem criam tabelas. Desvios aceitos pela revisão: módulo `orquestracao` fora do
+  diagrama de camadas; regeneração por contagem incoerente (COUNT(*) por execução); impressão FNV-1a
+  própria (sem crate), inclui a data e ignora a ordem das dezenas; `rust-version = "1.88"` no
+  Cargo.toml (`as_chunks`). Medição release (cópias): Quina 2.282.880 linhas ~1,7 s completo, ~0,16 s
+  sem novidade; Mega-Sena 735.840 ~0,6 s; Lotofácil 379.600 ~0,45 s. Completo = incremental em lotes
+  byte a byte nas três loterias. Os bancos reais ainda não receberam `sync features`.
+  Revisão: aprovada com ressalvas, sem ALTA; verificador-vazamento: sem vazamento. Corrigidos 2 BAIXA
+  (NOT NULL nas três colunas, `rust-version`). Gate: fmt ok, clippy ok, 184 testes (113 lib + 13 sync
+  + 48 features + 10 parser, 1 ignorado), `validar todas` ok.
+  **Pendências:** (MÉDIA) PLANEJAMENTO.md:54 e :156 ainda dizem "fica para a 1a.2" e `motor_estado(...)`
+  — atualizar com a decisão acima, após aprovação do usuário; (BAIXA) incluir `orquestracao` no
+  diagrama de camadas da skill `arquitetura-projeto`; para a 1a.3: teste de remoção de resultado no
+  prefixo incorporado e teste de vazamento no nível do banco.
+- 2026-10-04 — 1a.2, decisões confirmadas pelo usuário: snapshot de último + 1 gravado em
+  `features_dezena` com `saiu` = `NULL` (datasets filtram `saiu IS NOT NULL`); `sync features` só
+  com uma loteria; impressão inclui a data (corrigir só a data regenera tudo). PLANEJAMENTO.md
+  atualizado (Convenções e esquema de `motor_estado`) e `orquestracao` incluído no diagrama de
+  camadas da skill `arquitetura-projeto`, com aprovação do usuário. As duas pendências (MÉDIA e
+  BAIXA) acima estão resolvidas; seguem para a 1a.3 os dois testes sugeridos pela revisão.

@@ -56,6 +56,18 @@ pub enum SpiderError {
     )]
     MotorEstadoIncompativel(String),
 
+    /// `sync features` só roda sobre um histórico que passa no `validar`
+    /// (buraco incluso). Os problemas vão junto para a CLI imprimir.
+    #[error("{loteria}: {} erro(s) de integridade nos resultados — nada foi calculado nem gravado; confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`", erros.len())]
+    ResultadosReprovados {
+        loteria: String,
+        erros: Vec<crate::validacao::Problema>,
+        avisos: Vec<crate::validacao::Problema>,
+    },
+
+    #[error("nenhum concurso de `{0}` no banco — rode `sync baixar` ou `sync importar` antes")]
+    SemResultados(String),
+
     #[error("erro de banco de dados: {0}")]
     Db(#[from] rusqlite::Error),
 }

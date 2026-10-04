@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use rust_spider::{config, correcoes, db, downloader, manuais, parser, validacao};
+use rust_spider::{
+    config, correcoes, db, downloader, manuais, orquestracao, parser, validacao, SpiderError,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -117,6 +119,19 @@ enum Comando {
         #[arg(long, default_value = "cache")]
         cache: PathBuf,
     },
+    /// Calcula as features de cada dezena e janela (série temporal) e grava em
+    /// `features_dezena`, retomando do último concurso já calculado. Recusa
+    /// rodar se o `validar` apontar erro (buraco incluso).
+    Features {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Ignora o estado salvo e recalcula todas as features do zero
+        #[arg(long)]
+        completo: bool,
+    },
 }
 
 /// Quantos problemas imprimir antes de resumir o restante numa contagem.
@@ -213,6 +228,19 @@ async fn main() -> anyhow::Result<()> {
                 dezenas: manuais::parsear_dezenas(&dezenas)?,
             };
             inserir_manual(cfg, entrada, &db_caminho, &cache)?;
+        }
+        Comando::Features {
+            loteria,
+            db,
+            completo,
+        } => {
+            let cfg = buscar_config_unica(
+                &loteria,
+                "features",
+                "calcule uma loteria por vez (cada uma tem seu banco)",
+            )?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            calcular_features(cfg, &db_caminho, completo)?;
         }
     }
 
@@ -532,8 +560,7 @@ fn carregar_existentes(
 }
 
 /// Para comandos que só fazem sentido com uma loteria (`importar`, `inserir`,
-/// `listar`):
-/// recusa `todas` explicando o porquê.
+/// `listar`, `features`): recusa `todas` explicando o porquê.
 fn buscar_config_unica(
     loteria: &str,
     comando: &str,
@@ -743,6 +770,70 @@ fn inserir_manual(
     Ok(())
 }
 
+/// `sync features`: valida, calcula e grava (tudo em `orquestracao`) e
+/// imprime o resumo. Banco inexistente é erro, sem criar arquivo.
+fn calcular_features(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    completo: bool,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let mut conn = db::abrir(db_caminho)?;
+    println!(
+        "Calculando features de {} em {}...",
+        cfg.nome_exibicao,
+        db_caminho.display()
+    );
+    let inicio = std::time::Instant::now();
+    let resumo = match orquestracao::sincronizar_features(&mut conn, cfg, completo) {
+        Ok(resumo) => resumo,
+        Err(SpiderError::ResultadosReprovados {
+            loteria,
+            erros,
+            avisos,
+        }) => {
+            imprimir_problemas("aviso(s)", &avisos, Saida::Erro);
+            imprimir_problemas("erro(s)", &erros, Saida::Erro);
+            if erros
+                .iter()
+                .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
+            {
+                imprimir_dica_buracos(cfg);
+            }
+            anyhow::bail!(SpiderError::ResultadosReprovados {
+                loteria,
+                erros,
+                avisos,
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let duracao = inicio.elapsed();
+
+    imprimir_problemas("aviso(s)", &resumo.avisos, Saida::Padrao);
+    println!("Modo: {}.", resumo.modo);
+    println!(
+        "{} concurso(s) incorporado(s); {} linha(s) gravada(s) em features_dezena.",
+        resumo.concursos_incorporados, resumo.linhas_gravadas
+    );
+    if resumo.concursos_incorporados == 0 {
+        println!(
+            "Já estava em dia até o concurso {}.",
+            resumo.ultimo_concurso
+        );
+    }
+    println!(
+        "Último concurso: {}; snapshot do próximo ({}) em features_dezena com \
+         saiu = NULL. Tempo: {:.2} s.",
+        resumo.ultimo_concurso,
+        resumo.proximo_concurso,
+        duracao.as_secs_f64()
+    );
+    Ok(())
+}
+
 fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
     for o in ocorrencias {
         match o {
@@ -896,5 +987,36 @@ mod tests {
 
         assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
         assert!(!existe, "listar não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn features_banco_inexistente_da_erro_sem_criar_arquivo() {
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let caminho = std::env::temp_dir().join(format!(
+            "rust_spider_features_{}_{unico}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&caminho);
+
+        let erro = calcular_features(quina(), &caminho, false).expect_err("banco inexistente");
+        let existe = caminho.exists();
+        let _ = std::fs::remove_file(&caminho);
+
+        assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
+        assert!(!existe, "features não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn features_recusa_todas() {
+        let erro = buscar_config_unica(
+            "todas",
+            "features",
+            "calcule uma loteria por vez (cada uma tem seu banco)",
+        )
+        .expect_err("todas é recusado");
+        assert!(erro.to_string().contains("features"), "{erro}");
     }
 }

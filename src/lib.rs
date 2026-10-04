@@ -6,6 +6,7 @@ pub mod error;
 pub mod manuais;
 pub mod model;
 pub mod motor;
+pub mod orquestracao;
 pub mod parser;
 pub mod validacao;
 

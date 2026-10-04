@@ -50,8 +50,10 @@ futuro ou de sobreajuste.
 - A janela "total" é gravada como `janela = 0` (constante no código).
 - Além dos concursos já sorteados, o motor calcula o snapshot de
   *t* = último concurso + 1 (estado atual, antes do próximo sorteio), com
-  `saiu` = `NULL`. É ele que alimenta a tabela geral do app; se é gravado
-  em `features_dezena` ou calculado na hora fica para a 1a.2.
+  `saiu` = `NULL`. É ele que alimenta a tabela geral do app. Esse snapshot
+  é **gravado** em `features_dezena` e substituído (com `saiu` preenchido)
+  quando o resultado chega; quem monta datasets filtra `saiu IS NOT NULL`
+  (decisão de 2026-10-04).
 - **Espaço** entre duas aparições consecutivas *a* e *b* = `b − a − 1`
   (0 quando saiu em concursos seguidos).
 
@@ -153,8 +155,19 @@ indice(
 
 perfis(nome, versao, hash_toml, criado_em)
 
-motor_estado(...)   -- estado incremental para retomar do último concurso
+motor_estado(        -- uma linha só (id = 1): estado para retomar do último concurso
+    id, loteria, feature_version, ultimo_concurso,
+    impressao,       -- hash dos resultados já incorporados (concurso, data e dezenas)
+    estado           -- EstadoMotor em JSON
+)
 ```
+
+`sync features <loteria>` (só uma loteria; não aceita `todas`) retoma de
+`motor_estado` e calcula só os concursos novos. Regenera tudo do zero se não
+houver estado, se a `feature_version` mudou, se o estado não confere com a
+loteria ou com `features_dezena`, ou se um resultado já incorporado mudou —
+inclusive só a data, porque a impressão inclui a data. Tudo é gravado numa
+única transação (decisões de 2026-10-04).
 
 Formato longo (janela como coluna): adicionar uma janela não muda o schema.
 Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
