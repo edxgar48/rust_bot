@@ -43,6 +43,15 @@ futuro ou de sobreajuste.
 - O snapshot do concurso *t* usa **apenas** os concursos até *t−1*.
 - Janelas: **10, 50, 100 e total**. Para uma janela de tamanho *J*,
   consideram-se as aparições da dezena nos concursos *t−J* … *t−1*.
+  A janela conta pelo **número do concurso**; por isso o motor exige
+  numeração contínua e devolve erro se o histórico tiver buraco (e
+  `sync features` recusa rodar enquanto o `validar` apontar buraco)
+  (decisão de 2026-10-04).
+- A janela "total" é gravada como `janela = 0` (constante no código).
+- Além dos concursos já sorteados, o motor calcula o snapshot de
+  *t* = último concurso + 1 (estado atual, antes do próximo sorteio), com
+  `saiu` = `NULL`. É ele que alimenta a tabela geral do app; se é gravado
+  em `features_dezena` ou calculado na hora fica para a 1a.2.
 - **Espaço** entre duas aparições consecutivas *a* e *b* = `b − a − 1`
   (0 quando saiu em concursos seguidos).
 
@@ -58,8 +67,8 @@ futuro ou de sobreajuste.
 | `soma_variacoes` | Σ \|espaçoᵢ − espaçoᵢ₋₁\| entre espaços seguidos |
 | `espaco_final` | (t−1) − última aparição; não é limitado pela janela |
 | `repeticoes_total` | vezes em que saiu em dois concursos seguidos, dentro da janela |
-| `repeticao_atual` | sequência corrente de concursos seguidos em que saiu (0 se não saiu em *t−1*) |
-| `saiu` | alvo: 1 se saiu no concurso *t*, senão 0 |
+| `repeticao_atual` | sequência corrente de concursos seguidos em que saiu (0 se não saiu em *t−1*); limitada pela janela (no máximo *J*) |
+| `saiu` | alvo: 1 se saiu no concurso *t*, senão 0; `NULL` no snapshot do próximo concurso, ainda não sorteado |
 
 ### Exemplo de referência (teste golden)
 
@@ -77,6 +86,10 @@ Dezena sai nos concursos 3, 4, 8, 9, 10, 15. Snapshot em *t* = 20, janela total:
 
 - Menos de 2 aparições na janela → sem espaços: colunas de espaço = `NULL`.
 - Menos de 3 aparições → sem variações: `soma_variacoes` = `NULL`.
+- Dezena que nunca saiu antes de *t* → `espaco_final` = `NULL` (só nos
+  primeiros concursos de cada loteria).
+- Sequência maior que a janela → `repeticao_atual` = *J* (ex.: saiu nos
+  últimos 12 concursos, janela de 10 → 10).
 - Na normalização do índice, `NULL` vira valor neutro (0 em z-score = média).
 - Isso será frequente na janela de 10 da Mega-Sena e da Quina.
 - Colinearidade: quando `menor_espaco = 0`, `menor_espaco_ocorrencias` é igual
