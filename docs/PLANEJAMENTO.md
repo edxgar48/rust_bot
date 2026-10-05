@@ -297,7 +297,16 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   (*p* − saiu)².
 - **Incerteza**: erro padrão e intervalo de 95% da diferença perfil − acaso,
   calculada **por concurso** (as dezenas de um mesmo concurso não são
-  independentes).
+  independentes). Erro padrão = desvio amostral (÷(T−1)) / √T; intervalo
+  normal (±1,96·EP); com menos de 2 concursos, ambos vazios. O Brier usa a
+  probabilidade sem o limite de [1e-15, 1 − 1e-15], que vale só no log loss
+  (decisões de 2026-10-05).
+- **Ressalva do intervalo** (decisão de 2026-10-05): como a calibração é
+  acumulada, as diferenças de concursos vizinhos são correlacionadas e o
+  intervalo normal tende a sair **estreito demais** (otimista). Ele serve
+  como resumo; o veredito "supera o acaso" da 1c.5 usa um teste robusto à
+  correlação serial (bootstrap por blocos de concursos seguidos ou teste de
+  permutação).
 - **Escopo da 1c.1**: só funções puras em `src/avaliacao/` (taxa do acaso do
   `LoteriaConfig`, calibração, log loss, Brier, resumo), com testes contra
   valores calculados à mão. Leitura do banco e comando ficam na 1c.5; o
@@ -385,3 +394,11 @@ com o planejamento do front-end.
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
   CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
   automatizado.
+- 2026-10-05 — 1c.1, decisões do usuário: confirmadas as 5 escolhas do implementador (EP amostral ÷(T−1),
+  IC normal, Brier sem o limite, buraco e série vazia são erro, corte aplicado antes de validar) e
+  registradas no PLANEJAMENTO.md (1c), junto com a ressalva do intervalo (otimista por correlação serial;
+  1c.5 usa teste robusto). Achado baixo do verificador-vazamento coberto: novo teste
+  `metricas_com_corte_menor_sao_prefixo_das_com_corte_maior` (3 loterias, cortes 2, 3, 40, 79 e 80,
+  inclusive o snapshot); conferido com mutante (métrica dependente do tamanho do trecho até o corte),
+  que ele pega. Pendências para 1c.3/1c.5: passar sempre o corte fixo da loteria (nunca `u32::MAX` em
+  produção); concursos faltando no banco são erro na calibração.
