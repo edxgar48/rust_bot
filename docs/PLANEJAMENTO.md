@@ -111,6 +111,26 @@ Dezena sai nos concursos 3, 4, 8, 9, 10, 15. Snapshot em *t* = 20, janela total:
 - **Variação de posição**: posições ganhas/perdidas em relação ao concurso
   anterior.
 
+Regras do cálculo (decisões de 2026-10-04):
+
+- **z-score** com desvio padrão **populacional** (÷N): as dezenas do
+  concurso são o conjunto inteiro, não uma amostra.
+- **`NULL`**: média, desvio, mínimo e máximo usam só as dezenas com valor;
+  depois o `NULL` recebe o neutro — **0** no z-score (a média) e **0,5** no
+  minmax (o meio da escala).
+- **Componente sem variação** no concurso (desvio 0, máximo = mínimo, ou
+  `NULL` em todas as dezenas): todas recebem o neutro, sem divisão por zero;
+  o componente não pesa naquele concurso.
+- **Soma em ordem fixa**: a dos 9 componentes do perfil (`Pesos::componentes`).
+- **Empate**: o total é arredondado (1e-9) antes de ordenar, para diferenças
+  de arredondamento do `f64` não trocarem posições; depois, menor dezena à
+  frente.
+- **Variação de posição** = posição anterior − posição atual (positivo =
+  subiu). No primeiro concurso do índice, sem anterior, é `NULL`.
+- **Concursos cobertos**: todos os de `features_dezena`, inclusive o
+  snapshot do último + 1 (o da tabela geral do app), com a variação medida
+  contra o último concurso.
+
 ### Perfil de pesos
 
 ```toml
