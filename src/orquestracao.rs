@@ -16,12 +16,16 @@
 //!   ou tabela de features incoerente com o estado → regenera do zero;
 //! - features, troca do snapshot do próximo concurso e `motor_estado` são
 //!   gravados numa única transação: tudo ou nada.
+//!
+//! Também registra perfis de pesos na tabela `perfis` ([`registrar_perfil`]),
+//! com a regra de imutabilidade do plano.
 
 use crate::config::LoteriaConfig;
-use crate::db::{self, MotorEstadoSalvo};
+use crate::db::{self, MotorEstadoSalvo, PerfilRegistrado};
 use crate::error::{Result, SpiderError};
 use crate::model::Resultado;
 use crate::motor::{EstadoMotor, FEATURE_VERSION, JANELAS};
+use crate::perfil::PerfilCarregado;
 use crate::validacao::{self, Problema, Severidade};
 use rusqlite::Connection;
 use std::fmt;
@@ -319,6 +323,89 @@ pub fn impressao_resultados(resultados: &[Resultado]) -> String {
     format!("fnv1a64:{}:{hash:016x}", resultados.len())
 }
 
+// ---------------------------------------------------------------------------
+// Registro de perfis de pesos (`perfis`), usado pelo `sync indice` (1b.3).
+// ---------------------------------------------------------------------------
+
+/// O que [`registrar_perfil`] fez.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistroPerfil {
+    /// Primeira vez: a linha foi criada com o `criado_em` recebido.
+    Novo,
+    /// Já estava registrado com o mesmo hash: nada foi alterado.
+    JaRegistrado,
+}
+
+/// Registra o perfil na tabela `perfis` (criando a tabela se preciso),
+/// aplicando a imutabilidade do plano: mesmo `nome` e mesmo hash → nada muda
+/// (nem `criado_em`); mesmo `nome` com hash diferente → erro pedindo para
+/// subir a versão, sem tocar na linha existente.
+///
+/// `criado_em` vem de quem chama (a CLI lê o relógio), para esta função não
+/// depender do relógio e ser testável; só é gravado no primeiro registro.
+///
+/// Recebe `&Connection` para poder rodar dentro da transação de quem grava o
+/// índice (`db::iniciar_escrita`): assim conferir e inserir é atômico junto
+/// com o índice. Mesmo fora de transação, `db::inserir_perfil` é um `INSERT`
+/// simples: uma corrida faz o segundo falhar na chave, nunca sobrescreve.
+///
+/// O perfil tem de ser da loteria do banco (um banco por loteria).
+pub fn registrar_perfil(
+    conn: &Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    criado_em: &str,
+) -> Result<RegistroPerfil> {
+    let perfil = &carregado.perfil;
+    if perfil.loteria != cfg.slug {
+        return Err(SpiderError::PerfilDeOutraLoteria {
+            nome: perfil.nome.clone(),
+            loteria_perfil: perfil.loteria.clone(),
+            loteria_banco: cfg.slug.to_string(),
+        });
+    }
+
+    db::criar_tabela_perfis(conn)?;
+    match db::buscar_perfil(conn, &perfil.nome)? {
+        Some(registrado) if registrado.hash_toml == carregado.hash_toml => {
+            Ok(RegistroPerfil::JaRegistrado)
+        }
+        Some(registrado) => {
+            // Não sugere versão que já tem arquivo ao lado ou já está no banco.
+            let (proximo_nome, proxima_versao) = perfil.proxima_versao(|nome| {
+                carregado
+                    .origem
+                    .with_file_name(format!("{nome}.toml"))
+                    .exists()
+                    || matches!(db::buscar_perfil(conn, nome), Ok(Some(_)))
+            });
+            Err(SpiderError::PerfilAlterado {
+                nome: perfil.nome.clone(),
+                hash_registrado: registrado.hash_toml,
+                hash_arquivo: carregado.hash_toml.clone(),
+                proximo_nome,
+                proxima_versao,
+            })
+        }
+        None => {
+            db::inserir_perfil(
+                conn,
+                &PerfilRegistrado {
+                    nome: perfil.nome.clone(),
+                    versao: perfil.versao,
+                    loteria: perfil.loteria.clone(),
+                    janela: perfil.janela,
+                    normalizacao: perfil.normalizacao.como_str().to_string(),
+                    hash_toml: carregado.hash_toml.clone(),
+                    toml: carregado.toml.clone(),
+                    criado_em: criado_em.to_string(),
+                },
+            )?;
+            Ok(RegistroPerfil::Novo)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,5 +461,166 @@ mod tests {
         let a = impressao_resultados(&[r(1, "2", &[3])]);
         let b = impressao_resultados(&[r(12, "", &[3])]);
         assert_ne!(a, b);
+    }
+
+    // --- registrar_perfil -------------------------------------------------
+
+    const PERFIL: &str = r#"nome = "teste_v1"
+versao = 1
+loteria = "quina"
+janela = 10
+normalizacao = "minmax"
+
+[pesos]
+frequencia = 1.0
+maior_espaco = 1.0
+maior_espaco_ocorrencias = 0.3
+menor_espaco = 0.5
+menor_espaco_ocorrencias = 0.3
+soma_variacoes = -0.8
+espaco_final = 1.2
+repeticoes_total = 0.7
+repeticao_atual = 0.4
+"#;
+
+    fn carregado(texto: &str) -> PerfilCarregado {
+        crate::perfil::interpretar(texto, std::path::Path::new("perfis/quina/teste_v1.toml"))
+            .expect("perfil válido")
+    }
+
+    fn quina() -> &'static LoteriaConfig {
+        crate::config::buscar("quina").expect("quina")
+    }
+
+    fn banco() -> Connection {
+        db::abrir(std::path::Path::new(":memory:")).expect("banco em memória")
+    }
+
+    #[test]
+    fn registrar_perfil_cria_a_linha_com_todos_os_campos() {
+        let conn = banco();
+        let p = carregado(PERFIL);
+        assert_eq!(
+            registrar_perfil(&conn, quina(), &p, "2026-10-04T10:00:00Z").expect("registra"),
+            RegistroPerfil::Novo
+        );
+        assert_eq!(
+            db::buscar_perfil(&conn, "teste_v1").expect("busca"),
+            Some(PerfilRegistrado {
+                nome: "teste_v1".to_string(),
+                versao: 1,
+                loteria: "quina".to_string(),
+                janela: 10,
+                normalizacao: "minmax".to_string(),
+                hash_toml: crate::perfil::hash_toml(PERFIL),
+                toml: PERFIL.to_string(),
+                criado_em: "2026-10-04T10:00:00Z".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn registrar_de_novo_e_idempotente_e_preserva_criado_em() {
+        let conn = banco();
+        registrar_perfil(&conn, quina(), &carregado(PERFIL), "2026-10-04T10:00:00Z")
+            .expect("registra");
+        let antes = db::buscar_perfil(&conn, "teste_v1").expect("busca");
+        // Mesmo conteúdo, até com CRLF (mesmo hash), em outro momento.
+        let crlf = carregado(&PERFIL.replace('\n', "\r\n"));
+        assert_eq!(
+            registrar_perfil(&conn, quina(), &crlf, "2030-01-01T00:00:00Z").expect("de novo"),
+            RegistroPerfil::JaRegistrado
+        );
+        assert_eq!(db::buscar_perfil(&conn, "teste_v1").expect("busca"), antes);
+    }
+
+    #[test]
+    fn mesmo_nome_com_hash_diferente_e_erro_e_nao_altera_a_linha() {
+        let conn = banco();
+        registrar_perfil(&conn, quina(), &carregado(PERFIL), "2026-10-04T10:00:00Z")
+            .expect("registra");
+        let antes = db::buscar_perfil(&conn, "teste_v1").expect("busca");
+        let editado = carregado(&PERFIL.replace("frequencia = 1.0", "frequencia = 2.0"));
+        match registrar_perfil(&conn, quina(), &editado, "2026-10-05T10:00:00Z") {
+            Err(SpiderError::PerfilAlterado {
+                nome,
+                hash_registrado,
+                hash_arquivo,
+                proximo_nome,
+                proxima_versao,
+            }) => {
+                assert_eq!(nome, "teste_v1");
+                assert_eq!(hash_registrado, crate::perfil::hash_toml(PERFIL));
+                assert_eq!(hash_arquivo, editado.hash_toml);
+                assert_eq!(proximo_nome, "teste_v2");
+                assert_eq!(proxima_versao, 2);
+            }
+            outro => panic!("esperava PerfilAlterado, veio {outro:?}"),
+        }
+        assert_eq!(db::buscar_perfil(&conn, "teste_v1").expect("busca"), antes);
+    }
+
+    #[test]
+    fn sugestao_de_versao_pula_registradas_e_arquivos_existentes() {
+        // teste_v2 já registrado no banco; teste_v3.toml existe na pasta.
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("relógio")
+            .as_nanos();
+        let pasta = std::env::temp_dir().join(format!("rust_spider_perfis_{unico}"));
+        std::fs::create_dir_all(&pasta).expect("cria pasta");
+        std::fs::write(pasta.join("teste_v3.toml"), "").expect("cria teste_v3.toml");
+
+        let conn = banco();
+        let v2 = PERFIL
+            .replace("teste_v1", "teste_v2")
+            .replace("versao = 1", "versao = 2");
+        registrar_perfil(&conn, quina(), &carregado(&v2), "2026-10-04T10:00:00Z")
+            .expect("registra v2");
+        let em_disco = |texto: &str| {
+            crate::perfil::interpretar(texto, &pasta.join("teste_v1.toml")).expect("válido")
+        };
+        registrar_perfil(&conn, quina(), &em_disco(PERFIL), "2026-10-04T10:00:00Z")
+            .expect("registra v1");
+
+        let editado = em_disco(&PERFIL.replace("frequencia = 1.0", "frequencia = 2.0"));
+        let resultado = registrar_perfil(&conn, quina(), &editado, "2026-10-05T10:00:00Z");
+        std::fs::remove_dir_all(&pasta).ok();
+        match resultado {
+            Err(SpiderError::PerfilAlterado {
+                proximo_nome,
+                proxima_versao,
+                ..
+            }) => {
+                assert_eq!(proximo_nome, "teste_v4");
+                assert_eq!(proxima_versao, 4);
+            }
+            outro => panic!("esperava PerfilAlterado, veio {outro:?}"),
+        }
+    }
+
+    #[test]
+    fn perfil_de_outra_loteria_e_erro_e_nao_grava() {
+        let conn = banco();
+        let megasena = crate::config::buscar("megasena").expect("megasena");
+        assert!(matches!(
+            registrar_perfil(&conn, megasena, &carregado(PERFIL), "2026-10-04T10:00:00Z"),
+            Err(SpiderError::PerfilDeOutraLoteria { .. })
+        ));
+        db::criar_tabela_perfis(&conn).expect("cria");
+        assert_eq!(db::buscar_perfil(&conn, "teste_v1").expect("busca"), None);
+    }
+
+    #[test]
+    fn registrar_perfil_dentro_de_transacao_sem_commit_nao_grava() {
+        let mut conn = banco();
+        {
+            let tx = db::iniciar_escrita(&mut conn).expect("transação");
+            registrar_perfil(&tx, quina(), &carregado(PERFIL), "2026-10-04T10:00:00Z")
+                .expect("registra");
+            // Sem commit: rollback.
+        }
+        db::criar_tabela_perfis(&conn).expect("cria");
+        assert_eq!(db::buscar_perfil(&conn, "teste_v1").expect("busca"), None);
     }
 }

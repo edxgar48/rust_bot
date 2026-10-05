@@ -24,7 +24,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1b — Índice de força · `engenheiro-motor`
 
-- [ ] 1b.1 Leitura de perfis `.toml` (`perfis/`) + tabela `perfis`
+- [x] 1b.1 Leitura de perfis `.toml` (`perfis/`) + tabela `perfis`
 - [ ] 1b.2 Normalização, total, posição e variação de posição
 - [ ] 1b.3 Tabela `indice` + comando `sync indice`
 
@@ -311,3 +311,46 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   56 features + 10 parser, 1 ignorado).
 - 2026-10-04 — 1a.3, decisão do usuário: comportamento com resultado apagado registrado no
   PLANEJAMENTO.md (último concurso → regenera sem ele; abaixo do último → buraco, recusa sem gravar).
+- 2026-10-04 — 1b.1 não iniciada: o plano não define pontos que mudam o schema de `perfis` e o hash
+  gravado com cada índice. Perguntas devolvidas ao usuário: (1) o que é `versao` em
+  `perfis(nome, versao, hash_toml, criado_em)`; (2) onde ficam os arquivos e como se nomeia um perfil
+  por loteria (o exemplo tem `loteria` dentro e `nome` sem loteria); quais pesos usar em Mega-Sena e
+  Quina; (3) hash sobre os bytes crus ou com fim de linha normalizado (CRLF no Windows muda o hash);
+  (4) mesmo `nome` com `.toml` alterado: erro ou nova linha; (5) validação: todos os 9 pesos
+  obrigatórios, chave desconhecida é erro, `janela` só em {0, 10, 50, 100}; (6) a tabela guarda só o
+  que o plano lista ou também loteria/janela/normalização/texto do `.toml`; (7) dependências novas
+  `toml` e `sha2`; (8) quem grava na tabela `perfis` (1b.1 não tem comando; `sync indice` é a 1b.3).
+- 2026-10-04 — 1b.1, decisões do usuário: aceitas as 8 sugestões. Registradas no PLANEJAMENTO.md
+  ("Regras dos perfis", exemplo com `versao` e caminho `perfis/<loteria>/`, esquema de `perfis` com
+  loteria, janela, normalização, texto do `.toml` e `criado_em` só no primeiro registro). 1b.1
+  desbloqueada.
+- 2026-10-04 — 1b.1 concluída. `src/perfil.rs` (novo, na lib, fora de `motor/` porque lê disco):
+  `interpretar` (puro, a partir do texto), `carregar(raiz, cfg, nome)` (lê `<raiz>/<slug>/<nome>.toml` e
+  confere pasta e nome do arquivo), `hash_toml` (SHA-256 hex depois de CRLF→LF), `Perfil`, `Pesos`
+  (`deny_unknown_fields`, `componentes()` na ordem de `features_dezena`), `Normalizacao`. `src/db.rs`:
+  `criar_tabela_perfis`, `buscar_perfil`, `inserir_perfil` (INSERT simples, nunca substitui).
+  `src/orquestracao.rs`: `registrar_perfil(conn, cfg, carregado, criado_em) -> Novo | JaRegistrado`, com a
+  regra de imutabilidade (hash diferente → `PerfilAlterado`, sugerindo `<prefixo>_v<N+1>`); recebe
+  `&Connection` para a 1b.3 chamá-la dentro da transação do índice. Erros novos: `PerfilInvalido`,
+  `PerfilAlterado`, `PerfilDeOutraLoteria`. Perfis `perfis/{lotofacil,megasena,quina}/padrao_v1.toml`
+  (pesos do exemplo, janela 50, zscore, LF); `.gitattributes` com `perfis/**/*.toml text eol=lf`;
+  dependências `toml = "1.1.6"` e `sha2 = "0.11.0"` (o lock subiu também `serde` 1.0.217→1.0.229 e
+  `indexmap`, compatíveis). Nenhum comando novo na CLI.
+  Desvios aceitos pela revisão: nome do perfil só com `[A-Za-z0-9_-]` (protege o caminho); sufixo
+  `_vN` com N ≥ 1 e sem zeros à esquerda; `registrar_perfil` recusa perfil de outra loteria; teste que
+  trava o hash dos três `padrao_v1.toml` (editar um deles, até um comentário, quebra o teste: é de
+  propósito); coluna `toml` guarda o texto já em LF; `criado_em` vem do chamador como texto.
+  33 testes novos (26 em `perfil.rs`, 2 em `db.rs`, 5 em `orquestracao.rs`). Revisão: aprovada com
+  ressalvas, só BAIXA. Gate: fmt ok, clippy ok, 227 testes (148 lib + 13 sync + 56 features + 10 parser,
+  1 ignorado), `validar todas` ok nos três bancos.
+  **Para a 1b.3:** `criado_em` em ISO-8601 UTC (o projeto não tem `chrono`: formatar a partir de
+  `SystemTime` ou decidir outro formato). **Pendências BAIXA (não bloqueiam):** `PerfilAlterado` sempre
+  sugere `versao + 1`, mesmo se esse arquivo já existir; BOM UTF-8 não é tratado (pode mudar o hash ou
+  dar erro de parse sem causa clara); falta doc comment em `PerfilDeOutraLoteria` (`src/error.rs`).
+- 2026-10-04 — 1b.1, pendências BAIXA corrigidas a pedido do usuário: (1) `PerfilAlterado` sugere a
+  próxima versão **livre** (`Perfil::proxima_versao` pula nomes com arquivo ao lado ou já registrados
+  no banco; `PerfilCarregado` ganhou `origem`); (2) BOM UTF-8 removido antes de interpretar e do hash
+  (`normalizar_fim_de_linha`), registrado no PLANEJAMENTO.md; (3) comentário de documentação em
+  `PerfilDeOutraLoteria`. Testes novos: `bom_e_ignorado_no_texto_e_no_hash` e
+  `sugestao_de_versao_pula_registradas_e_arquivos_existentes`. Gate: fmt ok, clippy ok, 229 testes
+  (150 lib + 13 sync + 56 features + 10 parser, 1 ignorado).

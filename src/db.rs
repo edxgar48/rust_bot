@@ -375,6 +375,94 @@ pub fn resumo_features(conn: &Connection) -> Result<(u64, Option<u32>)> {
     Ok((linhas.unsigned_abs(), maior))
 }
 
+// ---------------------------------------------------------------------------
+// Tabela `perfis`: perfis de pesos usados para gerar o índice.
+//
+// Derivada como as outras (pode ser apagada junto com `indice`), mas nunca
+// sobrescrita: a regra "mesmo nome, outro conteúdo → erro" está em
+// `orquestracao::registrar_perfil`; aqui só há `INSERT` simples, então nem
+// uma corrida entre dois processos troca um perfil já gravado (o segundo
+// falha na chave primária).
+// ---------------------------------------------------------------------------
+
+/// Cria `perfis` se ainda não existe. Idempotente.
+pub fn criar_tabela_perfis(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS perfis (
+            nome          TEXT NOT NULL PRIMARY KEY,
+            versao        INTEGER NOT NULL,
+            loteria       TEXT NOT NULL,
+            janela        INTEGER NOT NULL,
+            normalizacao  TEXT NOT NULL,
+            hash_toml     TEXT NOT NULL,
+            toml          TEXT NOT NULL,
+            criado_em     TEXT NOT NULL
+        );",
+    )?;
+    Ok(())
+}
+
+/// Uma linha de `perfis`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PerfilRegistrado {
+    pub nome: String,
+    pub versao: u32,
+    pub loteria: String,
+    pub janela: u32,
+    /// `zscore` ou `minmax` (texto de `perfil::Normalizacao::como_str`).
+    pub normalizacao: String,
+    /// SHA-256 (hex minúsculo) de `toml`.
+    pub hash_toml: String,
+    /// Texto do `.toml` com fim de linha em LF.
+    pub toml: String,
+    /// Momento do primeiro registro, fornecido por quem registra.
+    pub criado_em: String,
+}
+
+/// Lê o perfil registrado com esse nome, ou `None`.
+pub fn buscar_perfil(conn: &Connection, nome: &str) -> Result<Option<PerfilRegistrado>> {
+    conn.query_row(
+        "SELECT nome, versao, loteria, janela, normalizacao, hash_toml, toml, criado_em
+         FROM perfis WHERE nome = ?1",
+        params![nome],
+        |row| {
+            Ok(PerfilRegistrado {
+                nome: row.get(0)?,
+                versao: row.get(1)?,
+                loteria: row.get(2)?,
+                janela: row.get(3)?,
+                normalizacao: row.get(4)?,
+                hash_toml: row.get(5)?,
+                toml: row.get(6)?,
+                criado_em: row.get(7)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(SpiderError::from)
+}
+
+/// Insere um perfil novo. Nome já existente é erro (chave primária): nunca
+/// substitui uma linha.
+pub fn inserir_perfil(conn: &Connection, perfil: &PerfilRegistrado) -> Result<()> {
+    conn.execute(
+        "INSERT INTO perfis
+            (nome, versao, loteria, janela, normalizacao, hash_toml, toml, criado_em)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            perfil.nome,
+            perfil.versao,
+            perfil.loteria,
+            perfil.janela,
+            perfil.normalizacao,
+            perfil.hash_toml,
+            perfil.toml,
+            perfil.criado_em
+        ],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,6 +675,44 @@ mod tests {
             .collect();
         assert_eq!(lidas, vec![linha(1, 1, 0)]);
         assert_eq!(ler_motor_estado(&conn).expect("lê"), Some(estado_salvo(1)));
+    }
+
+    fn perfil_registrado(nome: &str, hash: &str) -> PerfilRegistrado {
+        PerfilRegistrado {
+            nome: nome.to_string(),
+            versao: 1,
+            loteria: "quina".to_string(),
+            janela: 50,
+            normalizacao: "zscore".to_string(),
+            hash_toml: hash.to_string(),
+            toml: "nome = \"padrao_v1\"\n".to_string(),
+            criado_em: "2026-10-04T12:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn perfis_round_trip_e_ausente() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabela_perfis(&conn).expect("cria");
+        criar_tabela_perfis(&conn).expect("idempotente");
+        assert_eq!(buscar_perfil(&conn, "padrao_v1").expect("busca"), None);
+        let p = perfil_registrado("padrao_v1", "abc");
+        inserir_perfil(&conn, &p).expect("insere");
+        assert_eq!(buscar_perfil(&conn, "padrao_v1").expect("busca"), Some(p));
+        assert_eq!(buscar_perfil(&conn, "outro_v1").expect("busca"), None);
+    }
+
+    #[test]
+    fn inserir_perfil_nunca_substitui() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabela_perfis(&conn).expect("cria");
+        let original = perfil_registrado("padrao_v1", "abc");
+        inserir_perfil(&conn, &original).expect("insere");
+        assert!(inserir_perfil(&conn, &perfil_registrado("padrao_v1", "def")).is_err());
+        assert_eq!(
+            buscar_perfil(&conn, "padrao_v1").expect("busca"),
+            Some(original)
+        );
     }
 
     #[test]

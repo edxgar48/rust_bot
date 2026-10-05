@@ -2,3 +2,5 @@
 cache/*.json text eol=lf
 # Planilhas de teste: nunca converter fim de linha (inclui corrompida.xlsx, que é texto).
 tests/fixtures/*.xlsx binary
+# Perfis de pesos: o hash SHA-256 gravado em `perfis` é do texto com LF; mantém os bytes iguais em qualquer máquina.
+perfis/**/*.toml text eol=lf

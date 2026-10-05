@@ -65,6 +65,31 @@ pub enum SpiderError {
         avisos: Vec<crate::validacao::Problema>,
     },
 
+    /// Perfil de pesos que não passa na validação rígida (`docs/PLANEJAMENTO.md`,
+    /// "Perfil de pesos"). `motivo` cita o campo.
+    #[error("perfil `{}` inválido: {motivo}", origem.display())]
+    PerfilInvalido { origem: PathBuf, motivo: String },
+
+    /// Perfis são imutáveis: o mesmo nome com outro conteúdo deixaria índices
+    /// já gravados com um perfil diferente do que os gerou.
+    #[error("perfil `{nome}` já registrado neste banco com outro conteúdo (hash registrado {hash_registrado}, hash do arquivo {hash_arquivo}) — perfis são imutáveis: desfaça a edição ou crie `{proximo_nome}.toml` com `nome = \"{proximo_nome}\"` e `versao = {proxima_versao}`")]
+    PerfilAlterado {
+        nome: String,
+        hash_registrado: String,
+        hash_arquivo: String,
+        proximo_nome: String,
+        proxima_versao: u32,
+    },
+
+    /// Um banco por loteria: perfil de outra loteria gravaria na tabela
+    /// `perfis` (e depois no índice) pesos pensados para outro jogo.
+    #[error("perfil `{nome}` é da loteria `{loteria_perfil}`, mas o banco é da `{loteria_banco}` — use o perfil em `perfis/{loteria_banco}/`")]
+    PerfilDeOutraLoteria {
+        nome: String,
+        loteria_perfil: String,
+        loteria_banco: String,
+    },
+
     #[error("nenhum concurso de `{0}` no banco — rode `sync baixar` ou `sync importar` antes")]
     SemResultados(String),
 
