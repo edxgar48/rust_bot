@@ -1,7 +1,9 @@
 use crate::error::{Result, SpiderError};
 use crate::model::Resultado;
 use crate::motor::{FeaturesDezena, IndiceDezena};
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior,
+};
 use std::path::Path;
 
 pub fn abrir(caminho: &Path) -> Result<Connection> {
@@ -16,6 +18,27 @@ pub fn abrir(caminho: &Path) -> Result<Connection> {
         );",
     )?;
     Ok(conn)
+}
+
+/// Copia o banco `origem` inteiro (todas as tabelas) para `destino` com
+/// `VACUUM INTO`, que lê numa transação: a cópia é consistente mesmo que outro
+/// processo esteja gravando, e também valeria se o banco passasse a usar WAL
+/// (copiar o `.db` com `std::fs::copy` perderia o que ainda está no `-wal`).
+///
+/// `origem` é aberta só para leitura: não é criada se não existir nem ganha a
+/// tabela `resultados` (ao contrário de [`abrir`]). O SQLite recusa `destino`
+/// que já exista com conteúdo, então um backup nunca é sobrescrito.
+pub fn copiar_banco(origem: &Path, destino: &Path) -> Result<()> {
+    let destino_txt = destino.to_str().ok_or_else(|| SpiderError::Backup {
+        caminho: destino.to_path_buf(),
+        motivo: "o caminho não é UTF-8 válido".to_string(),
+    })?;
+    let conn = Connection::open_with_flags(
+        origem,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.execute("VACUUM INTO ?1", [destino_txt])?;
+    Ok(())
 }
 
 /// Insere resultados novos e atualiza os que mudaram. Retorna quantos

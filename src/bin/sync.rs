@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use rust_spider::{
-    config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, tempo, validacao,
-    SpiderError,
+    backup, config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, tempo,
+    validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -64,10 +64,19 @@ enum Comando {
         db: Option<PathBuf>,
     },
     /// Lê o último resultado direto da página (sem baixar a planilha inteira)
-    /// e grava no banco só se for um concurso novo.
+    /// e grava no banco só se for um concurso novo. Se faltar concurso entre o
+    /// último salvo e o da página (salto), copia o banco para `backups/`
+    /// (nome com data e hora em UTC) e baixa a planilha completa, como `baixar`.
     Atualizar {
         /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
+        /// Pasta onde salvar a planilha (.xlsx), se houver salto
+        #[arg(long, default_value = "downloads")]
+        dir: PathBuf,
+        /// Pasta dos backups do banco feitos antes de baixar a planilha
+        /// (resultados_<loteria>_<AAAAMMDD-HHMMSS>.db, horário em UTC)
+        #[arg(long, default_value = backup::PASTA_PADRAO)]
+        backups: PathBuf,
         /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
         /// não pode ser usado com `todas`
         #[arg(long)]
@@ -204,15 +213,22 @@ async fn main() -> anyhow::Result<()> {
         }
         Comando::Atualizar {
             loteria,
+            dir,
+            backups,
             db,
             visivel,
             cache,
         } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
             let mut execucao = alvos.execucao();
+            let pastas = PastasAtualizar {
+                downloads: &dir,
+                backups: &backups,
+                cache: &cache,
+            };
             for (cfg, db_caminho) in alvos.itens {
                 execucao.cabecalho(cfg);
-                let r = atualizar(cfg, &db_caminho, visivel, &cache).await;
+                let r = atualizar(cfg, &db_caminho, &pastas, visivel).await;
                 execucao.registrar(cfg, r)?;
             }
             execucao.concluir()?;
@@ -400,11 +416,22 @@ async fn baixar(
     visivel: bool,
     cache: &std::path::Path,
 ) -> anyhow::Result<()> {
+    let arquivo = baixar_planilha(cfg, dir, seletor, visivel).await?;
+    processar_e_salvar(&arquivo, cfg, db_caminho, cache)
+}
+
+/// Só o download da planilha (sem gravar): a parte do `baixar` que o
+/// `atualizar` com salto reaproveita.
+async fn baixar_planilha(
+    cfg: &'static config::LoteriaConfig,
+    dir: &std::path::Path,
+    seletor: Option<&str>,
+    visivel: bool,
+) -> anyhow::Result<PathBuf> {
     println!("Baixando resultados de {}...", cfg.nome_exibicao);
     let arquivo = downloader::baixar_resultado(cfg, seletor, dir, !visivel).await?;
     println!("Arquivo salvo em {}", arquivo.display());
-
-    processar_e_salvar(&arquivo, cfg, db_caminho, cache)
+    Ok(arquivo)
 }
 
 fn listar(
@@ -420,11 +447,19 @@ fn listar(
     Ok(db::listar(&conn, cfg.slug)?)
 }
 
+/// Pastas usadas pelo `atualizar`: planilha (se houver salto), backups do
+/// banco e cache de inserções manuais.
+struct PastasAtualizar<'a> {
+    downloads: &'a std::path::Path,
+    backups: &'a std::path::Path,
+    cache: &'a std::path::Path,
+}
+
 async fn atualizar(
     cfg: &'static config::LoteriaConfig,
     db_caminho: &std::path::Path,
+    pastas: &PastasAtualizar<'_>,
     visivel: bool,
-    cache: &std::path::Path,
 ) -> anyhow::Result<()> {
     println!("Verificando o último resultado de {}...", cfg.nome_exibicao);
     let mut resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
@@ -432,23 +467,142 @@ async fn atualizar(
         cfg.slug,
         std::slice::from_mut(&mut resultado),
     ));
+    let downloads = pastas.downloads;
+    aplicar_atualizacao(cfg, &resultado, db_caminho, pastas, agora_segundos, || {
+        baixar_planilha(cfg, downloads, None, visivel)
+    })
+    .await
+}
 
+/// O `atualizar` depois de raspar a página: nada a fazer, gravar o próximo
+/// concurso ou, num salto, fazer backup e seguir o caminho do `baixar`
+/// (tarefa 0.8). O relógio (`agora`, lido só no salto com banco) e o download
+/// da planilha (`obter_planilha`) vêm de fora para o fluxo ser testável sem
+/// rede.
+async fn aplicar_atualizacao<F, Fut>(
+    cfg: &config::LoteriaConfig,
+    resultado: &rust_spider::Resultado,
+    db_caminho: &std::path::Path,
+    pastas: &PastasAtualizar<'_>,
+    agora: impl FnOnce() -> anyhow::Result<u64>,
+    obter_planilha: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<PathBuf>>,
+{
     let existentes = carregar_existentes(cfg, db_caminho)?;
     let ultimo_salvo = existentes.iter().map(|r| r.concurso).max();
 
-    if let Some(u) = ultimo_salvo {
-        if u >= resultado.concurso {
+    let classificacao = orquestracao::classificar_atualizacao(ultimo_salvo, resultado.concurso);
+    let (ultimo, pagina) = match classificacao {
+        orquestracao::Atualizacao::SemNovidade { ultimo } => {
             println!(
-                "Já está atualizado: último concurso salvo é {u}, a página mostra {}.",
+                "Já está atualizado: último concurso salvo é {ultimo}, a página mostra {}.",
                 resultado.concurso
             );
             // Uma inserção manual do mesmo concurso ainda pode ser conciliada.
-            return conciliar_cache(cfg, cache, std::slice::from_ref(&resultado));
+            return conciliar_cache(cfg, pastas.cache, std::slice::from_ref(resultado));
         }
-    }
+        orquestracao::Atualizacao::Proximo => {
+            return gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache);
+        }
+        orquestracao::Atualizacao::Salto { ultimo, pagina } => (ultimo, pagina),
+    };
 
-    let lote = std::slice::from_ref(&resultado);
-    validar_lote(cfg, &existentes, lote, db_caminho)?;
+    // Salto: gravar só o concurso da página deixaria buraco.
+    let copia = if ultimo == 0 {
+        println!(
+            "O banco não tem concursos de {} e a página mostra o {pagina}: \
+             baixando a planilha completa.",
+            cfg.nome_exibicao
+        );
+        if db_caminho.exists() {
+            println!(
+                "O banco {} não tem concursos de {}: nenhum backup feito.",
+                db_caminho.display(),
+                cfg.nome_exibicao
+            );
+        } else {
+            println!(
+                "Não há banco para copiar ({}): nenhum backup feito.",
+                db_caminho.display()
+            );
+        }
+        None
+    } else {
+        println!(
+            "Salto: o último concurso salvo é {ultimo} e a página mostra {pagina} \
+             ({} concurso(s) perdido(s) no meio): baixando a planilha completa.",
+            classificacao.faltando()
+        );
+        let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
+        println!("Backup do banco em {}", copia.display());
+        Some(copia)
+    };
+
+    let feito = async {
+        let arquivo = obter_planilha().await?;
+        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache)?;
+
+        // A planilha pode estar atrasada em relação à página.
+        let mut existentes = carregar_existentes(cfg, db_caminho)?;
+        if !existentes.iter().any(|r| r.concurso == resultado.concurso) {
+            println!(
+                "A planilha ainda não traz o concurso {} da página; gravando-o a partir da página.",
+                resultado.concurso
+            );
+            gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache)?;
+            existentes = carregar_existentes(cfg, db_caminho)?;
+        }
+        Ok::<_, anyhow::Error>(existentes)
+    }
+    .await;
+    let existentes = feito.map_err(|e| match &copia {
+        Some(c) => e.context(format!(
+            "{}: o caminho da planilha completa falhou; o backup do banco de antes \
+             da tentativa está em {}",
+            cfg.slug,
+            c.display()
+        )),
+        None => e.context(format!(
+            "{}: o caminho da planilha completa falhou",
+            cfg.slug
+        )),
+    })?;
+
+    // Buraco que sobrou é só aviso (decisão da 0.7): o comando termina bem.
+    // Sem `imprimir_dica_buracos` aqui: o estado final é exatamente o que o
+    // último `validar_lote` (da planilha ou da página) avaliou, e ele reporta
+    // todos os buracos desse estado; logo a dica já saiu se há buraco.
+    let buracos = faixas_faltando(&existentes);
+    if !buracos.is_empty() {
+        let total: u32 = buracos.iter().map(|(i, f)| f - i + 1).sum();
+        let faixas: Vec<String> = buracos
+            .iter()
+            .map(|&(i, f)| descrever_faixa(i, f))
+            .collect();
+        println!(
+            "Atenção: ainda falta(m) {total} concurso(s) de {} no banco (nem a planilha \
+             nem a página os trazem): {}.",
+            cfg.nome_exibicao,
+            faixas.join(", ")
+        );
+    }
+    Ok(())
+}
+
+/// Grava o concurso lido na página pelo caminho do salto de 1: validação
+/// contra o banco, gravação e conciliação com o cache de inserções manuais.
+fn gravar_da_pagina(
+    cfg: &config::LoteriaConfig,
+    existentes: &[rust_spider::Resultado],
+    resultado: &rust_spider::Resultado,
+    db_caminho: &std::path::Path,
+    cache: &std::path::Path,
+) -> anyhow::Result<()> {
+    let lote = std::slice::from_ref(resultado);
+    validar_lote(cfg, existentes, lote, db_caminho)?;
 
     // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
     let mut conn = db::abrir(db_caminho)?;
@@ -460,6 +614,25 @@ async fn atualizar(
         db_caminho.display()
     );
     conciliar_cache(cfg, cache, lote)
+}
+
+/// Faixas de concursos faltando (início, fim), como o `validar` as vê.
+fn faixas_faltando(resultados: &[rust_spider::Resultado]) -> Vec<(u32, u32)> {
+    validacao::validar_sequencia(resultados)
+        .into_iter()
+        .filter_map(|p| match p {
+            validacao::Problema::ConcursosFaltando { inicio, fim } => Some((inicio, fim)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn descrever_faixa(inicio: u32, fim: u32) -> String {
+    if inicio == fim {
+        format!("{inicio}")
+    } else {
+        format!("{inicio}–{fim}")
+    }
 }
 
 fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
@@ -718,13 +891,7 @@ fn listar_buracos(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> 
             .find(|r| r.concurso == concurso)
             .map(|r| r.data_sorteio.as_str())
     };
-    let buracos: Vec<(u32, u32)> = validacao::validar_sequencia(&resultados)
-        .into_iter()
-        .filter_map(|p| match p {
-            validacao::Problema::ConcursosFaltando { inicio, fim } => Some((inicio, fim)),
-            _ => None,
-        })
-        .collect();
+    let buracos = faixas_faltando(&resultados);
     if buracos.is_empty() {
         println!("{}: nenhum concurso faltando.", cfg.nome_exibicao);
         return Ok(());
@@ -732,11 +899,7 @@ fn listar_buracos(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> 
     let total: u32 = buracos.iter().map(|(i, f)| f - i + 1).sum();
     println!("{}: {total} concurso(s) faltando.", cfg.nome_exibicao);
     for (inicio, fim) in buracos {
-        let faixa = if inicio == fim {
-            format!("{inicio}")
-        } else {
-            format!("{inicio}–{fim}")
-        };
+        let faixa = descrever_faixa(inicio, fim);
         let antes = inicio
             .checked_sub(1)
             .and_then(|c| data_de(c).map(|d| format!("depois do {c} ({d})")));
@@ -932,10 +1095,15 @@ fn descrever_janela(janela: u32) -> String {
 
 /// Momento atual em ISO-8601 UTC com segundos, para `perfis.criado_em`.
 fn agora_iso8601_utc() -> anyhow::Result<String> {
+    Ok(tempo::iso8601_utc(agora_segundos()?))
+}
+
+/// Segundos desde 1970-01-01T00:00:00Z: o único ponto que lê o relógio.
+fn agora_segundos() -> anyhow::Result<u64> {
     let desde_1970 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| anyhow::anyhow!("relógio do sistema antes de 1970-01-01; acerte a data"))?;
-    Ok(tempo::iso8601_utc(desde_1970.as_secs()))
+    Ok(desde_1970.as_secs())
 }
 
 fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
@@ -1186,5 +1354,339 @@ mod tests {
         )
         .expect_err("todas é recusado");
         assert!(erro.to_string().contains("features"), "{erro}");
+    }
+
+    // --- `atualizar` (tarefa 0.8), sem rede: a planilha é a fixture da Quina
+    // (concursos 1 a 5) e o concurso "da página" é montado no teste.
+
+    /// 2026-10-04T18:30:00Z.
+    const AGORA: u64 = 1_791_138_600;
+
+    /// Pasta temporária com o banco, o cache, `downloads/` e `backups/`.
+    struct Cenario {
+        raiz: PathBuf,
+        db: PathBuf,
+        cache: PathBuf,
+        downloads: PathBuf,
+        backups: PathBuf,
+    }
+
+    impl Cenario {
+        fn novo(rotulo: &str) -> Self {
+            let unico = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default();
+            let raiz = std::env::temp_dir().join(format!(
+                "rust_spider_atualizar_{rotulo}_{}_{unico}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&raiz).unwrap();
+            Cenario {
+                db: raiz.join("resultados_quina.db"),
+                cache: raiz.join("cache"),
+                downloads: raiz.join("downloads"),
+                backups: raiz.join("backups"),
+                raiz,
+            }
+        }
+
+        fn pastas(&self) -> PastasAtualizar<'_> {
+            PastasAtualizar {
+                downloads: &self.downloads,
+                backups: &self.backups,
+                cache: &self.cache,
+            }
+        }
+
+        fn gravar(&self, lote: &[rust_spider::Resultado]) {
+            let mut conn = db::abrir(&self.db).unwrap();
+            db::salvar_resultados(&mut conn, lote).unwrap();
+        }
+
+        fn concursos(&self) -> Vec<u32> {
+            let conn = db::abrir(&self.db).unwrap();
+            let mut c: Vec<u32> = db::listar(&conn, "quina")
+                .unwrap()
+                .iter()
+                .map(|r| r.concurso)
+                .collect();
+            c.sort_unstable();
+            c
+        }
+
+        fn backups_feitos(&self) -> Vec<PathBuf> {
+            match std::fs::read_dir(&self.backups) {
+                Ok(it) => it.map(|e| e.unwrap().path()).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+    }
+
+    impl Drop for Cenario {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.raiz);
+        }
+    }
+
+    fn fixture_quina() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("quina.xlsx")
+    }
+
+    /// Concursos 1 a 5 da fixture, como a planilha os entrega.
+    fn planilha_quina() -> Vec<rust_spider::Resultado> {
+        parser::parsear_arquivo(&fixture_quina(), quina()).unwrap()
+    }
+
+    fn da_planilha(concurso: u32) -> rust_spider::Resultado {
+        planilha_quina()
+            .into_iter()
+            .find(|r| r.concurso == concurso)
+            .unwrap()
+    }
+
+    /// Concurso que a planilha (fixture) ainda não traz.
+    fn so_na_pagina(concurso: u32) -> rust_spider::Resultado {
+        rust_spider::Resultado {
+            loteria: "quina".to_string(),
+            concurso,
+            data_sorteio: "1994-04-30".to_string(),
+            dezenas: vec![3, 17, 28, 42, 66],
+        }
+    }
+
+    fn relogio_proibido() -> anyhow::Result<u64> {
+        panic!("o relógio só é lido num salto com banco")
+    }
+
+    async fn planilha_proibida() -> anyhow::Result<PathBuf> {
+        panic!("a planilha só é baixada num salto")
+    }
+
+    #[tokio::test]
+    async fn atualizar_sem_novidade_nao_baixa_nem_copia() {
+        let c = Cenario::novo("sem_novidade");
+        c.gravar(&planilha_quina());
+        aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            relogio_proibido,
+            planilha_proibida,
+        )
+        .await
+        .unwrap();
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+        assert!(!c.backups.exists());
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_de_um_grava_so_o_da_pagina_sem_backup() {
+        let c = Cenario::novo("proximo");
+        c.gravar(&planilha_quina()[..4]);
+        aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            relogio_proibido,
+            planilha_proibida,
+        )
+        .await
+        .unwrap();
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+        assert!(!c.backups.exists());
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_faz_backup_e_grava_a_planilha_completa() {
+        let c = Cenario::novo("salto");
+        c.gravar(&planilha_quina()[..2]);
+        aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Ok(fixture_quina()) },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+        let backup = c.backups.join("resultados_quina_20261004-183000.db");
+        assert_eq!(c.backups_feitos(), std::slice::from_ref(&backup));
+        let copia = db::listar_crescente(&db::abrir(&backup).unwrap(), "quina").unwrap();
+        assert_eq!(copia, planilha_quina()[..2].to_vec());
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_planilha_atrasada_grava_tambem_o_da_pagina() {
+        let c = Cenario::novo("atrasada");
+        c.gravar(&planilha_quina()[..2]);
+        aplicar_atualizacao(
+            quina(),
+            &so_na_pagina(6),
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Ok(fixture_quina()) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(c.backups_feitos().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_que_ainda_deixa_buraco_avisa_e_termina_bem() {
+        let c = Cenario::novo("buraco");
+        c.gravar(&planilha_quina()[..2]);
+        aplicar_atualizacao(
+            quina(),
+            &so_na_pagina(8),
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Ok(fixture_quina()) },
+        )
+        .await
+        .expect("buraco é só aviso");
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5, 8]);
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_download_falhando_nao_grava_e_aponta_o_backup() {
+        let c = Cenario::novo("download_falha");
+        c.gravar(&planilha_quina()[..2]);
+        let erro = aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Err(anyhow::anyhow!("sem rede")) },
+        )
+        .await
+        .expect_err("download falhou");
+
+        let backup = c.backups.join("resultados_quina_20261004-183000.db");
+        let texto = format!("{erro:#}");
+        assert!(texto.contains("sem rede"), "{texto}");
+        assert!(texto.contains(&backup.display().to_string()), "{texto}");
+        assert_eq!(c.concursos(), [1, 2]);
+        assert_eq!(c.backups_feitos(), [backup]);
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_planilha_ilegivel_nao_grava_nem_o_da_pagina() {
+        let c = Cenario::novo("planilha_ruim");
+        c.gravar(&planilha_quina()[..2]);
+        let corrompida = fixture_quina().with_file_name("corrompida.xlsx");
+        let erro = aplicar_atualizacao(
+            quina(),
+            &so_na_pagina(6),
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Ok(corrompida) },
+        )
+        .await
+        .expect_err("planilha ilegível");
+        assert!(format!("{erro:#}").contains("backup"), "{erro:#}");
+        assert_eq!(c.concursos(), [1, 2]);
+        assert_eq!(c.backups_feitos().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_lote_reprovado_nao_grava_nada() {
+        let c = Cenario::novo("lote_reprovado");
+        // A página traz um concurso com dezena fora da faixa que a planilha
+        // não traz: a planilha (válida) é gravada e o lote da página, recusado.
+        c.gravar(&planilha_quina()[..2]);
+        let mut invalido = so_na_pagina(6);
+        invalido.dezenas = vec![1, 2, 3, 4, 99];
+        let erro = aplicar_atualizacao(
+            quina(),
+            &invalido,
+            &c.db,
+            &c.pastas(),
+            || Ok(AGORA),
+            || async { Ok(fixture_quina()) },
+        )
+        .await
+        .expect_err("concurso da página inválido");
+        let texto = format!("{erro:#}");
+        assert!(texto.contains("lote recusado"), "{texto}");
+        assert!(texto.contains("backup"), "{texto}");
+        // A planilha (válida) já foi gravada; o concurso inválido, não.
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+    }
+
+    #[tokio::test]
+    async fn atualizar_banco_inexistente_baixa_a_planilha_sem_backup() {
+        let c = Cenario::novo("sem_banco");
+        aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            relogio_proibido,
+            || async { Ok(fixture_quina()) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+        assert!(!c.backups.exists());
+    }
+
+    #[tokio::test]
+    async fn atualizar_banco_inexistente_com_planilha_falhando_nao_cria_o_banco() {
+        let c = Cenario::novo("sem_banco_falha");
+        aplicar_atualizacao(
+            quina(),
+            &da_planilha(5),
+            &c.db,
+            &c.pastas(),
+            relogio_proibido,
+            || async { Err(anyhow::anyhow!("sem rede")) },
+        )
+        .await
+        .expect_err("download falhou");
+        assert!(!c.db.exists());
+        assert!(!c.backups.exists());
+    }
+
+    #[test]
+    fn atualizar_aceita_dir_e_backups_com_padroes() {
+        let cli = Cli::try_parse_from(["sync", "atualizar", "todas"]).expect("sem opções");
+        match cli.comando {
+            Comando::Atualizar { dir, backups, .. } => {
+                assert_eq!(dir, PathBuf::from("downloads"));
+                assert_eq!(backups, PathBuf::from("backups"));
+            }
+            _ => panic!("esperava o comando atualizar"),
+        }
+        let cli = Cli::try_parse_from([
+            "sync",
+            "atualizar",
+            "quina",
+            "--dir",
+            "x/planilhas",
+            "--backups",
+            "y/copias",
+        ])
+        .expect("com --dir e --backups");
+        match cli.comando {
+            Comando::Atualizar { dir, backups, .. } => {
+                assert_eq!(dir, PathBuf::from("x/planilhas"));
+                assert_eq!(backups, PathBuf::from("y/copias"));
+            }
+            _ => panic!("esperava o comando atualizar"),
+        }
     }
 }

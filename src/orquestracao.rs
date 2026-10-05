@@ -20,6 +20,9 @@
 //! Também registra perfis de pesos na tabela `perfis` ([`registrar_perfil`]),
 //! com a regra de imutabilidade do plano, e grava o índice de força de um
 //! perfil na tabela `indice` ([`sincronizar_indice`], comando `sync indice`).
+//!
+//! E decide o que o `sync atualizar` faz com o concurso lido na página
+//! ([`classificar_atualizacao`], tarefa 0.8).
 
 use crate::config::LoteriaConfig;
 use crate::db::{self, MotorEstadoSalvo, PerfilRegistrado};
@@ -627,9 +630,135 @@ fn conferir_serie(
     Ok((features[0].concurso, concursos))
 }
 
+/// O que fazer com o concurso lido na página pelo `sync atualizar`, comparado
+/// com o último salvo no banco (tarefa 0.8 de `docs/PLANEJAMENTO.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Atualizacao {
+    /// A página não traz concurso além do último salvo: nada a gravar.
+    SemNovidade { ultimo: u32 },
+    /// A página traz exatamente o próximo concurso (ou o 1, com o banco sem
+    /// concursos): grava só ele.
+    Proximo,
+    /// Faltam concursos entre o último salvo e o da página: gravar só o da
+    /// página deixaria buraco, então segue o caminho do `baixar` (planilha
+    /// completa). `ultimo` é 0 quando o banco não existe ou está vazio.
+    Salto { ultimo: u32, pagina: u32 },
+}
+
+impl Atualizacao {
+    /// Quantos concursos faltam entre o último salvo e o da página (0 fora
+    /// do salto).
+    pub fn faltando(&self) -> u32 {
+        match *self {
+            Atualizacao::Salto { ultimo, pagina } => {
+                pagina.saturating_sub(ultimo).saturating_sub(1)
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// Classifica o concurso `da_pagina` contra o `ultimo_salvo` no banco
+/// (`None` = banco inexistente ou sem concursos da loteria, tratado como
+/// último = 0).
+pub fn classificar_atualizacao(ultimo_salvo: Option<u32>, da_pagina: u32) -> Atualizacao {
+    match ultimo_salvo {
+        Some(ultimo) if da_pagina <= ultimo => Atualizacao::SemNovidade { ultimo },
+        Some(ultimo) if da_pagina == ultimo + 1 => Atualizacao::Proximo,
+        Some(ultimo) => Atualizacao::Salto {
+            ultimo,
+            pagina: da_pagina,
+        },
+        // Concurso 0 não existe: deixa a validação do salto de 1 recusá-lo.
+        None if da_pagina <= 1 => Atualizacao::Proximo,
+        None => Atualizacao::Salto {
+            ultimo: 0,
+            pagina: da_pagina,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atualizacao_sem_novidade_quando_a_pagina_nao_passa_do_ultimo() {
+        assert_eq!(
+            classificar_atualizacao(Some(7134), 7134),
+            Atualizacao::SemNovidade { ultimo: 7134 }
+        );
+        // Página atrasada em relação ao banco (cache do site): também nada a fazer.
+        assert_eq!(
+            classificar_atualizacao(Some(7134), 7130),
+            Atualizacao::SemNovidade { ultimo: 7134 }
+        );
+        assert_eq!(classificar_atualizacao(Some(7134), 7134).faltando(), 0);
+    }
+
+    #[test]
+    fn atualizacao_proximo_quando_salta_um() {
+        assert_eq!(
+            classificar_atualizacao(Some(7133), 7134),
+            Atualizacao::Proximo
+        );
+        assert_eq!(classificar_atualizacao(Some(7133), 7134).faltando(), 0);
+    }
+
+    #[test]
+    fn atualizacao_salto_quando_falta_concurso_no_meio() {
+        let a = classificar_atualizacao(Some(7132), 7134);
+        assert_eq!(
+            a,
+            Atualizacao::Salto {
+                ultimo: 7132,
+                pagina: 7134
+            }
+        );
+        assert_eq!(a.faltando(), 1);
+        assert_eq!(classificar_atualizacao(Some(1), 100).faltando(), 98);
+    }
+
+    #[test]
+    fn atualizacao_banco_vazio_conta_como_ultimo_zero() {
+        assert_eq!(classificar_atualizacao(None, 1), Atualizacao::Proximo);
+        let a = classificar_atualizacao(None, 2);
+        assert_eq!(
+            a,
+            Atualizacao::Salto {
+                ultimo: 0,
+                pagina: 2
+            }
+        );
+        assert_eq!(a.faltando(), 1);
+        let a = classificar_atualizacao(None, 7134);
+        assert_eq!(
+            a,
+            Atualizacao::Salto {
+                ultimo: 0,
+                pagina: 7134
+            }
+        );
+        assert_eq!(a.faltando(), 7133);
+    }
+
+    #[test]
+    fn atualizacao_concurso_zero_com_banco_vazio_vai_para_a_validacao() {
+        // A validação do salto de 1 recusa o concurso 0; não é salto.
+        assert_eq!(classificar_atualizacao(None, 0), Atualizacao::Proximo);
+    }
+
+    #[test]
+    fn atualizacao_nao_estoura_no_maior_concurso() {
+        assert_eq!(
+            classificar_atualizacao(Some(u32::MAX), u32::MAX),
+            Atualizacao::SemNovidade { ultimo: u32::MAX }
+        );
+        assert_eq!(
+            classificar_atualizacao(Some(u32::MAX - 1), u32::MAX),
+            Atualizacao::Proximo
+        );
+    }
 
     fn r(concurso: u32, data: &str, dezenas: &[u32]) -> Resultado {
         Resultado {

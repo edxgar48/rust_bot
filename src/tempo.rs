@@ -5,6 +5,10 @@
 //! `docs/PLANEJAMENTO.md`, esquema de `perfis`). Quem lê o relógio é a CLI;
 //! aqui só há funções puras sobre segundos desde 1970-01-01T00:00:00Z, para
 //! serem testáveis.
+//!
+//! O nome dos backups do `sync atualizar` usa um carimbo compacto
+//! (`AAAAMMDD-HHMMSS`, [`carimbo_utc`]), também em UTC: sem crate de fuso,
+//! não há como saber o horário local de forma confiável.
 
 /// Segundos de um dia (UTC não tem horário de verão; segundos bissextos não
 /// existem no tempo Unix).
@@ -13,15 +17,31 @@ const SEGUNDOS_POR_DIA: u64 = 86_400;
 /// ISO-8601 UTC com segundos (`AAAA-MM-DDTHH:MM:SSZ`) dos `segundos` desde a
 /// época Unix (1970-01-01T00:00:00Z). O ano tem no mínimo 4 dígitos.
 pub fn iso8601_utc(segundos: u64) -> String {
+    let (ano, mes, dia, h, m, s) = decompor(segundos);
+    format!("{ano:04}-{mes:02}-{dia:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Carimbo compacto UTC (`AAAAMMDD-HHMMSS`) dos `segundos` desde a época
+/// Unix, para nomes de arquivo (sem `:`, que o Windows não aceita). Ordena
+/// cronologicamente como texto enquanto o ano tiver 4 dígitos.
+pub fn carimbo_utc(segundos: u64) -> String {
+    let (ano, mes, dia, h, m, s) = decompor(segundos);
+    format!("{ano:04}{mes:02}{dia:02}-{h:02}{m:02}{s:02}")
+}
+
+/// (ano, mês, dia, hora, minuto, segundo) em UTC.
+fn decompor(segundos: u64) -> (i64, u32, u32, u64, u64, u64) {
     let dias = segundos / SEGUNDOS_POR_DIA;
     let no_dia = segundos % SEGUNDOS_POR_DIA;
     // `u64::MAX / 86400` cabe com folga em `i64`.
     let (ano, mes, dia) = data_civil(dias as i64);
-    format!(
-        "{ano:04}-{mes:02}-{dia:02}T{:02}:{:02}:{:02}Z",
+    (
+        ano,
+        mes,
+        dia,
         no_dia / 3600,
         no_dia % 3600 / 60,
-        no_dia % 60
+        no_dia % 60,
     )
 }
 
@@ -123,5 +143,43 @@ mod tests {
     fn horas_minutos_e_segundos_com_dois_digitos() {
         assert_eq!(iso8601_utc(3_600 + 60 + 1), "1970-01-01T01:01:01Z");
         assert_eq!(iso8601_utc(9 * 3_600 + 5 * 60 + 7), "1970-01-01T09:05:07Z");
+    }
+
+    #[test]
+    fn carimbo_compacto_utc() {
+        for (segundos, esperado) in [
+            (0, "19700101-000000"),
+            (3_600 + 60 + 1, "19700101-010101"),
+            (951_782_400, "20000229-000000"),
+            (1_791_138_600, "20261004-183000"),
+            (1_798_761_599, "20261231-235959"),
+            (1_798_761_600, "20270101-000000"),
+        ] {
+            assert_eq!(carimbo_utc(segundos), esperado, "{segundos}");
+        }
+    }
+
+    #[test]
+    fn carimbo_e_iso8601_descrevem_o_mesmo_instante() {
+        for segundos in [0, 86_399, 68_212_800, 1_791_138_600, 4_107_542_400] {
+            let iso = iso8601_utc(segundos);
+            let esperado: String = iso
+                .trim_end_matches('Z')
+                .replace('T', "-")
+                .chars()
+                .filter(|c| *c != ':')
+                .collect::<String>();
+            // `AAAA-MM-DD-HH:MM:SS` sem `:` → `AAAA-MM-DD-HHMMSS`; tira os `-` da data.
+            let esperado = format!("{}{}", esperado[..10].replace('-', ""), &esperado[10..]);
+            assert_eq!(carimbo_utc(segundos), esperado, "{segundos}");
+        }
+    }
+
+    #[test]
+    fn carimbos_ordenam_como_o_tempo() {
+        let instantes = [0, 59, 60, 3_599, 86_400, 951_782_400, 1_791_138_600];
+        for par in instantes.windows(2) {
+            assert!(carimbo_utc(par[0]) < carimbo_utc(par[1]), "{par:?}");
+        }
     }
 }

@@ -143,6 +143,10 @@ pub enum SpiderError {
         detalhe: String,
     },
 
+    /// Cópia de segurança do banco antes de um `sync atualizar` com salto.
+    #[error("backup do banco em `{}`: {motivo}", caminho.display())]
+    Backup { caminho: PathBuf, motivo: String },
+
     #[error("erro de banco de dados: {0}")]
     Db(#[from] rusqlite::Error),
 }

@@ -70,7 +70,8 @@ cargo run --bin sync -- importar lotofacil ./downloads/lotofacil_123.xlsx
 # lista o que já está no banco, em JSON
 cargo run --bin sync -- listar lotofacil
 
-# raspa só o último resultado da página e atualiza o banco (sem baixar a planilha inteira)
+# raspa só o último resultado da página e atualiza o banco (sem baixar a planilha
+# inteira, a não ser que falte concurso no meio: ver "salto" abaixo)
 cargo run --bin sync -- atualizar lotofacil
 
 # confere a integridade do banco
@@ -105,10 +106,41 @@ padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
 em vez de criar um banco vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
-banco daquela loteria: se não houver novidade, não grava nada; se o salto for
-maior que 1 (ex.: ficou alguns dias sem rodar e perdeu um concurso no meio),
-avisa e sugere rodar `baixar` para preencher o histórico completo — raspagem
-só traz o mais recente, não faz backfill de concursos intermediários.
+banco daquela loteria:
+
+- página igual (ou anterior) ao último salvo: não grava nada ("Já está
+  atualizado");
+- página = último + 1: valida e grava só esse concurso;
+- **salto** (página > último + 1, ex.: ficou alguns dias sem rodar e perdeu
+  um concurso no meio): gravar só o da página deixaria buraco, então o
+  comando, sem perguntar nada (vai rodar agendado):
+  1. copia o banco para `backups/resultados_<loteria>_<AAAAMMDD-HHMMSS>.db`
+     (pasta criada se não existir, relativa ao diretório de trabalho; outra
+     pasta com `--backups`) e mostra o caminho. **O horário do nome é UTC**,
+     não o horário de Brasília. A cópia é feita pelo SQLite (`VACUUM INTO`),
+     consistente mesmo com outro processo gravando. Dois backups da mesma
+     loteria no mesmo segundo não se sobrescrevem: o segundo ganha `_2`, o
+     terceiro `_3`, e assim por diante;
+  2. segue o caminho do `baixar`: baixa a planilha completa para `downloads/`
+     (ou `--dir`) e grava com o cache de inserções manuais, as correções
+     conhecidas e a validação de sempre (tudo ou nada);
+  3. se a planilha ainda não traz o concurso da página (a planilha costuma
+     atualizar depois da página), grava-o como no salto de 1;
+  4. se ainda sobrar buraco, avisa e indica `buracos`/`inserir`, terminando
+     sem erro (buraco é só aviso na gravação).
+
+  Se o download, a leitura ou a validação da planilha falhar, o comando
+  termina com erro sem gravar nada da planilha, e a mensagem diz onde ficou o
+  backup. Se a planilha for gravada e só o concurso da página for recusado
+  no passo 3, a planilha fica gravada e o comando termina com erro (com o
+  caminho do backup). Com o banco inexistente ou sem concursos da loteria,
+  o último conta como 0: página > 1 é salto, mas não há backup (não há o
+  que copiar).
+
+```bash
+# salto: backup em backups/, planilha em downloads/ (ambos configuráveis)
+cargo run --bin sync -- atualizar quina --dir planilhas --backups copias
+```
 
 Buracos na numeração nunca impedem uma gravação (só geram aviso), mas
 reprovam o `validar` até serem fechados. Para fechá-los um a um, `buracos`
@@ -174,8 +206,10 @@ registro passa a valer como o primeiro).
 Por padrão cada loteria grava em um banco SQLite separado —
 `resultados_<loteria>.db` (ex.: `resultados_lotofacil.db`,
 `resultados_megasena.db`) — para não misturar dados de loterias diferentes
-no mesmo arquivo. Os downloads vão para `downloads/`. Ambos configuráveis
-via `--db` e `--dir`, e ambos ignorados pelo git.
+no mesmo arquivo. Os downloads vão para `downloads/` e os backups do
+`atualizar` com salto para `backups/`. Configuráveis via `--db`, `--dir` e
+`--backups`; os três ficam fora do git (`*.db` e `/downloads` no
+`.gitignore`).
 
 ## Estado atual / o que falta confirmar
 

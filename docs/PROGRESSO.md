@@ -15,6 +15,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 0.5 `todas` no lugar do slug
 - [x] 0.6 Textos da CLI sem ".htm"
 - [x] 0.7 Fechar buracos à mão (`buracos`, `inserir`) com cache de inserções manuais
+- [x] 0.8 `atualizar` com salto: backup automático e caminho do `baixar`
 
 ## Fase 1a — Features · `engenheiro-motor`
 
@@ -471,3 +472,44 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `saiu_nao_e_lido` (achado menor 2): `saiu` alternado por dezena com todos os pesos ≠ 0; pega
   leitura de `saiu` via `frequencia` e via `repeticao_atual` (conferido com mutantes). Gate: fmt ok,
   clippy ok, 343 testes (203 lib + 17 sync + 56 features + 57 indice + 10 parser, 1 ignorado).
+- 2026-10-05 — Teste de ponta a ponta com sorteios novos (pedido do usuário). Backup dos três bancos em
+  `backups/antes_teste_2026-10-05/` (hashes conferidos). Em cópias da Quina, com cache temporário:
+  (A) buraco no 5000 → `validar`/`buracos` acusam, `inserir` fecha e registra no cache, `importar` da
+  planilha oficial confirma e remove do cache — ok; (B) inserção errada → banco fica com o oficial e
+  aviso de divergência — ok, mas a entrada errada continua no cache e o aviso se repete a cada
+  importação até ser removida à mão; (C) `atualizar` com o banco em 7132 e a página em 7134 grava só o
+  7134 e deixa o 7133 como buraco, com exit 0 — confirma o problema. Usuário decidiu a tarefa 0.8
+  (backup automático + caminho do `baixar`, sem pergunta interativa), registrada no PLANEJAMENTO.md.
+- 2026-10-05 — 0.8 concluída. `atualizar` com salto (página > último + 1): backup do banco em
+  `backups/resultados_<loteria>_<AAAAMMDD-HHMMSS>.db` (horário em **UTC**, via `tempo::carimbo_utc`;
+  cópia por `VACUUM INTO` em `db::copiar_banco`, origem só leitura, destino com conteúdo recusado) e depois
+  o caminho do `baixar` (`baixar_planilha` + `processar_e_salvar`, reaproveitados). Planilha falha → erro
+  citando o backup, nada gravado. Buraco restante → aviso + dica `buracos`/`inserir`, exit 0. Salto de 1 e
+  "sem novidade" inalterados; vale com `todas`. Arquivos: `src/backup.rs` (novo), `src/db.rs`,
+  `src/error.rs` (`SpiderError::Backup`), `src/tempo.rs`, `src/orquestracao.rs` (`Atualizacao`,
+  `classificar_atualizacao`, função pura), `src/lib.rs`, `src/bin/sync.rs`, README. 26 testes novos, sem rede
+  (relógio e download injetados; fixture `tests/fixtures/quina.xlsx` como planilha baixada).
+  Interpretações do orquestrador (não estavam no plano, **a confirmar pelo usuário**): (1) banco inexistente
+  ou sem concursos da loteria conta como último = 0 → se a página > 1 é salto, segue o caminho do `baixar`
+  sem backup (antes gravava só o último concurso); (2) se a planilha estiver atrasada em relação à página, o
+  concurso da página é gravado em seguida pelo caminho do salto de 1 (se só ele for recusado, a planilha já
+  ficou gravada e o comando sai com erro citando o backup).
+  Desvios aceitos pela revisão: flag extra `--backups <pasta>` (padrão `backups`) e `--dir` (padrão
+  `downloads`) no `atualizar`; colisão no mesmo segundo ganha sufixo `_2`, `_3`… (limite 100), nunca
+  sobrescreve. Teste C repetido com rede numa cópia da Quina (7132, página 7134): backup feito, planilha
+  baixada, 2 registros gravados, `validar` 1..7134 ok; segunda execução "já está atualizado", sem backup.
+  Revisão: aprovada com ressalvas, sem ALTA; BAIXAs corrigidas numa rodada (`faltando()` usado, mensagem de
+  banco sem concursos, dica de buracos não sai mais em dobro, README). Gate: fmt ok, clippy ok, 369 testes
+  (218 lib + 28 sync + 56 features + 57 indice + 10 parser, 1 ignorado), `validar todas` ok.
+  **Pendência MÉDIA (não bloqueia):** `aplicar_atualizacao`, `processar_e_salvar` e `validar_lote` são fluxos
+  de negócio no binário (`src/bin/sync.rs`), contra a regra de camadas (deviam estar em `orquestracao`);
+  mover para a biblioteca antes ou durante a 3.1 (`sync ciclo` vai precisar deles). Notas soltas: a pasta
+  `backups/` em si não está no `.gitignore` (só `*.db`); existem `src/resultados_lotofacil.db` e
+  `src/bin/resultados_lotofacil.db` perdidos (anteriores à 0.8, não tocados).
+- 2026-10-05 — 0.8, decisões do usuário: confirmadas as duas decisões do engenheiro (banco vazio = último 0;
+  planilha atrasada → concurso da página gravado em seguida), registradas no PLANEJAMENTO.md (0.8); a
+  pendência MÉDIA (lógica de gravação na CLI) entrou na descrição da 3.1. Teste C repetido em cópia com a
+  regra nova: backup, planilha, 7133 e 7134 gravados, `validar` 1..7134 ok, segunda execução "já está
+  atualizado" sem novo backup. `/backups` no `.gitignore`; removidos `src/resultados_lotofacil.db` e
+  `src/bin/resultados_lotofacil.db` (bancos vazios de uma execução antiga, fora do git). Horário do
+  nome do backup em UTC.
