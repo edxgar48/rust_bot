@@ -312,7 +312,31 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   valores calculados à mão. Leitura do banco e comando ficam na 1c.5; o
   corte do trancado entra no `LoteriaConfig` na 1c.3.
 - Ranking: acertos das top-k dezenas vs. esperado pela hipergeométrica
-  (ex.: Lotofácil, 15 dezenas ao acaso → 9 acertos em média).
+  (ex.: Lotofácil, 15 dezenas ao acaso → 9 acertos em média). Regras da
+  1c.2 (decisões de 2026-10-05):
+  - **k principal = K** da loteria (15, 6, 5); as funções aceitam qualquer
+    k de 1 a N−1, e a 1c.5 decide se o comando ganha `--k`;
+  - **top-k** = dezenas com `posicao` ≤ k (o empate já é resolvido no índice);
+  - **concursos**: o mesmo trecho da 1c.1 (do segundo concurso do índice
+    até o corte, só os sorteados, sem o trancado);
+  - **saída**: média de acertos por concurso contra o esperado k·K/N e a
+    diferença; distribuição observada de 0, 1, 2… acertos ao lado da
+    esperada pelo acaso; erro padrão e intervalo de 95% por concurso, como
+    na 1c.1;
+  - **p-valor exato e unilateral**: chance de o acaso dar pelo menos o total
+    de acertos observado (soma de T hipergeométricas independentes). Vale
+    mesmo com a correlação serial do ranking, porque sob o acaso o sorteio
+    de *t* é independente da posição calculada até *t−1*. Também devolve o
+    `log10` da cauda, que continua legível quando a probabilidade some no
+    `f64`. **Só vale se o perfil e o k foram escolhidos sem ver os sorteios
+    do trecho avaliado** (decisão de 2026-10-05): se a busca de pesos usou o
+    mesmo trecho, ou se o melhor foi escolhido entre vários perfis ou k, o
+    p-valor sai otimista — avaliar no conjunto trancado ou corrigir por
+    Bonferroni/Holm, informando quantos perfis/k foram testados (1c.5);
+  - **hipergeométrica em inteiros** (`u128` basta, até na Quina), testada
+    contra valores tabelados;
+  - **escopo**: só funções puras em `src/avaliacao/`, reaproveitando
+    `Observacao`; leitura do banco e comando na 1c.5.
 - Validação **walk-forward** (treina até *t*, testa em *t+1…*; nunca embaralha o tempo).
 - **Conjunto final trancado**: os últimos ~10% dos concursos, usados uma
   única vez para validar o perfil campeão — protege contra sobreajuste na
@@ -394,11 +418,3 @@ com o planejamento do front-end.
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
   CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
   automatizado.
-- 2026-10-05 — 1c.1, decisões do usuário: confirmadas as 5 escolhas do implementador (EP amostral ÷(T−1),
-  IC normal, Brier sem o limite, buraco e série vazia são erro, corte aplicado antes de validar) e
-  registradas no PLANEJAMENTO.md (1c), junto com a ressalva do intervalo (otimista por correlação serial;
-  1c.5 usa teste robusto). Achado baixo do verificador-vazamento coberto: novo teste
-  `metricas_com_corte_menor_sao_prefixo_das_com_corte_maior` (3 loterias, cortes 2, 3, 40, 79 e 80,
-  inclusive o snapshot); conferido com mutante (métrica dependente do tamanho do trecho até o corte),
-  que ele pega. Pendências para 1c.3/1c.5: passar sempre o corte fixo da loteria (nunca `u32::MAX` em
-  produção); concursos faltando no banco são erro na calibração.
