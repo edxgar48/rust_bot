@@ -280,7 +280,54 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 **1c — Avaliação**
 
-- Comando `sync avaliar <loteria> --perfil X`.
+- Comando `sync avaliar <loteria> --perfil X` (decisões de 2026-10-05, 1c.5):
+  - **veredito "supera o acaso"**: bootstrap circular por blocos sobre as
+    diferenças perfil − acaso do log loss por concurso, **blocos fixos de 50
+    concursos** (a calibração acumulada tem memória longa), **B = 10 000**
+    reamostragens, gerador próprio (SplitMix64/xoshiro, sem crate nova) com
+    **semente fixa** no código; p-valor unilateral e IC 95% percentil;
+    α = 5%. O Brier usa o mesmo bootstrap só como informação; o top-k usa o
+    p-valor exato da 1c.2;
+  - **trecho**: na busca, o veredito sai do trecho inteiro (união das 5
+    dobras), e as dobras mostram a estabilidade; no trancado, do próprio
+    trancado;
+  - **trancado** só com `--trancado` (padrão: walk-forward). O registro do
+    "uma única vez" fica em **arquivo versionado no git**,
+    `registros/trancado_<loteria>.json` (perfil, hash do `.toml`, até qual
+    concurso, quando) — não em tabela do banco, que pode ser refeito. Mesmo
+    perfil e hash já avaliados → recusa, a menos de `--repetir` (que mostra
+    as avaliações anteriores). O p-valor do trancado aparece também com
+    Bonferroni pelo número de perfis já registrados na loteria;
+  - **vários perfis ou k na busca**: `--k` opcional (padrão K); aviso fixo na
+    saída sobre quando o p-valor vale; `--testados N` mostra também o
+    p-valor com Bonferroni;
+  - **saída** só em texto: cabeçalho (loteria, perfil, hash, trecho, corte),
+    tabela por dobra (log loss, Brier e top-k do perfil contra o acaso,
+    diferença, EP, IC normal, p exato) e linha final com o veredito. Não grava
+    nada no banco;
+  - **pré-condições** como no `sync indice`: uma loteria e um perfil, sem
+    `todas`; recusa perfil fora de `perfis` ou com hash diferente do `.toml`
+    em disco, índice que não cobre até o último concurso + 1 e features
+    desatualizadas; concurso faltando é erro. Observações de `indice` +
+    `features_dezena` desde o 1º concurso do índice; SQL em `db.rs`, fluxo em
+    `orquestracao`, a CLI só imprime;
+  - a avaliação de produção passa só pela orquestração (`sync avaliar`), que
+    usa `walk_forward` na busca e o veredito do trancado depois do registro de
+    uso único; `avaliar`, `avaliar_topk`, variantes `_entre`,
+    `p_valor_runs_exato` e as funções do trancado ficam `pub(crate)` (fora do
+    crate não há como avaliar o trancado sem o registro); nunca usar
+    `u32::MAX` como corte;
+  - detalhes confirmados pelo usuário (2026-10-05): no trancado o k é sempre
+    K (`--k` e `--testados` são recusados com `--trancado`); o bootstrap
+    exige pelo menos 100 concursos (2 blocos) e, abaixo disso, a saída vem
+    sem veredito e sem erro; o Bonferroni do trancado conta os pares
+    (perfil, hash) distintos registrados, incluindo o atual, vale também
+    para o top-k e não cresce com `--repetir`; `--repetir` é aceito mesmo
+    sem uso anterior; a pasta `registros/` fica ao lado do banco usado (com
+    os bancos na raiz, `registros/` na raiz, versionada no git).
+- Comando `sync aleatoriedade <loteria|todas>` (decisão de 2026-10-05): roda os
+  testes da 1c.4 (qui-quadrado e runs com Holm) e imprime o relatório, sem
+  depender de perfil; entra junto com a 1c.5.
 - Baseline do acaso: probabilidade de cada dezena sair = 15/25 (Lotofácil),
   6/60 (Mega-Sena), 5/80 (Quina). Métricas: log loss e Brier.
 - **Índice → probabilidade** (decisões de 2026-10-05): calibração pela
