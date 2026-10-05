@@ -10,6 +10,10 @@ fn quina() -> &'static LoteriaConfig {
     config::buscar("quina").expect("quina configurada")
 }
 
+fn megasena() -> &'static LoteriaConfig {
+    config::buscar("megasena").expect("megasena configurada")
+}
+
 /// Loteria pequena (2 de 1..=6) para ter muitas repetições e sequências.
 const MINI: LoteriaConfig = LoteriaConfig {
     slug: "mini",
@@ -201,6 +205,52 @@ fn golden_na_janela_de_10() {
 }
 
 #[test]
+fn golden_nas_fronteiras_das_janelas_de_50_e_100() {
+    // t = 151: J = 50 → 101..=150; J = 100 → 51..=150. Aparições exatamente
+    // em t−101, t−100, t−51 e t−50: cada fronteira deixa uma dentro e a
+    // vizinha fora, então um erro de um concurso muda a frequência.
+    let historico = lotofacil_com_25_em(151, &[50, 51, 100, 101]);
+    let (_, features) = calcular(lotofacil(), &historico).unwrap();
+    let esperado = |janela, frequencia, espacos: Option<(u32, u32, u32, u32)>, soma, repeticoes| {
+        FeaturesDezena {
+            concurso: 151,
+            dezena: 25,
+            janela,
+            frequencia,
+            maior_espaco: espacos.map(|e| e.0),
+            maior_espaco_ocorrencias: espacos.map(|e| e.1),
+            menor_espaco: espacos.map(|e| e.2),
+            menor_espaco_ocorrencias: espacos.map(|e| e.3),
+            soma_variacoes: soma,
+            espaco_final: Some(150 - 101),
+            repeticoes_total: repeticoes,
+            repeticao_atual: 0,
+            saiu: Some(false),
+        }
+    };
+    // J = 50: só 101 (t−50); 100 (t−51) fica fora.
+    assert_eq!(
+        linha(&features, 151, 25, 50),
+        &esperado(50, 1, None, None, 0)
+    );
+    // J = 100: 51 (t−100), 100 e 101; 50 (t−101) fica fora. Espaços [48, 0].
+    assert_eq!(
+        linha(&features, 151, 25, 100),
+        &esperado(100, 3, Some((48, 1, 0, 1)), Some(48), 1)
+    );
+    // Total: 50, 51, 100 e 101. Espaços [0, 48, 0].
+    assert_eq!(
+        linha(&features, 151, 25, JANELA_TOTAL),
+        &esperado(JANELA_TOTAL, 4, Some((48, 1, 0, 2)), Some(96), 2)
+    );
+    // J = 10: nenhuma aparição, mas `espaco_final` não é limitado pela janela.
+    assert_eq!(
+        linha(&features, 151, 25, 10),
+        &esperado(10, 0, None, None, 0)
+    );
+}
+
+#[test]
 fn primeiro_concurso_nao_tem_historico() {
     let historico = lotofacil_com_25_em(1, &[1]);
     let (_, features) = calcular(lotofacil(), &historico).unwrap();
@@ -379,37 +429,99 @@ fn determinismo() {
 
 #[test]
 fn incremental_igual_a_completo() {
-    let cfg = lotofacil();
-    let historico = historico_aleatorio(cfg, 250, 17);
-    let (estado_completo, completo) = calcular(cfg, &historico).unwrap();
+    for (cfg, semente) in [(lotofacil(), 17), (quina(), 18), (megasena(), 19)] {
+        let n = 250usize;
+        let historico = historico_aleatorio(cfg, n as u32, semente);
+        let (estado_completo, completo) = calcular(cfg, &historico).unwrap();
 
-    for k in [1, 99, 100, 101, 249] {
-        let (estado, mut parte) = calcular(cfg, &historico[..k]).unwrap();
-        // Retoma de um estado serializado, como fará a 1a.2 com `motor_estado`.
-        let json = serde_json::to_string(&estado).unwrap();
-        let mut retomado: EstadoMotor = serde_json::from_str(&json).unwrap();
-        assert_eq!(retomado, estado);
-        parte.extend(retomado.avancar(cfg, &historico[k..]).unwrap());
-        assert_eq!(parte, completo, "corte em {k}");
-        assert_eq!(retomado, estado_completo, "corte em {k}");
-    }
+        // Extremos: k = 0 (estado vazio, serializado, + tudo) e k = n (tudo +
+        // nada); no meio, as fronteiras da maior janela (100/101).
+        for k in [0, 1, 99, 100, 101, n - 1, n] {
+            let (estado, mut parte) = calcular(cfg, &historico[..k]).unwrap();
+            // Retoma de um estado serializado, como a 1a.2 faz com `motor_estado`.
+            let json = serde_json::to_string(&estado).unwrap();
+            let mut retomado: EstadoMotor = serde_json::from_str(&json).unwrap();
+            assert_eq!(retomado, estado);
+            let resto = retomado.avancar(cfg, &historico[k..]).unwrap();
+            assert_eq!(
+                resto.len(),
+                (n - k) * cfg.qtd_dezenas_possiveis() as usize * JANELAS.len(),
+                "{} corte em {k}",
+                cfg.slug
+            );
+            parte.extend(resto);
+            assert_eq!(parte, completo, "{} corte em {k}", cfg.slug);
+            assert_eq!(retomado, estado_completo, "{} corte em {k}", cfg.slug);
+            assert_eq!(
+                retomado.snapshot(),
+                estado_completo.snapshot(),
+                "{} corte em {k}",
+                cfg.slug
+            );
+        }
 
-    // Concurso a concurso.
-    let mut estado = EstadoMotor::novo(cfg);
-    let mut um_a_um = Vec::new();
-    for r in &historico {
-        um_a_um.extend(estado.adicionar(cfg, r).unwrap());
+        // Concurso a concurso.
+        let mut estado = EstadoMotor::novo(cfg);
+        let mut um_a_um = Vec::new();
+        for r in &historico {
+            um_a_um.extend(estado.adicionar(cfg, r).unwrap());
+        }
+        assert_eq!(um_a_um, completo, "{}", cfg.slug);
+        assert_eq!(estado, estado_completo, "{}", cfg.slug);
     }
-    assert_eq!(um_a_um, completo);
-    assert_eq!(estado, estado_completo);
+}
+
+#[test]
+fn features_de_t_nao_dependem_de_t_nem_do_que_vem_depois() {
+    // Para todo t, as features de t no histórico completo são exatamente o
+    // snapshot de um estado que só viu 1 … t−1: os concursos ≥ t poderiam
+    // nem existir. Pega também o vazamento que não depende do conteúdo dos
+    // concursos futuros, só de quantos são (ex.: `resultados.len()`), que a
+    // troca de dezenas de `alterar_o_concurso_t_…` não detecta.
+    for (cfg, semente) in [
+        (&MINI, 31),
+        (lotofacil(), 32),
+        (quina(), 33),
+        (megasena(), 34),
+    ] {
+        let n = 130u32;
+        let historico = historico_aleatorio(cfg, n, semente);
+        let (estado_completo, completo) = calcular(cfg, &historico).unwrap();
+        for t in 1..=n + 1 {
+            let (passado, _) = calcular(cfg, &historico[..(t - 1) as usize]).unwrap();
+            let esperado: Vec<FeaturesDezena> = if t <= n {
+                completo
+                    .iter()
+                    .filter(|f| f.concurso == t)
+                    .map(|f| FeaturesDezena {
+                        saiu: None,
+                        ..f.clone()
+                    })
+                    .collect()
+            } else {
+                estado_completo.snapshot()
+            };
+            assert_eq!(
+                esperado.len(),
+                cfg.qtd_dezenas_possiveis() as usize * JANELAS.len()
+            );
+            assert_eq!(passado.snapshot(), esperado, "{} t = {t}", cfg.slug);
+        }
+    }
 }
 
 #[test]
 fn alterar_o_concurso_t_e_os_seguintes_nao_muda_as_features_de_t() {
     // Vários t, inclusive o primeiro concurso e as fronteiras da maior
     // janela (100/101). As dezenas de t … n são "giradas" (d → d + 1, com
-    // volta), o que sempre muda o conjunto sorteado.
-    for (cfg, semente) in [(quina(), 21), (&MINI, 22)] {
+    // volta), o que sempre muda o conjunto sorteado (a quantidade sorteada é
+    // menor que a faixa, então o conjunto girado nunca é o mesmo).
+    for (cfg, semente) in [
+        (quina(), 21),
+        (&MINI, 22),
+        (lotofacil(), 23),
+        (megasena(), 24),
+    ] {
         let n = 150u32;
         let original = historico_aleatorio(cfg, n, semente);
         let (_, a) = calcular(cfg, &original).unwrap();
@@ -445,6 +557,26 @@ fn alterar_o_concurso_t_e_os_seguintes_nao_muda_as_features_de_t() {
                     .collect()
             };
             assert_ne!(alvo(&a), alvo(&b), "{} t = {t}", cfg.slug);
+            // Contraprova de que a alteração chega às features: as de t + 1
+            // (que já veem t), sem o alvo — que também foi alterado —, mudam.
+            // Sem isso, um teste que não alterasse nada passaria igual.
+            let features_sem_alvo = |v: &[FeaturesDezena], c: u32| -> Vec<FeaturesDezena> {
+                v.iter()
+                    .filter(|f| f.concurso == c)
+                    .map(|f| FeaturesDezena {
+                        saiu: None,
+                        ..f.clone()
+                    })
+                    .collect()
+            };
+            if t < n {
+                assert_ne!(
+                    features_sem_alvo(&a, t + 1),
+                    features_sem_alvo(&b, t + 1),
+                    "{} t = {t}",
+                    cfg.slug
+                );
+            }
         }
     }
 }
@@ -597,14 +729,18 @@ fn estado_adulterado_e_recusado() {
     assert!(estado.verificar_compatibilidade(cfg).is_ok());
     let base = serde_json::to_value(&estado).unwrap();
 
-    // Aparição depois do último concurso incorporado.
+    // Aparição depois do último concurso incorporado (30), com fila, última
+    // aparição e frequência coerentes entre si: só a guarda de "nenhuma
+    // aparição depois do último concurso" pode recusar.
     let mut json = base.clone();
     let ultima = json["dezenas"][0]["total"]["ultima"].as_u64().unwrap();
+    let frequencia = json["dezenas"][0]["total"]["frequencia"].as_u64().unwrap();
     json["dezenas"][0]["recentes"]
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!(31));
     json["dezenas"][0]["total"]["ultima"] = serde_json::json!(31);
+    json["dezenas"][0]["total"]["frequencia"] = serde_json::json!(frequencia + 1);
     let adulterado: EstadoMotor = serde_json::from_value(json).unwrap();
     assert!(matches!(
         adulterado.verificar_compatibilidade(cfg),

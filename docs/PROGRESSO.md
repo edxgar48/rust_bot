@@ -20,7 +20,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1a.1 Estado incremental por dezena e janela (`src/motor/`)
 - [x] 1a.2 Tabela `features_dezena` + `motor_estado` + comando `sync features`
-- [ ] 1a.3 Testes: golden, vazamento, incremental = completo
+- [x] 1a.3 Testes: golden, vazamento, incremental = completo
 
 ## Fase 1b — Índice de força · `engenheiro-motor`
 
@@ -283,3 +283,31 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   atualizado (Convenções e esquema de `motor_estado`) e `orquestracao` incluído no diagrama de
   camadas da skill `arquitetura-projeto`, com aprovação do usuário. As duas pendências (MÉDIA e
   BAIXA) acima estão resolvidas; seguem para a 1a.3 os dois testes sugeridos pela revisão.
+- 2026-10-04 — 1a.3 concluída. Só testes; nenhum arquivo de produção mudou. `src/motor/tests.rs`:
+  `incremental_igual_a_completo` ampliado às três loterias com cortes k = 0 (estado vazio via JSON),
+  1, 99, 100, 101, n−1 e n; `alterar_o_concurso_t_...` ampliado a Lotofácil e Mega-Sena, com
+  contraprova em t+1; novo `features_de_t_nao_dependem_de_t_nem_do_que_vem_depois` (todo t de 1 a
+  n+1, pega vazamento por contagem). `tests/features.rs`, seções 10 e 11: colunas e PK de
+  `features_dezena` iguais ao plano; golden gravado (snapshot com `saiu` NULL, incremental e
+  completo); casos de borda com NULL de verdade no SQLite e invariantes de NULL na tabela inteira;
+  vazamento no nível do banco (dois bancos iguais até t−1, linhas ≤ t idênticas, exceto `saiu` de t);
+  incremental concurso a concurso = completo; resultado apagado abaixo do último incorporado → recusa
+  por buraco e preserva tudo; último concurso apagado → regenera sem ele (impressão mudou).
+  verificador-vazamento: sem vazamento; 7 mutações injetadas numa cópia, todas pegas. Revisão:
+  aprovada com ressalvas, só BAIXA. Gate: fmt ok, clippy ok, 193 testes (114 lib + 13 sync +
+  56 features + 10 parser, 1 ignorado), `validar todas` ok. **Fase 1a concluída.**
+  **Pendências BAIXA (não bloqueiam):** o caso t=1 de `vazamento_no_banco_...` não testa nada de
+  fato (tirar ou comentar); vazamento por contagem em `avancar` só é coberto na unidade (a
+  orquestração usa `adicionar`; reavaliar se mudar); `confere_com_o_oraculo` sem Mega-Sena;
+  remoção do último concurso regenera — comportamento coerente com "resultado já incorporado mudou",
+  mas o plano não cita remoção explicitamente (registrar no plano se o usuário quiser).
+- 2026-10-04 — 1a.3, a pedido do usuário, dois testes a mais vindos da auditoria de vazamento
+  (achados "importante"): (1) `estado_adulterado_e_recusado` agora aumenta também a `frequencia` no
+  caso da aparição depois do último concurso, isolando a guarda `u <= limite` de
+  `verificar_compatibilidade` (antes outra cláusula recusava primeiro); (2) novo
+  `golden_nas_fronteiras_das_janelas_de_50_e_100` (aparições em t−101, t−100, t−51 e t−50, t = 151),
+  que não depende mais só do oráculo. Conferido com mutantes (guarda removida; J=50 incluindo t−51;
+  J=100 excluindo t−100): os três falham. Gate: fmt ok, clippy ok, 194 testes (115 lib + 13 sync +
+  56 features + 10 parser, 1 ignorado).
+- 2026-10-04 — 1a.3, decisão do usuário: comportamento com resultado apagado registrado no
+  PLANEJAMENTO.md (último concurso → regenera sem ele; abaixo do último → buraco, recusa sem gravar).

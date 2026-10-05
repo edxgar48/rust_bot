@@ -166,8 +166,10 @@ motor_estado(        -- uma linha só (id = 1): estado para retomar do último c
 `motor_estado` e calcula só os concursos novos. Regenera tudo do zero se não
 houver estado, se a `feature_version` mudou, se o estado não confere com a
 loteria ou com `features_dezena`, ou se um resultado já incorporado mudou —
-inclusive só a data, porque a impressão inclui a data. Tudo é gravado numa
-única transação (decisões de 2026-10-04).
+inclusive só a data, porque a impressão inclui a data. Resultado apagado
+segue a mesma lógica: se for o último concurso, regenera tudo sem ele; se
+estiver abaixo do último, vira buraco e `sync features` recusa rodar sem
+alterar nada. Tudo é gravado numa única transação (decisões de 2026-10-04).
 
 Formato longo (janela como coluna): adicionar uma janela não muda o schema.
 Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.

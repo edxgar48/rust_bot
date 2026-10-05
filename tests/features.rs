@@ -2,11 +2,14 @@
 //! sobre bancos em memória: gravação em `features_dezena` e `motor_estado`,
 //! retomada incremental, regeneração e recusa.
 
+use rusqlite::types::Value;
 use rusqlite::Connection;
 use rust_spider::config::{self, LoteriaConfig};
 use rust_spider::db::{self, MotorEstadoSalvo};
 use rust_spider::error::SpiderError;
-use rust_spider::motor::{self, EstadoMotor, FeaturesDezena, FEATURE_VERSION, JANELAS};
+use rust_spider::motor::{
+    self, EstadoMotor, FeaturesDezena, FEATURE_VERSION, JANELAS, JANELA_TOTAL,
+};
 use rust_spider::orquestracao::{
     impressao_resultados, sincronizar_features, ModoFeatures, MotivoRegeneracao, ResumoFeatures,
 };
@@ -1036,4 +1039,584 @@ fn linhas_gravadas_na_regeneracao_por_correcao_cobrem_o_historico_inteiro() {
     let resumo = sincronizar_features(&mut conn, cfg, false).expect("regeneração");
 
     assert_eq!(resumo.linhas_gravadas, 41 * por_concurso(cfg));
+}
+
+// ---------------------------------------------------------------------------
+// 10. Testes obrigatórios do plano (1a.3) sobre a tabela gravada: esquema,
+//     golden, casos de borda com NULL de verdade, vazamento e incremental
+//     concurso a concurso. Lê os valores crus do SQLite (`Value`), sem passar
+//     pela conversão de `db::ler_features`, para comparar o que está gravado.
+// ---------------------------------------------------------------------------
+
+/// Colunas de `features_dezena`, na ordem do plano ("Esquema das tabelas
+/// derivadas").
+const COLUNAS_DO_PLANO: [&str; 14] = [
+    "concurso",
+    "dezena",
+    "janela",
+    "frequencia",
+    "maior_espaco",
+    "maior_espaco_ocorrencias",
+    "menor_espaco",
+    "menor_espaco_ocorrencias",
+    "soma_variacoes",
+    "espaco_final",
+    "repeticoes_total",
+    "repeticao_atual",
+    "saiu",
+    "feature_version",
+];
+
+fn lotofacil() -> &'static LoteriaConfig {
+    config::buscar("lotofacil").expect("lotofacil configurada")
+}
+
+fn megasena() -> &'static LoteriaConfig {
+    config::buscar("megasena").expect("megasena configurada")
+}
+
+/// Lotofácil 1..=n em que a dezena 25 sai exatamente nos concursos de
+/// `aparicoes_25`; as outras 14 (ou 15) são sempre as menores.
+fn lotofacil_com_25_em(n: u32, aparicoes_25: &[u32]) -> Vec<Resultado> {
+    let cfg = lotofacil();
+    (1..=n)
+        .map(|c| {
+            let dezenas: Vec<u32> = if aparicoes_25.contains(&c) {
+                (1..=14).chain([25]).collect()
+            } else {
+                (1..=15).collect()
+            };
+            res(cfg, c, &dezenas)
+        })
+        .collect()
+}
+
+/// Linha esperada de `features_dezena`, na ordem de [`COLUNAS_DO_PLANO`]:
+/// `None` é `NULL`, `Some(v)` é `INTEGER v`.
+fn crua(valores: [Option<i64>; 14]) -> Vec<Value> {
+    valores
+        .into_iter()
+        .map(|v| v.map_or(Value::Null, Value::Integer))
+        .collect()
+}
+
+/// Linhas de `features_dezena` com `concurso <= ate`, todas as colunas na
+/// ordem da tabela, ordenadas pela chave, com os valores como o SQLite os
+/// guarda (classe de armazenamento incluída).
+fn linhas_cruas(conn: &Connection, ate: u32) -> Vec<Vec<Value>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT * FROM features_dezena WHERE concurso <= ?1
+             ORDER BY concurso, dezena, janela",
+        )
+        .expect("consulta preparada");
+    let colunas = stmt.column_count();
+    let linhas = stmt
+        .query_map([ate], |row| {
+            (0..colunas)
+                .map(|i| row.get::<_, Value>(i))
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .expect("consulta");
+    linhas
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("linhas lidas")
+}
+
+/// Uma linha de `features_dezena` pela chave, com as colunas do plano.
+fn linha_crua(conn: &Connection, concurso: u32, dezena: u32, janela: u32) -> Vec<Value> {
+    let sql = format!(
+        "SELECT {} FROM features_dezena WHERE concurso = ?1 AND dezena = ?2 AND janela = ?3",
+        COLUNAS_DO_PLANO.join(", ")
+    );
+    conn.query_row(&sql, [concurso, dezena, janela], |row| {
+        (0..COLUNAS_DO_PLANO.len())
+            .map(|i| row.get::<_, Value>(i))
+            .collect::<rusqlite::Result<Vec<_>>>()
+    })
+    .expect("linha presente")
+}
+
+fn contar(conn: &Connection, sql: &str) -> i64 {
+    conn.query_row(sql, [], |row| row.get(0))
+        .unwrap_or_else(|e| panic!("consulta `{sql}`: {e}"))
+}
+
+#[test]
+fn features_dezena_tem_as_colunas_e_a_chave_do_plano() {
+    let conn = calculado(quina(), &historico(quina(), 3, 111));
+
+    let stmt = conn
+        .prepare("SELECT * FROM features_dezena")
+        .expect("consulta preparada");
+    let colunas: Vec<&str> = stmt.column_names();
+    assert_eq!(colunas, COLUNAS_DO_PLANO);
+
+    // Chave primária (concurso, dezena, janela), nessa ordem.
+    let mut stmt = conn
+        .prepare("SELECT name, pk FROM pragma_table_info('features_dezena') WHERE pk > 0")
+        .expect("pragma");
+    let mut chave: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get(1)?, row.get(0)?)))
+        .expect("pragma")
+        .collect::<rusqlite::Result<_>>()
+        .expect("pragma lido");
+    chave.sort();
+    let chave: Vec<&str> = chave.iter().map(|(_, nome)| nome.as_str()).collect();
+    assert_eq!(chave, ["concurso", "dezena", "janela"]);
+}
+
+#[test]
+fn golden_do_plano_gravado_em_features_dezena() {
+    // docs/PLANEJAMENTO.md, "Exemplo de referência": a dezena sai em 3, 4, 8,
+    // 9, 10, 15; snapshot em t = 20, janela total (gravada como 0).
+    let cfg = lotofacil();
+    let hist = lotofacil_com_25_em(20, &[3, 4, 8, 9, 10, 15]);
+    let fv = Some(i64::from(FEATURE_VERSION));
+    let golden = |saiu: Option<i64>| {
+        crua([
+            Some(20), // concurso
+            Some(25), // dezena
+            Some(0),  // janela total
+            Some(6),  // frequencia
+            Some(4),  // maior_espaco
+            Some(1),  // maior_espaco_ocorrencias
+            Some(0),  // menor_espaco
+            Some(3),  // menor_espaco_ocorrencias
+            Some(10), // soma_variacoes
+            Some(4),  // espaco_final
+            Some(3),  // repeticoes_total
+            Some(0),  // repeticao_atual
+            saiu,
+            fv,
+        ])
+    };
+    assert_eq!(JANELA_TOTAL, 0);
+
+    // Com o banco até o 19, a linha do 20 é o snapshot do próximo concurso,
+    // ainda não sorteado: mesmos componentes, `saiu` NULL.
+    let mut conn = banco();
+    gravar(&mut conn, &hist[..19]);
+    sincronizar_features(&mut conn, cfg, false).expect("até o 19");
+    assert_eq!(linha_crua(&conn, 20, 25, JANELA_TOTAL), golden(None));
+
+    // Chegou o 20, em que a 25 não saiu: mesma linha, alvo 0.
+    gravar(&mut conn, &hist[19..]);
+    let resumo = sincronizar_features(&mut conn, cfg, false).expect("o 20");
+    assert_eq!(resumo.modo, ModoFeatures::Incremental);
+    assert_eq!(linha_crua(&conn, 20, 25, JANELA_TOTAL), golden(Some(0)));
+
+    // Calculado do zero, igual.
+    let conn = calculado(cfg, &hist);
+    assert_eq!(linha_crua(&conn, 20, 25, JANELA_TOTAL), golden(Some(0)));
+}
+
+#[test]
+fn casos_de_borda_gravam_null_de_verdade() {
+    // Mesmo histórico do golden: a 25 sai em 3, 4, 8, 9, 10, 15.
+    let cfg = lotofacil();
+    let conn = calculado(cfg, &lotofacil_com_25_em(20, &[3, 4, 8, 9, 10, 15]));
+    let fv = Some(i64::from(FEATURE_VERSION));
+    let casos = [
+        // t = 3, total: nunca saiu → espaços, variações e espaco_final NULL.
+        [
+            Some(3),
+            Some(25),
+            Some(0),
+            Some(0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0),
+            Some(0),
+            Some(1),
+            fv,
+        ],
+        // t = 4, total: uma aparição (3) → sem espaços nem variações;
+        // espaco_final = 3 − 3 = 0; sequência em curso de 1; saiu no 4.
+        [
+            Some(4),
+            Some(25),
+            Some(0),
+            Some(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(0),
+            Some(0),
+            Some(1),
+            Some(1),
+            fv,
+        ],
+        // t = 5, total: duas aparições (3, 4) → espaços [0], variações NULL;
+        // sequência em curso de 2; não saiu no 5.
+        [
+            Some(5),
+            Some(25),
+            Some(0),
+            Some(2),
+            Some(0),
+            Some(1),
+            Some(0),
+            Some(1),
+            None,
+            Some(0),
+            Some(1),
+            Some(2),
+            Some(0),
+            fv,
+        ],
+        // t = 9, total: três aparições (3, 4, 8) → espaços [0, 3], variação
+        // |3 − 0| = 3; sequência em curso de 1 (o 8); saiu no 9.
+        [
+            Some(9),
+            Some(25),
+            Some(0),
+            Some(3),
+            Some(3),
+            Some(1),
+            Some(0),
+            Some(1),
+            Some(3),
+            Some(0),
+            Some(1),
+            Some(1),
+            Some(1),
+            fv,
+        ],
+        // t = 20, janela 10 (10 … 19): aparições 10 e 15 → espaços [4],
+        // variações NULL; espaco_final continua 4.
+        [
+            Some(20),
+            Some(25),
+            Some(10),
+            Some(2),
+            Some(4),
+            Some(1),
+            Some(4),
+            Some(1),
+            None,
+            Some(4),
+            Some(0),
+            Some(0),
+            Some(0),
+            fv,
+        ],
+    ];
+    for caso in casos {
+        let (concurso, janela) = (caso[0].unwrap() as u32, caso[2].unwrap() as u32);
+        assert_eq!(
+            linha_crua(&conn, concurso, 25, janela),
+            crua(caso),
+            "concurso {concurso}, janela {janela}"
+        );
+    }
+}
+
+#[test]
+fn nulls_da_tabela_seguem_as_regras_de_borda_do_plano() {
+    // Invariantes sobre a tabela inteira, com históricos em que a janela de
+    // 10 tem muitas dezenas com 0, 1 e 2 aparições (Quina, Mega-Sena).
+    for (cfg, semente) in [(quina(), 121), (megasena(), 122), (lotofacil(), 123)] {
+        let n = 130;
+        let conn = calculado(cfg, &historico(cfg, n, semente));
+        let slug = cfg.slug;
+        let espacos = [
+            "maior_espaco",
+            "maior_espaco_ocorrencias",
+            "menor_espaco",
+            "menor_espaco_ocorrencias",
+        ];
+
+        for coluna in espacos {
+            // Menos de 2 aparições na janela → colunas de espaço NULL; com 2
+            // ou mais, preenchidas.
+            assert_eq!(
+                contar(
+                    &conn,
+                    &format!(
+                        "SELECT COUNT(*) FROM features_dezena
+                         WHERE (frequencia < 2) != ({coluna} IS NULL)"
+                    )
+                ),
+                0,
+                "{slug}: {coluna}"
+            );
+        }
+        // Menos de 3 aparições → soma_variacoes NULL; com 3 ou mais, preenchida.
+        assert_eq!(
+            contar(
+                &conn,
+                "SELECT COUNT(*) FROM features_dezena
+                 WHERE (frequencia < 3) != (soma_variacoes IS NULL)"
+            ),
+            0,
+            "{slug}: soma_variacoes"
+        );
+        // espaco_final NULL só se a dezena nunca saiu antes de t (frequência
+        // da janela total = 0), em qualquer janela.
+        assert_eq!(
+            contar(
+                &conn,
+                "SELECT COUNT(*) FROM features_dezena f
+                 JOIN features_dezena t
+                   ON t.concurso = f.concurso AND t.dezena = f.dezena AND t.janela = 0
+                 WHERE (f.espaco_final IS NULL) != (t.frequencia = 0)"
+            ),
+            0,
+            "{slug}: espaco_final"
+        );
+        // `saiu` NULL só no snapshot do próximo concurso.
+        assert_eq!(
+            contar(
+                &conn,
+                &format!(
+                    "SELECT COUNT(*) FROM features_dezena
+                     WHERE (saiu IS NULL) != (concurso = {})",
+                    n + 1
+                )
+            ),
+            0,
+            "{slug}: saiu"
+        );
+        // Fora o NULL, tudo é INTEGER não negativo (nunca 0 ou −1 no lugar de
+        // NULL, nunca texto ou real); `saiu` é 0 ou 1.
+        for coluna in COLUNAS_DO_PLANO {
+            assert_eq!(
+                contar(
+                    &conn,
+                    &format!(
+                        "SELECT COUNT(*) FROM features_dezena
+                         WHERE typeof({coluna}) NOT IN ('integer', 'null') OR {coluna} < 0"
+                    )
+                ),
+                0,
+                "{slug}: {coluna}"
+            );
+        }
+        assert_eq!(
+            contar(
+                &conn,
+                "SELECT COUNT(*) FROM features_dezena WHERE saiu NOT IN (0, 1)"
+            ),
+            0,
+            "{slug}: saiu"
+        );
+
+        // Os casos de borda acontecem de fato (o teste não é vazio): linhas
+        // com 0, 1 e 2 aparições na janela e espaco_final NULL.
+        for (descricao, filtro) in [
+            ("sem aparições", "frequencia = 0"),
+            ("uma aparição", "frequencia = 1"),
+            ("duas aparições", "frequencia = 2"),
+            ("três ou mais", "frequencia >= 3"),
+            ("nunca saiu", "espaco_final IS NULL AND concurso > 1"),
+        ] {
+            assert!(
+                contar(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM features_dezena WHERE {filtro}")
+                ) > 0,
+                "{slug}: nenhuma linha com {descricao}"
+            );
+        }
+    }
+}
+
+/// Mesmo histórico até `t − 1`; de `t` em diante, outro sorteio (outra
+/// semente), com `t` girado para garantir que o concurso `t` mudou.
+fn divergente_a_partir_de(cfg: &LoteriaConfig, hist: &[Resultado], t: u32) -> Vec<Resultado> {
+    let n = hist.len() as u32;
+    let outro = historico(cfg, n, 0xd1fe_0000 + u64::from(t));
+    let mut alterado = hist[..(t - 1) as usize].to_vec();
+    alterado.push(com_dezenas_trocadas(cfg, &hist[(t - 1) as usize]));
+    alterado.extend_from_slice(&outro[t as usize..]);
+    alterado
+}
+
+#[test]
+fn vazamento_no_banco_concurso_t_diferente_nao_muda_linhas_ate_t() {
+    // Dois bancos com o mesmo histórico até t − 1 e concursos t … n
+    // diferentes: as linhas gravadas de concursos < t são idênticas, coluna a
+    // coluna (classe de armazenamento incluída); as de t também, menos `saiu`
+    // (o alvo de t, que legitimamente muda). O banco B é calculado como em
+    // produção: primeiro até t − 1 (gravando o snapshot de t com saiu NULL),
+    // depois com os concursos divergentes, de forma incremental.
+    for (cfg, n, semente) in [
+        (quina(), 110u32, 131),
+        (lotofacil(), 110, 132),
+        (megasena(), 110, 133),
+    ] {
+        let hist = historico(cfg, n, semente);
+        let a = calculado(cfg, &hist);
+        let colunas: Vec<String> = a
+            .prepare("SELECT * FROM features_dezena")
+            .expect("consulta")
+            .column_names()
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let i_concurso = colunas.iter().position(|c| c == "concurso").unwrap();
+        let i_saiu = colunas.iter().position(|c| c == "saiu").unwrap();
+
+        for t in [1u32, 2, 11, 50, 100, 101, n] {
+            let alterado = divergente_a_partir_de(cfg, &hist, t);
+            assert_eq!(alterado.len(), hist.len());
+            assert_ne!(
+                alterado[(t - 1) as usize].dezenas,
+                hist[(t - 1) as usize].dezenas
+            );
+
+            let mut b = banco();
+            if t > 1 {
+                gravar(&mut b, &alterado[..(t - 1) as usize]);
+                sincronizar_features(&mut b, cfg, false).expect("B até t − 1");
+            }
+            gravar(&mut b, &alterado[(t - 1) as usize..]);
+            sincronizar_features(&mut b, cfg, false).expect("B completo");
+
+            let sem_alvo_de_t = |linhas: Vec<Vec<Value>>| -> Vec<Vec<Value>> {
+                linhas
+                    .into_iter()
+                    .map(|mut l| {
+                        if l[i_concurso] == Value::Integer(i64::from(t)) {
+                            l[i_saiu] = Value::Null;
+                        }
+                        l
+                    })
+                    .collect()
+            };
+            let linhas_a = linhas_cruas(&a, t);
+            let linhas_b = linhas_cruas(&b, t);
+            assert_eq!(linhas_a.len(), t as usize * por_concurso(cfg));
+            assert_eq!(
+                sem_alvo_de_t(linhas_a.clone()),
+                sem_alvo_de_t(linhas_b.clone()),
+                "{} t = {t}",
+                cfg.slug
+            );
+
+            // O alvo de t reflete as dezenas de t.
+            let alvo_de_t = |linhas: &[Vec<Value>]| -> Vec<Value> {
+                linhas
+                    .iter()
+                    .filter(|l| l[i_concurso] == Value::Integer(i64::from(t)))
+                    .map(|l| l[i_saiu].clone())
+                    .collect()
+            };
+            assert_ne!(
+                alvo_de_t(&linhas_a),
+                alvo_de_t(&linhas_b),
+                "{} t = {t}",
+                cfg.slug
+            );
+
+            // Contraprova: as linhas de t + 1 (que já veem t; para t = n, o
+            // snapshot do próximo concurso), sem o alvo, mudam.
+            let sem_alvo_de = |conn: &Connection, c: u32| -> Vec<Vec<Value>> {
+                linhas_cruas(conn, c)
+                    .into_iter()
+                    .filter(|l| l[i_concurso] == Value::Integer(i64::from(c)))
+                    .map(|mut l| {
+                        l[i_saiu] = Value::Null;
+                        l
+                    })
+                    .collect()
+            };
+            assert_ne!(
+                sem_alvo_de(&a, t + 1),
+                sem_alvo_de(&b, t + 1),
+                "{} t = {t}",
+                cfg.slug
+            );
+        }
+    }
+}
+
+#[test]
+fn incremental_concurso_a_concurso_igual_ao_completo_nas_tres_loterias() {
+    // O plano: "calcular do zero e adicionar concurso a concurso produzem o
+    // mesmo resultado" — um `sync features` por concurso gravado.
+    let cortes: Vec<usize> = (1..=30).collect();
+    for (slug, semente) in [("quina", 141), ("lotofacil", 142), ("megasena", 143)] {
+        incremental_igual_ao_completo(slug, 30, &cortes, semente);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 11. Resultado apagado de `resultados` depois de calculado.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resultado_apagado_abaixo_do_ultimo_incorporado_recusa_e_preserva_tudo() {
+    // O plano: `sync features` recusa rodar enquanto o `validar` apontar
+    // buraco. Apagar um concurso já incorporado (abaixo do último) abre um
+    // buraco: recusa, com ou sem --completo, sem tocar features nem estado.
+    let cfg = quina();
+    let hist = historico(cfg, 30, 151);
+    for apagado in [1u32, 12, 29] {
+        let mut conn = calculado(cfg, &hist);
+        let tabela_antes = tabela(&conn);
+        let estado_antes = estado_salvo(&conn);
+        conn.execute("DELETE FROM resultados WHERE concurso = ?1", [apagado])
+            .expect("resultado apagado");
+
+        for forcar_completo in [false, true] {
+            let erro = sincronizar_features(&mut conn, cfg, forcar_completo).expect_err("buraco");
+            match erro {
+                SpiderError::ResultadosReprovados { erros, .. } => assert!(
+                    erros.contains(&Problema::ConcursosFaltando {
+                        inicio: apagado,
+                        fim: apagado
+                    }),
+                    "apagado {apagado}: {erros:?}"
+                ),
+                outro => panic!("apagado {apagado}: erro inesperado: {outro:?}"),
+            }
+            assert_eq!(tabela(&conn), tabela_antes, "apagado {apagado}");
+            assert_eq!(estado_salvo(&conn), estado_antes, "apagado {apagado}");
+        }
+
+        // Devolvido o mesmo resultado, a impressão volta a conferir: retoma
+        // sem nada novo, sem regenerar.
+        gravar(&mut conn, &hist[(apagado - 1) as usize..apagado as usize]);
+        let resumo = sincronizar_features(&mut conn, cfg, false).expect("buraco fechado");
+        assert_eq!(resumo.modo, ModoFeatures::Incremental, "apagado {apagado}");
+        assert_eq!(resumo.concursos_incorporados, 0);
+        assert_eq!(tabela(&conn), tabela_antes, "apagado {apagado}");
+        assert_eq!(estado_salvo(&conn), estado_antes, "apagado {apagado}");
+    }
+}
+
+#[test]
+fn ultimo_concurso_apagado_regenera_sem_ele() {
+    // Apagar o último não abre buraco (o `validar` passa), mas muda um
+    // resultado já incorporado: regenera do zero, e a tabela fica igual à de
+    // um banco que nunca teve o concurso — o snapshot dele volta a ter saiu
+    // NULL e o do concurso seguinte some.
+    let cfg = quina();
+    let hist = historico(cfg, 30, 152);
+    let mut conn = calculado(cfg, &hist);
+    conn.execute("DELETE FROM resultados WHERE concurso = 30", [])
+        .expect("resultado apagado");
+
+    let resumo = sincronizar_features(&mut conn, cfg, false).expect("regeneração");
+
+    assert_eq!(
+        resumo.modo,
+        ModoFeatures::Completo(MotivoRegeneracao::ResultadosAlterados)
+    );
+    assert_eq!(resumo.ultimo_concurso, 29);
+    assert_eq!(resumo.proximo_concurso, 30);
+    let (ref_tabela, ref_estado) = referencia(cfg, &hist[..29]);
+    assert_eq!(tabela(&conn), ref_tabela);
+    assert_eq!(estado_salvo(&conn), ref_estado);
+    assert!(db::ler_features_do_concurso(&conn, 31)
+        .expect("lido")
+        .is_empty());
 }
