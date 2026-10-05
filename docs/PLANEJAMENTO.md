@@ -243,6 +243,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 | 0.5 | `todas` aceito no lugar do slug em `baixar`, `atualizar`, `validar` e `buracos` (e, na Fase 2, `exportar`): roda o comando em cada banco, um por vez, sem juntar bancos. `importar`, `inserir` e `listar` aceitam só uma loteria (decisão de 2026-10-04) |
 | 0.6 | Corrigir textos da CLI que ainda falam em ".htm" |
 | 0.7 | Fechar buracos à mão: `sync buracos` lista os concursos que faltam (com as datas dos vizinhos) e `sync inserir` grava um concurso por vez, com a validação normal e data fora de ordem tratada como erro. Cada inserção fica em `cache/manuais_<loteria>.json` (versionado no git, ordenado por data de sorteio), que `importar`/`baixar` reaplicam e conciliam com a fonte oficial: igual → sai do cache; diferente → aviso |
+| 0.8 | `atualizar` com salto (decisão de 2026-10-05): se o concurso lido na página for maior que o último do banco + 1 (concursos perdidos), não grava só o último (o que deixaria buraco). Copia o banco para `backups/resultados_<loteria>_<AAAAMMDD-HHMMSS>.db`, mostra o caminho e segue o caminho do `baixar` (planilha completa + cache de inserções manuais + validação). Se a planilha falhar, termina com erro sem gravar nada (o backup fica). Se ainda sobrar buraco (a planilha não tem o concurso), avisa e indica `buracos`/`inserir`. Sem pergunta interativa: o comando vai rodar agendado na Fase 3. Salto de 1 continua como hoje. Banco inexistente ou vazio conta como último = 0 (segue o caminho do `baixar`, sem backup); planilha mais atrasada que a página: o concurso da página é gravado em seguida, como num salto de 1 |
 
 **Pronto quando:** `sync validar todas` passa nos três bancos e `cargo test` está verde.
 
@@ -321,7 +322,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 | # | Tarefa |
 |---|---|
-| 3.1 | `sync ciclo`: atualizar → backfill automático se houver buraco (buscando os concursos que faltam e gravando pelo mesmo caminho do `inserir`, no cache de 0.7) → validar → features (incremental) → índice → exportar → publicar (só se mudou) |
+| 3.1 | `sync ciclo`: atualizar → backfill automático se houver buraco (buscando os concursos que faltam e gravando pelo mesmo caminho do `inserir`, no cache de 0.7) → validar → features (incremental) → índice → exportar → publicar (só se mudou). Antes, mover para a biblioteca (`orquestracao`) a lógica de gravação que ainda está na CLI (`processar_e_salvar`, `validar_lote`, `aplicar_atualizacao`), para o ciclo reaproveitá-la |
 | 3.2 | Calendário de sorteios por loteria no `config.rs` |
 | 3.3 | Retentativas com backoff (sorteio ~20h, tentativas até ~23h, nova tentativa no dia seguinte) |
 | 3.4 | Arquivo de trava contra execução simultânea |
