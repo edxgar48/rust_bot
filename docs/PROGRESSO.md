@@ -513,3 +513,12 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   atualizado" sem novo backup. `/backups` no `.gitignore`; removidos `src/resultados_lotofacil.db` e
   `src/bin/resultados_lotofacil.db` (bancos vazios de uma execução antiga, fora do git). Horário do
   nome do backup em UTC.
+- 2026-10-05 — Teste de ponta a ponta nos bancos reais (backup em `backups/antes_teste_2026-10-05/`):
+  `features` + `indice padrao_v1` completos sobre o histórico antigo; `atualizar todas` trouxe 1 sorteio
+  novo por loteria (Lotofácil 3796, Mega-Sena 3066, Quina 7134, todos de 2026-10-03; salto de 1, sem
+  backup); `validar todas` ok; `features` incremental (1 concurso, 0,05–0,17 s) e `indice`. Conferido:
+  incremental = completo (`--completo` numa cópia) byte a byte em `features_dezena` e `indice` nas três;
+  features 1..último antigo intactas e snapshot antigo igual exceto `saiu` (NULL → preenchido); índice
+  1..antigo próximo intacto; `saiu = 1` exatamente nas dezenas sorteadas. Os bancos reais agora têm
+  `features_dezena`, `motor_estado`, `perfis` e `indice`.
+  Usuário conferiu no site da Caixa os três concursos novos: ok.
