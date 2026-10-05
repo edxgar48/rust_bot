@@ -114,8 +114,9 @@ Dezena sai nos concursos 3, 4, 8, 9, 10, 15. Snapshot em *t* = 20, janela total:
 ### Perfil de pesos
 
 ```toml
-# perfis/padrao_v1.toml
+# perfis/lotofacil/padrao_v1.toml
 nome = "padrao_v1"
+versao = 1
 loteria = "lotofacil"
 janela = 50
 normalizacao = "zscore"        # ou "minmax"
@@ -135,6 +136,31 @@ repeticao_atual           = 0.4
 Perfis são versionados no repositório; o banco registra o hash do `.toml`
 usado para gerar cada índice.
 
+Regras dos perfis (decisões de 2026-10-04):
+
+- **Local:** `perfis/<loteria>/<nome>.toml`. A `loteria` do arquivo tem de
+  bater com a pasta, e o `nome` com o nome do arquivo.
+- **Versão:** campo `versao` (inteiro) obrigatório, conferido com o sufixo do
+  nome (`padrao_v1` → 1). Mudou o conteúdo → novo arquivo com a versão
+  seguinte.
+- **Validação rígida:** os 9 pesos são obrigatórios (peso 0 escrito por
+  extenso); chave desconhecida é erro; `janela` só em {0, 10, 50, 100}
+  (0 = total); `normalizacao` só `zscore` ou `minmax`.
+- **Hash:** SHA-256 do `.toml` depois de tirar o BOM UTF-8 (se houver) e
+  normalizar o fim de linha para LF
+  (`perfis/**/*.toml text eol=lf` no `.gitattributes`), para o hash ser o
+  mesmo em qualquer máquina.
+- **Imutabilidade:** perfil já registrado com o mesmo `nome` e conteúdo
+  diferente é erro, pedindo para subir a versão. Um índice gravado nunca
+  fica com um perfil diferente do que o gerou.
+- **Pesos iniciais:** Mega-Sena e Quina começam com os mesmos pesos do
+  exemplo, até a busca de pesos da Fase 1.5.
+- **Dependências:** crates `toml` (leitura) e `sha2` (hash; reaproveitado
+  nos hashes da Fase 2).
+- **Quem grava:** a 1b.1 entrega leitura, validação e as funções de banco
+  (testadas com banco em memória); o registro na tabela `perfis` é feito
+  pelo `sync indice`, na 1b.3.
+
 ## Esquema das tabelas derivadas (em cada `resultados_<loteria>.db`)
 
 ```sql
@@ -153,7 +179,13 @@ indice(
     PRIMARY KEY (concurso, dezena, perfil)
 )
 
-perfis(nome, versao, hash_toml, criado_em)
+perfis(
+    nome, versao, loteria, janela, normalizacao,
+    hash_toml,       -- SHA-256 do .toml com fim de linha em LF
+    toml,            -- texto do .toml, para o banco bastar sozinho
+    criado_em,       -- gravado só no primeiro registro
+    PRIMARY KEY (nome)
+)
 
 motor_estado(        -- uma linha só (id = 1): estado para retomar do último concurso
     id, loteria, feature_version, ultimo_concurso,
