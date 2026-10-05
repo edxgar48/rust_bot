@@ -45,32 +45,67 @@
 //!
 //! Sequência saiu (1) / não saiu (0) da dezena em todos os concursos, em
 //! ordem. `R` = número de sequências (blocos de valores iguais), `n1` =
-//! saídas, `n0` = não saídas, `n = n1 + n0`. Condicionado a `n1` (sob o
-//! acaso, toda ordem dos `n1` uns é igualmente provável):
+//! saídas, `n0` = não saídas, `n = n1 + n0`. Sob o acaso, condicionado a
+//! `n1`, toda ordem dos `n1` uns é igualmente provável, e a distribuição de
+//! `R` é a clássica (contagem de arranjos sobre `C(n, n1)`):
 //!
 //! ```text
-//! μ = 2·n1·n0/n + 1      σ² = 2·n1·n0·(2·n1·n0 − n) / (n²·(n − 1))
-//! z = (R − μ)/σ          p = 2·Φ(−|z|)   (bilateral, sem correção de continuidade)
+//! P(R = 2k)     = 2·C(n1−1, k−1)·C(n0−1, k−1) / C(n, n1)
+//! P(R = 2k + 1) = [C(n1−1, k−1)·C(n0−1, k) + C(n1−1, k)·C(n0−1, k−1)] / C(n, n1)
+//!               = C(n1−1, k−1)·C(n0−1, k−1)·(n − 2k)/k / C(n, n1)
 //! ```
 //!
-//! Poucas sequências (blocos longos de saídas ou de ausências) dão `z < 0`;
-//! alternância demais, `z > 0`. Com `n1` = 0, `n0` = 0 ou `σ² = 0` (só
-//! acontece com `n1 = n0 = 1`), a sequência não tem variação a testar: a
-//! dezena é **não testável**, fica com p-valor `None` e **fora** da família
-//! do Holm (contá-la só inflaria o *m* sem poder rejeitar nada). Nas
-//! loterias reais, com milhares de concursos, toda dezena é testável.
+//! com `R` de 2 a `2·min(n1, n0)` (+1 se `n1 ≠ n0`). Média e desvio-padrão
+//! (`μ = 2·n1·n0/n + 1`, `σ² = 2·n1·n0·(2·n1·n0 − n)/(n²·(n − 1))`) ficam no
+//! relatório só como descrição: poucas sequências (blocos longos) dão
+//! `R < μ`; alternância demais, `R > μ`.
 //!
-//! **Limitação medida da normal**: com `n1` pequeno diante de `n` (Quina,
-//! 6,25%; Mega-Sena, 10%), a distribuição de `R` é assimétrica e a normal
-//! **subestima a cauda esquerda** (poucas sequências). Em 300 históricos
-//! simulados do tamanho real, a fração de p-valores ≤ α/N ficou em ~1,5× o
-//! nominal na Quina (quase toda com `z < 0`) e a chance de alguma rejeição
-//! falsa depois do Holm em ~6–7% (nominal: ≤ 5%); com 500 concursos na
-//! Mega-Sena, ~10%. Na Lotofácil (*p* = 0,6) o efeito é pequeno. Nos
-//! valores do meio da distribuição (p-valor ~5%) a normal é boa. Um p-valor
-//! exato pela distribuição condicional de `R` resolveria; fica como
-//! proposta para decisão (não está no plano). Em séries pequenas (os
-//! exemplos dos testes) o p-valor é só indicativo.
+//! **p-valor exato, bilateral pelo dobro da menor cauda** (decisão de
+//! 2026-10-05): com `r` o `R` observado,
+//!
+//! ```text
+//! p = min(1, 2·min(P(R ≤ r), P(R ≥ r)))
+//! ```
+//!
+//! A aproximação normal foi abandonada: com `n1` pequeno diante de `n`
+//! (Quina, 6,25%; Mega-Sena, 10%) ela subestima a cauda esquerda e dava
+//! alarme falso acima dos 5% depois do Holm. O tamanho do teste exato é
+//! ≤ α: cada cauda, sozinha, é um p-valor unilateral válido, e as duas
+//! regiões de rejeição (cada uma com cauda ≤ α/2) somam no máximo α.
+//!
+//! **Por que não a soma das probabilidades até a observada** (a convenção de
+//! `binom.test`/`fisher.test` do R, usada numa primeira versão): a
+//! distribuição de `R` é em serrote, `P(2k+1)/P(2k) = (n − 2k)/(2k)`, e com
+//! `n1` pequeno (Quina, Mega-Sena) um `R` ímpar é ~5–8× mais provável que os
+//! pares vizinhos. A paridade de `R` só diz se o primeiro e o último
+//! concurso têm o mesmo estado — nada sobre agrupamento —, mas aquela regra
+//! ordena os `r` pela probabilidade pontual, e um `R` par recebia p-valor bem
+//! menor que um ímpar à mesma distância de `μ`: na Quina com 7134 concursos,
+//! sob o acaso, P(p ≤ 5% | R par) ≈ 27% contra ≈ 2% com `R` ímpar. As caudas
+//! acumuladas ordenam os `r` pela **posição**: `P(R ≤ r)` cresce e
+//! `P(R ≥ r)` cai com `r`, então o p-valor sobe até a mediana e só desce
+//! depois dela (unimodal em `r`, sem serrote), e as mesmas taxas ficam
+//! ≈ 5,4% e ≈ 4,4%.
+//!
+//! Cálculo em O(min(n1, n0)), sem inteiros grandes: com `L(k) = ln C(n1−1,
+//! k−1) + ln C(n0−1, k−1)`, `L(1) = 0` e
+//! `L(k+1) = L(k) + ln(n1−k) + ln(n0−k) − 2·ln k`; `ln P(2k) = ln 2 + L(k)`,
+//! `ln P(2k+1) = L(k) + ln(n−2k) − ln k`, todos a menos de `ln C(n, n1)`.
+//! Os logaritmos são acumulados com soma compensada (Neumaier), e o máximo é
+//! subtraído com os dois termos da soma, então cada peso relativo ao modo
+//! sai com erro relativo de poucos `eps` vezes o número de passos. O
+//! `C(n, n1)` nunca é calculado: cada cauda é `Σ w` dos seus `r`, com `w` os
+//! pesos relativos ao modo, em log-soma-exp a partir do maior peso da cauda
+//! (caudas minúsculas, até ~1e-308, mantêm precisão relativa), e o total
+//! `Σ w` vai de 1 (o modo) a `2·min(n1, n0)`, sem estouro;
+//! `p = 2·cauda/total`, limitado a 1. Abaixo do menor `f64` subnormal o
+//! p-valor vira 0.
+//!
+//! Dezena **fixa** (`n1` = 0 ou `n0` = 0: nunca ou sempre saiu no trecho):
+//! `R = 1` com probabilidade 1, então p = 1. Ela **entra** na família do
+//! Holm com p = 1 (decisão de 2026-10-05: conta como um teste no *m*) e
+//! nunca é rejeitada. O mesmo vale, pela própria distribuição, para
+//! `n1 = n0 = 1` (`R = 2` sempre, as duas caudas valem 1).
 //!
 //! # Holm
 //!
@@ -82,12 +117,12 @@
 //!
 //! # Funções especiais
 //!
-//! Os p-valores vêm da gama incompleta regularizada superior `Q(a, x)`:
-//! `P(χ²_gl ≥ x) = Q(gl/2, x/2)` e `2·Φ(−|z|) = erfc(|z|/√2) = Q(1/2, z²/2)`.
+//! O p-valor do qui-quadrado vem da gama incompleta regularizada superior
+//! `Q(a, x)`: `P(χ²_gl ≥ x) = Q(gl/2, x/2)`.
 //! `Q` é calculada como em *Numerical Recipes* (série de `P` para
 //! `x < a + 1`, fração contínua de Legendre por Lentz modificado no resto),
-//! sem subtrair de 1 na cauda, então caudas pequenas (z = 8, χ² muito acima
-//! dos graus de liberdade) mantêm precisão relativa. Como `a` é sempre
+//! sem subtrair de 1 na cauda, então caudas pequenas (χ² muito acima dos
+//! graus de liberdade) mantêm precisão relativa. Como `a` é sempre
 //! inteiro ou semi-inteiro (`gl/2`), `ln Γ(a)` sai exato por soma de
 //! logaritmos (`Γ(a) = (a−1)!` ou `Γ(m + 1/2) = √π·Π(j + 1/2)`), sem
 //! aproximação de Lanczos.
@@ -135,20 +170,22 @@ pub struct TesteRuns {
     pub nao_saidas: u64,
     /// `R`: número de sequências de valores iguais.
     pub sequencias: u64,
-    /// `μ = 2·n1·n0/n + 1` (1 quando `n1` ou `n0` é zero).
+    /// `μ = 2·n1·n0/n + 1`, média exata de `R` dado `n1` (1 na dezena fixa).
+    /// Só descritiva: `R < μ` é bloco longo, `R > μ` é alternância.
     pub media: f64,
-    /// `σ`; zero quando a dezena não é testável.
+    /// `σ`, desvio-padrão exato de `R` dado `n1` (zero na dezena fixa e com
+    /// `n1 = n0 = 1`). Só descritivo: o p-valor não usa a normal.
     pub desvio_padrao: f64,
-    /// `(R − μ)/σ`; `None` se não testável (`n1` = 0, `n0` = 0 ou `σ` = 0).
-    pub z: Option<f64>,
-    /// p-valor bilateral pela normal; `None` se não testável.
-    pub p_valor: Option<f64>,
+    /// p-valor **exato** bilateral (dobro da menor cauda, limitado a 1); 1
+    /// na dezena fixa.
+    pub p_valor: f64,
 }
 
 impl TesteRuns {
-    /// Se a sequência tem variação a testar (entra na família do Holm).
-    pub fn testavel(&self) -> bool {
-        self.p_valor.is_some()
+    /// Dezena que nunca (`n1` = 0) ou sempre (`n0` = 0) saiu no trecho: sem
+    /// variação a testar, p = 1, mas conta no *m* do Holm.
+    pub fn fixa(&self) -> bool {
+        self.saidas == 0 || self.nao_saidas == 0
     }
 }
 
@@ -157,10 +194,10 @@ impl TesteRuns {
 pub struct RunsDezena {
     pub dezena: u32,
     pub teste: TesteRuns,
-    /// p-valor ajustado por Holm entre as dezenas testáveis; `None` se a
-    /// dezena não é testável.
-    pub p_valor_holm: Option<f64>,
-    /// `p_valor_holm ≤ ALFA`; `false` se não testável.
+    /// p-valor ajustado por Holm entre **todas** as *N* dezenas (as fixas
+    /// entram com p = 1 e saem com ajustado 1).
+    pub p_valor_holm: f64,
+    /// `p_valor_holm ≤ ALFA`.
     pub rejeita: bool,
 }
 
@@ -177,8 +214,11 @@ pub struct ResumoAleatoriedade {
     pub qui_quadrado: QuiQuadradoFrequencia,
     /// Uma entrada por dezena, em ordem crescente de dezena.
     pub runs: Vec<RunsDezena>,
-    /// *m* da família do Holm: dezenas testáveis.
+    /// *m* da família do Holm: todas as *N* dezenas, inclusive as fixas.
     pub dezenas_testadas_runs: usize,
+    /// Dezenas fixas (nunca ou sempre saíram no trecho): entram no Holm com
+    /// p = 1.
+    pub dezenas_fixas_runs: usize,
     /// Dezenas com p-valor original ≤ α (sem correção; só para comparar).
     pub rejeicoes_runs_sem_correcao: usize,
     /// Dezenas rejeitadas depois do Holm (a decisão da família).
@@ -211,25 +251,20 @@ pub fn testar_aleatoriedade(
     let frequencias: Vec<u64> = testes.iter().map(|t| t.saidas).collect();
     let qui_quadrado = qui_quadrado_frequencia(cfg, &frequencias, concursos)?;
 
-    // Família do Holm: só as dezenas testáveis, na ordem crescente de dezena
-    // (o desempate do `holm` é pela posição, logo pela menor dezena).
-    let p_testaveis: Vec<f64> = testes.iter().filter_map(|t| t.p_valor).collect();
-    let mut ajustados = holm(&p_testaveis)?.into_iter();
+    // Família do Holm: todas as dezenas, as fixas com p = 1 (decisão de
+    // 2026-10-05), na ordem crescente de dezena (o desempate do `holm` é pela
+    // posição, logo pela menor dezena).
+    let p_valores: Vec<f64> = testes.iter().map(|t| t.p_valor).collect();
+    let ajustados = holm(&p_valores)?;
     let runs: Vec<RunsDezena> = cfg
         .dezenas()
         .zip(testes)
-        .map(|(dezena, teste)| {
-            let p_valor_holm = if teste.testavel() {
-                ajustados.next()
-            } else {
-                None
-            };
-            RunsDezena {
-                dezena,
-                rejeita: p_valor_holm.is_some_and(|p| p <= ALFA),
-                p_valor_holm,
-                teste,
-            }
+        .zip(ajustados)
+        .map(|((dezena, teste), p_valor_holm)| RunsDezena {
+            dezena,
+            rejeita: p_valor_holm <= ALFA,
+            p_valor_holm,
+            teste,
         })
         .collect();
 
@@ -239,8 +274,9 @@ pub fn testar_aleatoriedade(
         concursos,
         alfa: ALFA,
         qui_quadrado,
-        dezenas_testadas_runs: p_testaveis.len(),
-        rejeicoes_runs_sem_correcao: p_testaveis.iter().filter(|&&p| p <= ALFA).count(),
+        dezenas_testadas_runs: p_valores.len(),
+        dezenas_fixas_runs: runs.iter().filter(|r| r.teste.fixa()).count(),
+        rejeicoes_runs_sem_correcao: p_valores.iter().filter(|&&p| p <= ALFA).count(),
         rejeicoes_runs: runs.iter().filter(|r| r.rejeita).count(),
         runs,
     })
@@ -331,9 +367,10 @@ pub fn qui_quadrado_frequencia(
     })
 }
 
-/// Runs test (Wald–Wolfowitz) de uma sequência saiu/não saiu, na ordem dada.
-/// Fórmulas e o caso não testável na documentação do módulo. Sequência vazia
-/// é [`SpiderError::AvaliacaoSemConcursos`].
+/// Runs test (Wald–Wolfowitz) de uma sequência saiu/não saiu, na ordem dada,
+/// com p-valor exato ([`p_valor_runs_exato`]). Fórmulas e a dezena fixa na
+/// documentação do módulo. Sequência vazia é
+/// [`SpiderError::AvaliacaoSemConcursos`].
 pub fn teste_de_runs(sequencia: &[bool]) -> Result<TesteRuns> {
     let Some((&primeiro, resto)) = sequencia.split_first() else {
         return Err(SpiderError::AvaliacaoSemConcursos(
@@ -352,22 +389,16 @@ pub fn teste_de_runs(sequencia: &[bool]) -> Result<TesteRuns> {
         }
     }
 
-    // Em inteiros (cabem: n ≤ 2^32 concursos dá 2·n1·n0 ≤ 2^63):
-    // 2·n1·n0, A = 2·n1·n0·(2·n1·n0 − n) (≥ 0, zero só com n1·n0 = 0 ou
-    // n1 = n0 = 1) e o numerador de R − μ = (n·(R−1) − 2·n1·n0)/n.
+    // Em inteiros (cabem em u128 para qualquer n em u64): 2·n1·n0 e
+    // A = 2·n1·n0·(2·n1·n0 − n) (≥ 0, zero só com n1·n0 = 0 ou n1 = n0 = 1).
     let dobro_produto = 2 * u128::from(saidas) * u128::from(nao_saidas);
-    let n128 = u128::from(n);
-    let a = dobro_produto * dobro_produto.saturating_sub(n128);
+    let a = dobro_produto * dobro_produto.saturating_sub(u128::from(n));
     let media = dobro_produto as f64 / n as f64 + 1.0;
-    let (desvio_padrao, z, p_valor) = if a == 0 {
-        (0.0, None, None)
+    // σ = √A / (n·√(n−1)); A > 0 implica n ≥ 3.
+    let desvio_padrao = if a == 0 {
+        0.0
     } else {
-        // σ = √A / (n·√(n−1)) e z = (n·(R−1) − 2·n1·n0)·√((n−1)/A). A > 0
-        // implica n ≥ 3.
-        let numerador = (n128 * u128::from(sequencias - 1)) as f64 - dobro_produto as f64;
-        let z = numerador * ((n - 1) as f64 / a as f64).sqrt();
-        let desvio = (a as f64).sqrt() / (n as f64 * ((n - 1) as f64).sqrt());
-        (desvio, Some(z), Some(p_valor_normal_bilateral(z)?))
+        (a as f64).sqrt() / (n as f64 * ((n - 1) as f64).sqrt())
     };
     Ok(TesteRuns {
         saidas,
@@ -375,9 +406,160 @@ pub fn teste_de_runs(sequencia: &[bool]) -> Result<TesteRuns> {
         sequencias,
         media,
         desvio_padrao,
-        z,
-        p_valor,
+        p_valor: p_valor_runs_exato(saidas, nao_saidas, sequencias)?,
     })
+}
+
+/// p-valor exato bilateral do runs test, condicionado a `saidas` uns e
+/// `nao_saidas` zeros: `min(1, 2·min(P(R ≤ sequencias), P(R ≥ sequencias)))`
+/// (regra e algoritmo na documentação do módulo). Dezena fixa (`saidas` ou
+/// `nao_saidas` zero, então `R = 1`) dá 1.
+///
+/// Entrada impossível é [`SpiderError::AvaliacaoEntradaInvalida`], recusada
+/// antes de montar a distribuição (`validar_runs`): sequência vazia,
+/// `saidas + nao_saidas` fora de `u64` e `sequencias` fora de
+/// `2..=2·min(n1, n0) + [n1 ≠ n0]` (ou ≠ 1 na dezena fixa).
+pub fn p_valor_runs_exato(saidas: u64, nao_saidas: u64, sequencias: u64) -> Result<f64> {
+    validar_runs(saidas, nao_saidas, sequencias)?;
+    if saidas == 0 || nao_saidas == 0 {
+        return Ok(1.0);
+    }
+    // `pesos[i]` é de r = i + 2; `validar_runs` garante que o observado está
+    // entre eles, então as duas caudas têm ao menos um termo (o observado).
+    let pesos = ln_pesos_runs(saidas, nao_saidas);
+    let na_esquerda = |r: u64| r <= sequencias;
+    let na_direita = |r: u64| r >= sequencias;
+
+    // Log-soma-exp de cada cauda a partir do seu maior peso (precisão
+    // relativa mesmo com a cauda inteira abaixo do menor `f64`).
+    let (mut maior_esquerda, mut maior_direita) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (r, &w) in (2u64..).zip(&pesos) {
+        if na_esquerda(r) {
+            maior_esquerda = maior_esquerda.max(w);
+        }
+        if na_direita(r) {
+            maior_direita = maior_direita.max(w);
+        }
+    }
+    let mut esquerda = SomaCompensada::default();
+    let mut direita = SomaCompensada::default();
+    // Total: Σ w com o modo valendo 1 (≥ 1, sem estouro; termos que viram 0
+    // são desprezíveis diante dele).
+    let mut total = SomaCompensada::default();
+    for (r, &w) in (2u64..).zip(&pesos) {
+        total.somar(w.exp());
+        if na_esquerda(r) {
+            esquerda.somar((w - maior_esquerda).exp());
+        }
+        if na_direita(r) {
+            direita.somar((w - maior_direita).exp());
+        }
+    }
+    let ln_esquerda = maior_esquerda + esquerda.valor().ln();
+    let ln_direita = maior_direita + direita.valor().ln();
+    let ln_p = std::f64::consts::LN_2 + ln_esquerda.min(ln_direita) - total.valor().ln();
+    Ok(ln_p.exp().min(1.0))
+}
+
+/// Confere a entrada do runs test **antes** de montar a distribuição (que
+/// teria `2·min(n1, n0)` termos): nada de alocar ou iterar por um `R` que
+/// não pode acontecer.
+///
+/// `R` possível: 1 só na dezena fixa (`n1` ou `n0` zero); senão de 2
+/// (dois blocos) a `2·min(n1, n0)` (alternância completa com `n1 = n0`) ou
+/// `2·min(n1, n0) + 1` (com `n1 ≠ n0`, o lado maior abre e fecha).
+fn validar_runs(saidas: u64, nao_saidas: u64, sequencias: u64) -> Result<()> {
+    if saidas == 0 && nao_saidas == 0 {
+        return Err(invalida(
+            "runs test com sequência vazia (0 saídas e 0 não saídas)".to_string(),
+        ));
+    }
+    if saidas.checked_add(nao_saidas).is_none() {
+        return Err(invalida(format!(
+            "runs test: {saidas} saída(s) + {nao_saidas} não saída(s) não cabe em 64 bits"
+        )));
+    }
+    let menor = saidas.min(nao_saidas);
+    // 2·menor ≤ n1 + n0, que cabe em u64; com n1 ≠ n0, 2·menor < n1 + n0,
+    // então o +1 também cabe.
+    let (minimo, maximo) = if menor == 0 {
+        (1, 1)
+    } else {
+        (2, 2 * menor + u64::from(saidas != nao_saidas))
+    };
+    if !(minimo..=maximo).contains(&sequencias) {
+        return Err(invalida(format!(
+            "runs test: {sequencias} sequência(s) é impossível com {saidas} saída(s) e {nao_saidas} não saída(s) (possíveis: {minimo}..={maximo})"
+        )));
+    }
+    Ok(())
+}
+
+/// `ln(P(R = r) / max_r P(R = r))` para r = 2, 3, …, `2·min(n1, n0)` (+1 se
+/// `n1 ≠ n0`), na ordem de `r`; o modo vale 0. Exige `n1, n0 ≥ 1`.
+/// Recorrência e precisão na documentação do módulo.
+fn ln_pesos_runs(n1: u64, n0: u64) -> Vec<f64> {
+    debug_assert!(n1 >= 1 && n0 >= 1);
+    let menor = n1.min(n0);
+    let n = n1 + n0;
+    let ln = |x: u64| (x as f64).ln();
+    // Capacidade: no máximo 2·menor valores de r (2..=2·menor+1).
+    let mut brutos: Vec<SomaCompensada> =
+        Vec::with_capacity(usize::try_from(2 * menor).unwrap_or(0));
+    // L(k) = ln C(n1−1, k−1) + ln C(n0−1, k−1), L(1) = 0.
+    let mut l = SomaCompensada::default();
+    for k in 1..=menor {
+        let mut par = l;
+        par.somar(std::f64::consts::LN_2);
+        brutos.push(par);
+        // R = 2k+1 só existe se n − 2k > 0 (não existe com k = n1 = n0).
+        if n > 2 * k {
+            let mut impar = l;
+            impar.somar(ln(n - 2 * k));
+            impar.somar(-ln(k));
+            brutos.push(impar);
+        }
+        if k < menor {
+            l.somar(ln(n1 - k));
+            l.somar(ln(n0 - k));
+            l.somar(-2.0 * ln(k));
+        }
+    }
+    // Máximo pelo valor completo (soma + correção); a subtração é feita
+    // parcela a parcela para não perder a correção.
+    let modo = brutos
+        .iter()
+        .copied()
+        .max_by(|a, b| a.valor().total_cmp(&b.valor()))
+        .unwrap_or_default();
+    brutos
+        .iter()
+        .map(|b| (b.soma - modo.soma) + (b.correcao - modo.correcao))
+        .collect()
+}
+
+/// Soma compensada de Neumaier: `soma + correcao` carrega o resultado com
+/// erro de ~1 `eps` relativo, em vez de crescer com o número de parcelas.
+#[derive(Debug, Clone, Copy, Default)]
+struct SomaCompensada {
+    soma: f64,
+    correcao: f64,
+}
+
+impl SomaCompensada {
+    fn somar(&mut self, x: f64) {
+        let t = self.soma + x;
+        if self.soma.abs() >= x.abs() {
+            self.correcao += (self.soma - t) + x;
+        } else {
+            self.correcao += (x - t) + self.soma;
+        }
+        self.soma = t;
+    }
+
+    fn valor(&self) -> f64 {
+        self.soma + self.correcao
+    }
 }
 
 /// p-valores ajustados por Holm (*step-down*), na mesma ordem da entrada:
@@ -428,15 +610,6 @@ pub fn p_valor_qui_quadrado(estatistica: f64, graus_liberdade: u32) -> Result<f6
         )));
     }
     gama_q(graus_liberdade, estatistica / 2.0)
-}
-
-/// `2·Φ(−|z|)`, o p-valor bilateral da normal padrão: `Q(1/2, z²/2)`.
-/// `±∞` dá 0; NaN é [`SpiderError::AvaliacaoEntradaInvalida`].
-pub fn p_valor_normal_bilateral(z: f64) -> Result<f64> {
-    if z.is_nan() {
-        return Err(invalida("z = NaN no p-valor da normal".to_string()));
-    }
-    gama_q(1, z * z / 2.0)
 }
 
 /// Tolerância relativa das iterações da gama incompleta: o próprio `eps` do

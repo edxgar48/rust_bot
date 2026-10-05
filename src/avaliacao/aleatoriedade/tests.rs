@@ -82,10 +82,11 @@ fn erro_de_config(cfg: &LoteriaConfig, resultados: &[Resultado]) -> String {
 //   Q(m, x)       = e^{−x}·Σ_{j<m} x^j/j!,
 //   Q(m + 1/2, x) = erfc(√x) + e^{−x}·Σ_{j<m} x^{j+1/2}/Γ(j + 3/2),
 // com π por Machin e erfc = 1 − erf pela série de Taylor (a precisão alta
-// absorve o cancelamento até |z| = 37). `P(χ²_gl ≥ x) = Q(gl/2, x/2)` e
-// `2·Φ(−|z|) = erfc(|z|/√2)`. Os valores críticos tabelados (χ²: 3,841 com
-// 1 gl, 7,815 com 3, 36,415 com 24, 77,931 com 59, 100,749 com 79;
-// normal: 1,95996) conferem com 5% nessas referências.
+// absorve o cancelamento até |z| = 37). `P(χ²_gl ≥ x) = Q(gl/2, x/2)`; com
+// 1 gl, `P(χ²_1 ≥ z²) = 2·Φ(−|z|) = erfc(|z|/√2)`, que dá as caudas de
+// a = 1/2 (z = 5, 8, 20, 37). Os valores críticos tabelados (χ²: 3,841 com
+// 1 gl, 7,815 com 3, 36,415 com 24, 77,931 com 59, 100,749 com 79) conferem
+// com 5% nessas referências.
 
 #[test]
 fn ln_gama_contra_fatoriais_e_raiz_de_pi() {
@@ -113,9 +114,13 @@ fn ln_gama_contra_fatoriais_e_raiz_de_pi() {
 #[test]
 fn p_valor_qui_quadrado_contra_referencias() {
     // (x, gl, P(χ²_gl ≥ x))
-    let referencias: [(f64, u32, f64); 22] = [
+    let referencias: [(f64, u32, f64); 26] = [
         (3.841_458_820_694_124, 1, 5.000_000_000_000_006e-2),
         (0.5, 1, 4.795_001_221_869_535e-1),
+        (25.0, 1, 5.733_031_437_583_878e-7),       // 2·Φ(−5)
+        (64.0, 1, 1.244_192_114_854_356_8e-15),    // 2·Φ(−8)
+        (400.0, 1, 5.507_248_237_212_467_5e-89),   // 2·Φ(−20)
+        (1369.0, 1, 1.145_114_244_504_915_4e-299), // 2·Φ(−37)
         (2.0, 2, 3.678_794_411_714_423_3e-1),
         (7.814_727_903_251_178, 3, 5.000_000_000_000_004_4e-2),
         (1.0, 3, 8.012_519_569_012_008e-1),
@@ -155,43 +160,12 @@ fn qui_quadrado_com_2_gl_e_a_exponencial() {
 }
 
 #[test]
-fn p_valor_normal_bilateral_contra_referencias() {
-    // (z, 2·Φ(−|z|))
-    let referencias = [
-        (0.0, 1.0),
-        (0.5, 6.170_750_774_519_738e-1),
-        (1.0, 3.173_105_078_629_141e-1),
-        (1.959_963_984_540_054, 5.000_000_000_000_003e-2),
-        (3.0, 2.699_796_063_260_189e-3),
-        (5.0, 5.733_031_437_583_878e-7),
-        (8.0, 1.244_192_114_854_356_8e-15),
-        (20.0, 5.507_248_237_212_467_5e-89),
-        (37.0, 1.145_114_244_504_915_4e-299),
-        (2.0_f64.sqrt(), 1.572_992_070_502_851_3e-1), // erfc(1)
-        (0.5_f64.sqrt(), 4.795_001_221_869_535e-1),   // erfc(1/2)
-        (1.5_f64.sqrt(), 2.206_713_619_198_468e-1),
-    ];
-    for (z, esperado) in referencias {
-        for sinal in [1.0, -1.0] {
-            let obtido = p_valor_normal_bilateral(sinal * z).expect("z válido");
-            assert!(
-                perto(obtido, esperado, 1e-12),
-                "2·Φ(−|{}|) = {obtido:?}, esperado {esperado:?}",
-                sinal * z
-            );
-        }
-    }
-}
-
-#[test]
 fn caudas_infinitas_e_dominio() {
-    assert_eq!(p_valor_normal_bilateral(f64::INFINITY).unwrap(), 0.0);
-    assert_eq!(p_valor_normal_bilateral(f64::NEG_INFINITY).unwrap(), 0.0);
-    assert_eq!(p_valor_normal_bilateral(1e200).unwrap(), 0.0);
+    assert_eq!(p_valor_qui_quadrado(f64::INFINITY, 1).unwrap(), 0.0);
+    assert_eq!(p_valor_qui_quadrado(1e200, 1).unwrap(), 0.0);
     assert_eq!(p_valor_qui_quadrado(f64::INFINITY, 5).unwrap(), 0.0);
     assert_eq!(p_valor_qui_quadrado(0.0, 5).unwrap(), 1.0);
     for invalido in [
-        p_valor_normal_bilateral(f64::NAN),
         p_valor_qui_quadrado(f64::NAN, 3),
         p_valor_qui_quadrado(-1e-300, 3),
         p_valor_qui_quadrado(1.0, 0),
@@ -397,33 +371,60 @@ fn qui_quadrado_recusa_frequencias_incoerentes() {
 
 // ------------------------------------------------------------- runs test
 
+/// Contagem exata, por enumeração, dos arranjos de `n1` uns entre `n`
+/// posições por número de sequências: `contagens[r]` (índice = r). Método
+/// independente da recorrência do módulo (só conta blocos).
+fn contagens_por_enumeracao(n: u32, n1: u32) -> Vec<u64> {
+    let mut contagens = vec![0u64; n as usize + 2];
+    for mascara in 0u32..(1 << n) {
+        if mascara.count_ones() != n1 {
+            continue;
+        }
+        let seq: Vec<bool> = (0..n).map(|i| mascara >> i & 1 == 1).collect();
+        let r = 1 + seq.windows(2).filter(|w| w[0] != w[1]).count();
+        contagens[r] += 1;
+    }
+    contagens
+}
+
+/// p-valor pela regra do plano em inteiros: `min(total, 2·min(Σ_{r ≤ obs} c,
+/// Σ_{r ≥ obs} c)) / total` — uma divisão só, arredondada corretamente.
+fn p_por_contagens(contagens: &[u64], r_obs: usize) -> f64 {
+    let total: u64 = contagens.iter().sum();
+    let esquerda: u64 = contagens[..=r_obs].iter().sum();
+    let direita: u64 = contagens[r_obs..].iter().sum();
+    (2 * esquerda.min(direita)).min(total) as f64 / total as f64
+}
+
 #[test]
 fn runs_a_mao() {
-    // 1 1 0 0 1 0: n1 = n0 = 3, R = 4, μ = 2·9/6 + 1 = 4 → z = 0, p = 1.
-    // σ² = 2·9·(18 − 6)/(36·5) = 6/5.
+    // 1 1 0 0 1 0: n1 = n0 = 3, R = 4, μ = 2·9/6 + 1 = 4, σ² = 2·9·(18 − 6)/
+    // (36·5) = 6/5. Contagens de R = 2..6 em C(6,3) = 20: 2, 4, 8, 4, 2;
+    // P(R ≤ 4) = P(R ≥ 4) = 14/20 → p = min(1, 28/20) = 1.
     let t = teste_de_runs(&[true, true, false, false, true, false]).unwrap();
     assert_eq!((t.saidas, t.nao_saidas, t.sequencias), (3, 3, 4));
     assert_eq!(t.media, 4.0);
     assert_perto!(t.desvio_padrao, 1.2_f64.sqrt(), 1e-15);
-    assert_eq!(t.z, Some(0.0));
-    assert_eq!(t.p_valor, Some(1.0));
+    assert_eq!(t.p_valor, 1.0);
+    assert!(!t.fixa());
 
-    // 1 0 1 0 1 0 1 0: n1 = n0 = 4, R = 8, μ = 5, σ² = 2·16·24/(64·7) =
-    // 12/7, z = 3/√(12/7) = 3·√(7/12). Alternância demais: z > 0.
+    // 1 0 1 0 1 0 1 0: n1 = n0 = 4, R = 8 (máximo), μ = 5. Contagens de
+    // R = 2..8 em C(8,4) = 70: 2, 6, 18, 18, 18, 6, 2. P(R ≥ 8) = 2/70 →
+    // p = 2·2/70 = 2/35.
     let alterna = [true, false, true, false, true, false, true, false];
     let t = teste_de_runs(&alterna).unwrap();
     assert_eq!((t.saidas, t.sequencias), (4, 8));
     assert_eq!(t.media, 5.0);
-    let z = 3.0 * (7.0_f64 / 12.0).sqrt();
-    assert_perto!(t.z.unwrap(), z, 1e-15);
-    assert_perto!(t.p_valor.unwrap(), 2.194_677_100_324_686e-2);
+    assert!(t.sequencias as f64 > t.media);
+    assert_perto!(t.p_valor, 2.0 / 35.0, 1e-14);
 
-    // 1 1 1 1 0 0 0 0: R = 2, blocos longos: z = −3·√(7/12), mesmo p.
+    // 1 1 1 1 0 0 0 0: R = 2 (mínimo), blocos longos: P(R ≤ 2) = 2/70, mesmo
+    // p.
     let blocos = [true, true, true, true, false, false, false, false];
     let t = teste_de_runs(&blocos).unwrap();
     assert_eq!(t.sequencias, 2);
-    assert_perto!(t.z.unwrap(), -z, 1e-15);
-    assert_perto!(t.p_valor.unwrap(), 2.194_677_100_324_686e-2);
+    assert!((t.sequencias as f64) < t.media);
+    assert_perto!(t.p_valor, 2.0 / 35.0, 1e-14);
 }
 
 #[test]
@@ -432,19 +433,15 @@ fn runs_media_e_desvio_conferem_com_a_distribuicao_exata() {
     // enumerando todas as C(n, n1) ordens, a média e a variância de R têm de
     // bater com μ e σ² das fórmulas.
     for (n, n1) in [(3u32, 1u32), (7, 1), (8, 3), (10, 5), (12, 4), (13, 6)] {
-        let (mut soma, mut soma_quadrados, mut casos) = (0.0, 0.0, 0.0);
-        for mascara in 0u32..(1 << n) {
-            if mascara.count_ones() != n1 {
-                continue;
-            }
-            let seq: Vec<bool> = (0..n).map(|i| mascara >> i & 1 == 1).collect();
-            let r = teste_de_runs(&seq).unwrap().sequencias as f64;
-            soma += r;
-            soma_quadrados += r * r;
-            casos += 1.0;
+        let contagens = contagens_por_enumeracao(n, n1);
+        let casos: u64 = contagens.iter().sum();
+        let (mut soma, mut soma_quadrados) = (0.0, 0.0);
+        for (r, &c) in contagens.iter().enumerate() {
+            soma += (r as f64) * c as f64;
+            soma_quadrados += (r * r) as f64 * c as f64;
         }
-        let media = soma / casos;
-        let variancia = soma_quadrados / casos - media * media;
+        let media = soma / casos as f64;
+        let variancia = soma_quadrados / casos as f64 - media * media;
         let seq: Vec<bool> = (0..n).map(|i| i < n1).collect();
         let t = teste_de_runs(&seq).unwrap();
         assert_perto!(t.media, media, 1e-13);
@@ -453,26 +450,488 @@ fn runs_media_e_desvio_conferem_com_a_distribuicao_exata() {
 }
 
 #[test]
-fn runs_nao_testavel() {
+fn pesos_do_runs_conferem_com_a_enumeracao() {
+    // A recorrência em log (com o modo = 0) normalizada tem de dar a
+    // distribuição exata de R para todo n ≤ 14 e todo 1 ≤ n1 < n, e somar 1.
+    for n in 2u32..=14 {
+        for n1 in 1..n {
+            let contagens = contagens_por_enumeracao(n, n1);
+            let total: u64 = contagens.iter().sum();
+            let pesos = ln_pesos_runs(u64::from(n1), u64::from(n - n1));
+            let r_max = contagens.iter().rposition(|&c| c > 0).unwrap();
+            assert_eq!(pesos.len(), r_max - 1, "n = {n}, n1 = {n1}");
+            // O modo vale 0; outro r empatado com ele pode sair 1 eps acima.
+            assert!(pesos.contains(&0.0));
+            let maior = pesos.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            assert!((0.0..=1e-15).contains(&maior), "{maior:e}");
+            let soma: f64 = pesos.iter().map(|w| w.exp()).sum();
+            let mut soma_p = 0.0;
+            for (i, w) in pesos.iter().enumerate() {
+                let p = w.exp() / soma;
+                soma_p += p;
+                assert_perto!(p, contagens[i + 2] as f64 / total as f64, 1e-13);
+            }
+            assert_perto!(soma_p, 1.0, 1e-14);
+        }
+    }
+}
+
+#[test]
+fn p_valor_exato_confere_com_a_enumeracao() {
+    // Todo R possível de todo (n, n1) com n ≤ 14: o p-valor da recorrência
+    // em log contra a soma das contagens inteiras pela mesma regra.
+    for n in 2u32..=14 {
+        for n1 in 1..n {
+            let contagens = contagens_por_enumeracao(n, n1);
+            for r in (2..contagens.len()).filter(|&r| contagens[r] > 0) {
+                let p = p_valor_runs_exato(u64::from(n1), u64::from(n - n1), r as u64).unwrap();
+                assert_perto!(p, p_por_contagens(&contagens, r), 1e-13);
+                assert!(p > 0.0 && p <= 1.0);
+            }
+        }
+    }
+}
+
+// Referências do p-valor exato do runs test: contagem exata em inteiros
+// grandes pela fórmula clássica de dois termos (`math.comb`, independente da
+// recorrência em log do módulo), as duas caudas em inteiros e uma única
+// divisão em `Fraction`; `float(Fraction)` arredonda corretamente (inclusive
+// para subnormal e 0). Para refazer a conta (Python 3.8+; os casos de
+// n = 7000 levam ~1 min):
+//
+//     from fractions import Fraction
+//     from math import comb
+//
+//     def contagens(n1, n0):  # arranjos de n1 uns e n0 zeros com R sequências
+//         c = {}
+//         for r in range(2, n1 + n0 + 1):
+//             k = r // 2
+//             if r % 2 == 0:
+//                 v = 2 * comb(n1 - 1, k - 1) * comb(n0 - 1, k - 1)
+//             else:
+//                 v = comb(n1 - 1, k - 1) * comb(n0 - 1, k) + comb(n1 - 1, k) * comb(n0 - 1, k - 1)
+//             if v:
+//                 c[r] = v
+//         return c
+//
+//     def p_runs(n1, n0, r):  # min(1, 2·min(P(R ≤ r), P(R ≥ r)))
+//         c = contagens(n1, n0)
+//         assert r in c and sum(c.values()) == comb(n1 + n0, n1)
+//         esquerda = sum(v for s, v in c.items() if s <= r)
+//         direita = sum(v for s, v in c.items() if s >= r)
+//         return float(min(Fraction(1), Fraction(2 * min(esquerda, direita), comb(n1 + n0, n1))))
+//
+//     print(repr(p_runs(440, 6560, 780)))  # 2.364965762982194e-05
+
+#[test]
+fn p_valor_exato_contra_referencias_em_python() {
+    // (n1, n0, R, p), saídas de `p_runs` acima. Cobrem: n1 = 1 (R = 2 e 3),
+    // R mínimo e máximo, n1 = n0 (2, 3, 4, 10: caudas iguais), os dois lados
+    // do modo (μ = 2·n1·n0/n + 1) nos tamanhos de 500 concursos com p = 10%
+    // (Mega-Sena), 3000 com p = 60% (Lotofácil) e 7000 com n1 = 440 (Quina),
+    // inclusive pares e ímpares vizinhos (780/781, 825/826, 870/871,
+    // 880/881) e caudas minúsculas.
+    //
+    // Tolerância relativa 1e-12: o erro esperado é de algumas dezenas de
+    // `eps` — logaritmos acumulados com soma compensada e o modo subtraído
+    // parcela a parcela, mas `ln p` passa por `exp` com |ln p| até ~650, o
+    // que multiplica o erro absoluto do log (~1e-16·650) — e o teto de 1e-12
+    // deixa duas ordens de folga sem esconder erro de fórmula (≥ 1e-3).
+    let referencias: [(u64, u64, u64, f64); 59] = [
+        (1, 1, 2, 1.0),
+        (1, 2, 2, 1.0),
+        (1, 2, 3, 0.666_666_666_666_666_6),
+        (2, 1, 3, 0.666_666_666_666_666_6),
+        (1, 5, 2, 0.666_666_666_666_666_6),
+        (1, 5, 3, 1.0),
+        (1, 9, 2, 0.4),
+        (1, 9, 3, 1.0),
+        (2, 2, 2, 0.666_666_666_666_666_6),
+        (2, 2, 3, 1.0),
+        (2, 2, 4, 0.666_666_666_666_666_6),
+        (3, 3, 2, 0.2),
+        (3, 3, 3, 0.6),
+        (3, 3, 4, 1.0),
+        (3, 3, 5, 0.6),
+        (3, 3, 6, 0.2),
+        (4, 4, 2, 0.057_142_857_142_857_14),
+        (4, 4, 3, 0.228_571_428_571_428_56),
+        (4, 4, 4, 0.742_857_142_857_142_9),
+        (4, 4, 5, 1.0),
+        (4, 4, 6, 0.742_857_142_857_142_9),
+        (4, 4, 7, 0.228_571_428_571_428_56),
+        (4, 4, 8, 0.057_142_857_142_857_14),
+        (3, 7, 2, 0.033_333_333_333_333_33),
+        (3, 7, 3, 0.166_666_666_666_666_66),
+        (3, 7, 4, 0.566_666_666_666_666_7),
+        (3, 7, 5, 1.0),
+        (3, 7, 6, 0.833_333_333_333_333_4),
+        (3, 7, 7, 0.333_333_333_333_333_3),
+        (10, 10, 2, 2.165_017_644_893_806e-5),
+        (10, 10, 6, 0.037_043_451_904_133_017),
+        (10, 10, 11, 1.0),
+        (10, 10, 15, 0.102_513_585_485_721_7),
+        (10, 10, 20, 2.165_017_644_893_806e-5),
+        (50, 450, 2, 1.728_292_666_160_625e-69),
+        (50, 450, 75, 7.589_006_764_899_597e-4),
+        (50, 450, 80, 0.014_014_115_258_015_896),
+        (50, 450, 90, 0.800_561_831_724_244_1),
+        (50, 450, 91, 1.0),
+        (50, 450, 92, 0.879_816_680_682_364_5),
+        (50, 450, 100, 0.008_545_681_257_173_155),
+        (50, 450, 101, 0.006_836_545_005_738_524),
+        (1800, 1200, 1300, 9.447_139_783_615_626e-8),
+        (1800, 1200, 1400, 0.123_360_134_130_413_34),
+        (1800, 1200, 1441, 1.0),
+        (1800, 1200, 1500, 0.025_836_777_331_213_555),
+        (1800, 1200, 1600, 1.386_607_773_595_064_3e-9),
+        (440, 6560, 760, 3.892_001_365_973_738e-9),
+        (440, 6560, 780, 2.364_965_762_982_194e-5),
+        (440, 6560, 781, 4.453_785_532_834_404_4e-5),
+        (440, 6560, 825, 0.995_161_551_154_769_7),
+        (440, 6560, 826, 1.0),
+        (440, 6560, 870, 9.393_494_730_671_855e-8),
+        (440, 6560, 871, 8.407_746_497_169_47e-8),
+        (440, 6560, 880, 3.188_542_666_685_532e-13),
+        (440, 6560, 881, 2.787_697_302_873_636_4e-13),
+        // Caudas extremas, ainda em f64 normal.
+        (440, 6560, 600, 1.567_716_085_168_069_2e-67),
+        (440, 6560, 300, 7.538_835_726_635_354e-284),
+        (1, 7000, 2, 5.713_469_504_356_521e-4),
+    ];
+    for (n1, n0, r, esperado) in referencias {
+        let obtido = p_valor_runs_exato(n1, n0, r).unwrap();
+        assert!(
+            perto(obtido, esperado, 1e-12),
+            "p(n1 = {n1}, n0 = {n0}, R = {r}) = {obtido:?}, esperado {esperado:?}"
+        );
+    }
+    // Subnormais (1,59e-313 ≈ 2^−1039, 35 bits de mantissa; 9,83e-322 =
+    // 199·2^−1074, 8 bits): ainda positivos e com a precisão que os bits
+    // restantes permitem.
+    let subnormal = p_valor_runs_exato(440, 6560, 270).unwrap();
+    assert_perto!(subnormal, 1.591_645_249_97e-313, 1e-9);
+    let quase_zero = p_valor_runs_exato(440, 6560, 262).unwrap();
+    assert_perto!(quase_zero, 9.83e-322, 1e-2);
+    // O valor exato abaixo de 2^−1075 (metade do menor subnormal) não cabe
+    // em f64: 0, como o `float(Fraction)` do Python.
+    for (n1, n0, r) in [
+        (440, 6560, 255),
+        (440, 6560, 3),
+        (440, 6560, 2),
+        (1800, 1200, 2),
+        (1800, 1200, 2401),
+    ] {
+        assert_eq!(
+            p_valor_runs_exato(n1, n0, r).unwrap(),
+            0.0,
+            "{n1}, {n0}, R = {r}"
+        );
+    }
+}
+
+#[test]
+fn p_valor_exato_nao_depende_de_qual_lado_e_o_um() {
+    // Trocar saiu por não saiu não muda a distribuição de R.
+    for (n1, n0, r) in [
+        (3, 7, 4),
+        (50, 450, 75),
+        (440, 6560, 780),
+        (1800, 1200, 1300),
+    ] {
+        assert_perto!(
+            p_valor_runs_exato(n1, n0, r).unwrap(),
+            p_valor_runs_exato(n0, n1, r).unwrap(),
+            1e-13
+        );
+    }
+}
+
+#[test]
+fn distribuicao_exata_soma_1_em_tamanhos_reais() {
+    // Propriedade com fórmula independente da recorrência: P(r) pela forma
+    // clássica de dois termos, com ln C por ln-fatoriais (soma de logs
+    // acumulada em f64 simples; erro absoluto ~1e-10 em ln C de ordem 1e3,
+    // daí a tolerância 1e-8), tem de somar 1 e bater com os pesos do módulo
+    // normalizados.
+    let maior_n = 7200usize;
+    let mut ln_fat = vec![0.0f64; maior_n + 1];
+    for i in 1..=maior_n {
+        ln_fat[i] = ln_fat[i - 1] + (i as f64).ln();
+    }
+    let ln_c = |a: u64, b: u64| -> Option<f64> {
+        (b <= a).then(|| ln_fat[a as usize] - ln_fat[b as usize] - ln_fat[(a - b) as usize])
+    };
+    for (n1, n0) in [
+        (1u64, 7000u64),
+        (50, 450),
+        (1800, 1200),
+        (440, 6560),
+        (3500, 3500),
+        (7, 7000),
+    ] {
+        let n = n1 + n0;
+        let ln_total = ln_c(n, n1).unwrap();
+        let pesos = ln_pesos_runs(n1, n0);
+        let soma_w: f64 = pesos.iter().map(|w| w.exp()).sum();
+        let mut soma_p = 0.0;
+        for (i, w) in pesos.iter().enumerate() {
+            let r = i as u64 + 2;
+            let k = r / 2;
+            let ln_contagem = if r.is_multiple_of(2) {
+                std::f64::consts::LN_2 + ln_c(n1 - 1, k - 1).unwrap() + ln_c(n0 - 1, k - 1).unwrap()
+            } else {
+                // C(n1−1,k−1)·C(n0−1,k) + C(n1−1,k)·C(n0−1,k−1), com termo
+                // inexistente (C(a, b) com b > a) valendo 0, em log-soma-exp.
+                let termos: Vec<f64> = [
+                    ln_c(n1 - 1, k - 1).zip(ln_c(n0 - 1, k)),
+                    ln_c(n1 - 1, k).zip(ln_c(n0 - 1, k - 1)),
+                ]
+                .into_iter()
+                .flatten()
+                .map(|(a, b)| a + b)
+                .collect();
+                let maior = termos.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                maior + termos.iter().map(|t| (t - maior).exp()).sum::<f64>().ln()
+            };
+            let p = (ln_contagem - ln_total).exp();
+            soma_p += p;
+            if p > 1e-250 {
+                assert_perto!(w.exp() / soma_w, p, 1e-8);
+            }
+        }
+        assert_perto!(soma_p, 1.0, 1e-8);
+        // Na mediana as duas caudas passam de 1/2: p-valor 1.
+        let mut acumulado = 0.0;
+        let mediana = (2u64..)
+            .zip(&pesos)
+            .find(|(_, w)| {
+                acumulado += w.exp() / soma_w;
+                acumulado >= 0.5
+            })
+            .unwrap()
+            .0;
+        assert_perto!(p_valor_runs_exato(n1, n0, mediana).unwrap(), 1.0, 1e-12);
+    }
+}
+
+/// Distribuição exata de R normalizada a partir dos pesos do módulo
+/// (`prob[i]` é de r = i + 2) e o p-valor de cada r.
+fn distribuicao_e_p_valores(n1: u64, n0: u64) -> (Vec<f64>, Vec<f64>) {
+    let pesos = ln_pesos_runs(n1, n0);
+    let soma: f64 = pesos.iter().map(|w| w.exp()).sum();
+    let prob = pesos.iter().map(|w| w.exp() / soma).collect();
+    let ps = (2..pesos.len() as u64 + 2)
+        .map(|r| p_valor_runs_exato(n1, n0, r).unwrap())
+        .collect();
+    (prob, ps)
+}
+
+#[test]
+fn p_valor_exato_e_o_dobro_da_menor_cauda_e_unimodal_em_r() {
+    // Contra caudas acumuladas aqui por fora (soma simples das
+    // probabilidades, cada cauda a partir da sua ponta): p(r) = min(1,
+    // 2·min(F(r), S(r))) onde representável, p ≥ min(1, 2·P(r)), p ∈ [0, 1].
+    // E a propriedade que a regra antiga (soma das probabilidades até a
+    // observada) não tinha: p **não decresce até a mediana e não cresce
+    // depois dela** — afastar R do centro, para qualquer lado, nunca aumenta
+    // o p-valor, seja R par ou ímpar. O centro é a mediana, não o modo: na
+    // Quina (446, 6688) o modo é 839 e a mediana 837, e p(839) < 1.
+    for (n1, n0) in [
+        (1u64, 9u64),
+        (5, 5),
+        (6, 25),
+        (60, 440),
+        (250, 2750),
+        (446, 6688),
+        (2278, 1518),
+    ] {
+        let (prob, ps) = distribuicao_e_p_valores(n1, n0);
+        let m = prob.len();
+        let mut esquerda = vec![0.0; m];
+        let mut direita = vec![0.0; m];
+        let mut acumulado = 0.0;
+        for i in 0..m {
+            acumulado += prob[i];
+            esquerda[i] = acumulado;
+        }
+        acumulado = 0.0;
+        for i in (0..m).rev() {
+            acumulado += prob[i];
+            direita[i] = acumulado;
+        }
+        for i in 0..m {
+            let r = i + 2;
+            assert!((0.0..=1.0).contains(&ps[i]), "n1 = {n1}, R = {r}");
+            let esperado = (2.0 * esquerda[i].min(direita[i])).min(1.0);
+            if esperado > 1e-250 {
+                assert!(ps[i] > 0.0, "n1 = {n1}, R = {r}");
+                assert_perto!(ps[i], esperado, 1e-9);
+            }
+            assert!(ps[i] >= (2.0 * prob[i]).min(1.0) * (1.0 - 1e-12));
+        }
+        let mediana = esquerda.iter().position(|&f| f >= 0.5).unwrap();
+        assert_perto!(ps[mediana], 1.0, 1e-12);
+        for i in 1..=mediana {
+            assert!(
+                ps[i - 1] <= ps[i] * (1.0 + 1e-12),
+                "n1 = {n1}: p({}) = {} > p({}) = {}",
+                i + 1,
+                ps[i - 1],
+                i + 2,
+                ps[i]
+            );
+        }
+        for i in mediana + 1..m {
+            assert!(
+                ps[i] <= ps[i - 1] * (1.0 + 1e-12),
+                "n1 = {n1}: p({}) = {} > p({}) = {}",
+                i + 2,
+                ps[i],
+                i + 1,
+                ps[i - 1]
+            );
+        }
+    }
+}
+
+#[test]
+fn rejeicao_nao_depende_da_paridade_de_r() {
+    // Quina com 7134 concursos e n1 = 446 (≈ 7134·5/80). A paridade de R só
+    // diz se o primeiro e o último concurso têm o mesmo estado; sob o acaso,
+    // dado n1, a chance de rejeitar tem de ser parecida com R par e com R
+    // ímpar. Taxas exatas P(p ≤ α | R par) e P(p ≤ α | R ímpar) pela
+    // distribuição exata (pesos do módulo normalizados), conferidas com a
+    // contagem em `Fraction` no Python (mesmas `contagens`/`p_runs` do
+    // comentário acima, somando as contagens de cada paridade com p ≤ α; o
+    // p-valor mais perto de cada α fica a ≥ 1% dele, então nenhum r muda de
+    // lado por arredondamento). P(R par) ≈ 0,117.
+    //
+    // Para contraste, a regra antiga (soma das P(r) ≤ P(obs)·(1 + 10⁻⁷))
+    // nas mesmas contas: 26,6% contra 1,95% a 5%, e 0,22% contra 0,035% no
+    // limiar do Holm (α/80) — o teste pegaria a volta dela.
+    let (n1, n0) = (446u64, 6688u64);
+    let (prob, ps) = distribuicao_e_p_valores(n1, n0);
+    let antiga: Vec<f64> = prob
+        .iter()
+        .map(|&q| {
+            prob.iter()
+                .filter(|&&s| s <= q * (1.0 + 1e-7))
+                .sum::<f64>()
+                .min(1.0)
+        })
+        .collect();
+    let taxas = |p_valores: &[f64], alfa: f64| {
+        let (mut par, mut rejeita_par, mut impar, mut rejeita_impar) = (0.0, 0.0, 0.0, 0.0);
+        for (r, (&q, &p)) in (2u64..).zip(prob.iter().zip(p_valores)) {
+            let rejeita = if p <= alfa { q } else { 0.0 };
+            if r % 2 == 0 {
+                par += q;
+                rejeita_par += rejeita;
+            } else {
+                impar += q;
+                rejeita_impar += rejeita;
+            }
+        }
+        (rejeita_par / par, rejeita_impar / impar)
+    };
+    for (alfa, par_esperado, impar_esperado) in [
+        (ALFA, 0.053_593_506_759_916_976, 0.043_480_139_151_463_71),
+        (
+            ALFA / 80.0,
+            5.374_258_948_608_887e-4,
+            5.561_397_948_389_85e-4,
+        ),
+    ] {
+        let (par, impar) = taxas(&ps, alfa);
+        assert_perto!(par, par_esperado, 1e-9);
+        assert_perto!(impar, impar_esperado, 1e-9);
+        assert!(
+            (2.0 / 3.0..=1.5).contains(&(par / impar)),
+            "α = {alfa}: par {par}, ímpar {impar}"
+        );
+        let (par_antiga, impar_antiga) = taxas(&antiga, alfa);
+        assert!(
+            par_antiga / impar_antiga > 5.0,
+            "α = {alfa}: regra antiga par {par_antiga}, ímpar {impar_antiga}"
+        );
+    }
+}
+
+#[test]
+fn p_valor_exato_recusa_r_impossivel() {
+    for (n1, n0, r, possiveis) in [
+        (3, 3, 1, "2..=6"), // R = 1 exige dezena fixa
+        (3, 3, 0, "2..=6"),
+        (3, 3, 7, "2..=6"), // máximo com n1 = n0 = 3 é 6
+        (3, 4, 8, "2..=7"), // máximo com n1 ≠ n0 é 2·3 + 1 = 7
+        (1, 1, 3, "2..=2"),
+        (1, 5, 4, "2..=3"),
+        (0, 5, 2, "1..=1"), // dezena fixa: só R = 1
+        (5, 0, 0, "1..=1"),
+        // Recusados antes de montar a distribuição (2^41 termos, que nem
+        // caberiam na memória).
+        (1 << 40, 1 << 40, 1, "2..=2199023255552"),
+        (1 << 40, 1 << 40, (1 << 41) + 1, "2..=2199023255552"),
+        (1 << 40, (1 << 40) + 1, (1 << 41) + 2, "2..=2199023255553"),
+    ] {
+        match p_valor_runs_exato(n1, n0, r) {
+            Err(SpiderError::AvaliacaoEntradaInvalida(m)) => assert!(
+                m.contains("impossível") && m.contains(&format!("(possíveis: {possiveis})")),
+                "{m}"
+            ),
+            outro => panic!("n1 = {n1}, n0 = {n0}, R = {r}: {outro:?}"),
+        }
+    }
+    for (n1, n0, trecho) in [
+        (0, 0, "sequência vazia"),
+        (u64::MAX, 1, "não cabe em 64 bits"),
+        (1 << 63, 1 << 63, "não cabe em 64 bits"),
+    ] {
+        match p_valor_runs_exato(n1, n0, 2) {
+            Err(SpiderError::AvaliacaoEntradaInvalida(m)) => assert!(m.contains(trecho), "{m}"),
+            outro => panic!("n1 = {n1}, n0 = {n0}: {outro:?}"),
+        }
+    }
+    // Extremos válidos com n1 = 3, n0 = 4: R = 2 e R = 7.
+    assert!(p_valor_runs_exato(3, 4, 2).unwrap() > 0.0);
+    assert!(p_valor_runs_exato(3, 4, 7).unwrap() > 0.0);
+    // Dezena fixa, inclusive com n no limite de u64: p = 1 sem distribuição.
+    assert_eq!(p_valor_runs_exato(0, 5, 1).unwrap(), 1.0);
+    assert_eq!(p_valor_runs_exato(5, 0, 1).unwrap(), 1.0);
+    assert_eq!(p_valor_runs_exato(u64::MAX, 0, 1).unwrap(), 1.0);
+}
+
+#[test]
+fn runs_dezena_fixa() {
     for seq in [
         &[true][..],
         &[false][..],
         &[true, true, true][..],
         &[false, false][..],
-        &[true, false][..], // n1 = n0 = 1: σ² = 0
-        &[false, true][..],
     ] {
         let t = teste_de_runs(seq).unwrap();
-        assert!(!t.testavel(), "{seq:?}");
-        assert_eq!((t.z, t.p_valor, t.desvio_padrao), (None, None, 0.0));
+        assert!(t.fixa(), "{seq:?}");
+        assert_eq!((t.sequencias, t.p_valor, t.desvio_padrao), (1, 1.0, 0.0));
     }
     let t = teste_de_runs(&[false; 5]).unwrap();
     assert_eq!(
         (t.saidas, t.nao_saidas, t.sequencias, t.media),
         (0, 5, 1, 1.0)
     );
-    // n1 = 1, n0 = 2 já é testável.
-    assert!(teste_de_runs(&[true, false, false]).unwrap().testavel());
+    // n1 = n0 = 1: R = 2 sempre (σ = 0), p = 1 pela própria distribuição,
+    // mas não é fixa.
+    for seq in [&[true, false][..], &[false, true][..]] {
+        let t = teste_de_runs(seq).unwrap();
+        assert!(!t.fixa());
+        assert_eq!((t.p_valor, t.desvio_padrao), (1.0, 0.0));
+    }
+    // n1 = 1, n0 = 2: R = 3 (P = 1/3, a cauda de cima) → p = 2/3.
+    assert_perto!(
+        teste_de_runs(&[false, true, false]).unwrap().p_valor,
+        2.0 / 3.0,
+        1e-15
+    );
     assert!(matches!(
         teste_de_runs(&[]),
         Err(SpiderError::AvaliacaoSemConcursos(_))
@@ -482,14 +941,12 @@ fn runs_nao_testavel() {
 // ------------------------------------------------------- função completa
 
 #[test]
-fn resumo_a_mao_com_dezena_nao_testavel() {
-    // {1,2}, {1,3}, {1,4}: a dezena 1 sai sempre (não testável, fora do Holm).
-    // Dezena 2: 1 0 0 → n1 = 1, R = 2, μ = 7/3, σ² = 2·2·1/(9·2) = 2/9,
-    //   z = (−1/3)/(√2/3) = −1/√2, p = erfc(1/2).
-    // Dezena 3: 0 1 0 → R = 3, z = (2/3)/(√2/3) = √2, p = erfc(1).
+fn resumo_a_mao_com_dezena_fixa() {
+    // {1,2}, {1,3}, {1,4}: a dezena 1 sai sempre (fixa: p = 1, entra no Holm).
+    // Dezena 2: 1 0 0 → n1 = 1, n0 = 2, R = 2: P(R ≤ 2) = 2/3 → p = 1.
+    // Dezena 3: 0 1 0 → R = 3: P(R ≥ 3) = 1/3 → p = 2/3.
     // Dezena 4: 0 0 1 → como a 2.
-    // Holm com m = 3: erfc(1)·3 = 0,4719 (dezena 3); erfc(1/2)·2 = 0,9590
-    // (dezenas 2 e 4, empatadas).
+    // Holm com m = 4: 4·(2/3) passa de 1 → todos os ajustados = 1.
     // Qui-quadrado: O = 3, 1, 1, 1; 4·O − 6 = 6, −2, −2, −2 → Σ² = 48;
     // Pearson = 48/(3·2·4) = 2; corrigida = 3/2·2 = 3.
     let r = testar_aleatoriedade(&MINI, &historico_mini(&[[1, 2], [1, 3], [1, 4]])).unwrap();
@@ -502,74 +959,114 @@ fn resumo_a_mao_com_dezena_nao_testavel() {
     assert_eq!(r.qui_quadrado.estatistica, 3.0);
     assert_perto!(r.qui_quadrado.p_valor, 3.916_251_762_710_889_5e-1);
 
-    let erfc_meio = 4.795_001_221_869_535e-1;
-    let erfc_um = 1.572_992_070_502_851_3e-1;
     let dezenas: Vec<u32> = r.runs.iter().map(|x| x.dezena).collect();
     assert_eq!(dezenas, [1, 2, 3, 4]);
 
     let d1 = &r.runs[0];
+    assert!(d1.teste.fixa());
     assert_eq!((d1.teste.saidas, d1.teste.sequencias), (3, 1));
     assert_eq!(
         (d1.teste.p_valor, d1.p_valor_holm, d1.rejeita),
-        (None, None, false)
+        (1.0, 1.0, false)
     );
-
-    for (i, z, p, p_holm) in [
-        (1, -0.5_f64.sqrt(), erfc_meio, 2.0 * erfc_meio),
-        (2, 2.0_f64.sqrt(), erfc_um, 3.0 * erfc_um),
-        (3, -0.5_f64.sqrt(), erfc_meio, 2.0 * erfc_meio),
-    ] {
+    for (i, sequencias, p) in [(1, 2, 1.0), (2, 3, 2.0 / 3.0), (3, 2, 1.0)] {
         let d = &r.runs[i];
+        assert!(!d.teste.fixa());
+        assert_eq!(d.teste.sequencias, sequencias);
         assert_perto!(d.teste.media, 7.0 / 3.0, 1e-15);
-        assert_perto!(d.teste.z.unwrap(), z, 1e-15);
-        assert_perto!(d.teste.p_valor.unwrap(), p);
-        assert_perto!(d.p_valor_holm.unwrap(), p_holm);
+        assert_perto!(d.teste.p_valor, p, 1e-15);
+        assert_eq!(d.p_valor_holm, 1.0);
         assert!(!d.rejeita);
     }
-    assert_eq!(r.dezenas_testadas_runs, 3);
+    assert_eq!((r.dezenas_testadas_runs, r.dezenas_fixas_runs), (4, 1));
     assert_eq!((r.rejeicoes_runs_sem_correcao, r.rejeicoes_runs), (0, 0));
 }
 
 #[test]
-fn resumo_a_mao_com_todas_testaveis() {
+fn dezena_fixa_conta_no_m_do_holm() {
+    // 12 concursos da MINI com a dezena 1 em todos (fixa) e a outra vaga
+    // em blocos: 2 nos concursos 1–4, 3 nos 5–8, 4 nos 9–12.
+    // Com n1 = 4, n0 = 8 (C(12,4) = 495), as contagens de R = 2..9 são
+    // 2, 10, 42, 84, 126, 126, 70, 35:
+    //   dezenas 2 (111100000000) e 4 (000000001111): R = 2, P(R ≤ 2) =
+    //   2/495 → p = 4/495;
+    //   dezena 3 (000011110000): R = 3, P(R ≤ 3) = 12/495 → p = 24/495
+    //   ≈ 0,0485.
+    // Holm com m = 4 (a fixa conta, com p = 1): 4·4/495 = 16/495 para as
+    // dezenas 2 e 4 (a segunda sobe pelo máximo: 3·4/495 < 16/495) e
+    // 2·24/495 = 48/495 ≈ 0,097 para a 3 — que **não** é rejeitada. Se a
+    // fixa ficasse de fora (m = 3), seriam 12/495 e 24/495 e as três seriam
+    // rejeitadas: a decisão muda.
+    let mut sorteios = Vec::new();
+    for outra in [2, 3, 4] {
+        sorteios.extend([[1, outra]; 4]);
+    }
+    let r = testar_aleatoriedade(&MINI, &historico_mini(&sorteios)).unwrap();
+    assert_eq!((r.dezenas_testadas_runs, r.dezenas_fixas_runs), (4, 1));
+    let p: Vec<f64> = r.runs.iter().map(|x| x.teste.p_valor).collect();
+    let esperados = [1.0, 4.0 / 495.0, 24.0 / 495.0, 4.0 / 495.0];
+    for (obtido, esperado) in p.iter().zip(esperados) {
+        assert_perto!(*obtido, esperado, 1e-13);
+    }
+    let holm_esperado = [1.0, 16.0 / 495.0, 48.0 / 495.0, 16.0 / 495.0];
+    for (x, esperado) in r.runs.iter().zip(holm_esperado) {
+        assert_perto!(x.p_valor_holm, esperado, 1e-13);
+    }
+    assert_eq!(
+        r.runs.iter().map(|x| x.rejeita).collect::<Vec<_>>(),
+        [false, true, false, true]
+    );
+    assert_eq!((r.rejeicoes_runs_sem_correcao, r.rejeicoes_runs), (3, 2));
+    // Sem a fixa na família (m = 3), o Holm rejeitaria as três.
+    let sem_fixa = holm(&p[1..]).unwrap();
+    for (obtido, esperado) in sem_fixa
+        .iter()
+        .zip([12.0 / 495.0, 24.0 / 495.0, 12.0 / 495.0])
+    {
+        assert_perto!(*obtido, esperado, 1e-13);
+    }
+    assert!(sem_fixa.iter().all(|&x| x <= ALFA));
+}
+
+#[test]
+fn resumo_a_mao_sem_dezena_fixa() {
     // {1,2}, {2,3}, {1,2}, {3,4}: O = 2, 3, 2, 1, E = 2 → 4·O − 8 = 0, 4,
     // 0, −4 → Pearson = 32/32 = 1, corrigida 1,5.
-    // Dezenas 1 (1010) e 3 (0101): R = 4, μ = 3, σ² = 2/3, z = √1,5.
-    // Dezenas 2 (1110) e 4 (0001): R = 2, μ = 2,5, σ = 1/2, z = −1.
-    // Holm (m = 4): o menor p, p(√1,5) = 0,2207, vira 4·0,2207 = 0,8827, e
-    // os outros sobem para ele (3·0,2207 e 2·0,3173, 1·0,3173 são menores).
+    // Dezenas 1 (1010) e 3 (0101): n1 = n0 = 2, R = 4 (máximo), μ = 3; com
+    // n1 = n0 = 2 as três contagens (R = 2, 3, 4) empatam em 2 de 6 →
+    // P(R ≥ 4) = 1/3, p = 2/3.
+    // Dezenas 2 (1110) e 4 (0001): n = 4 com n1 = 3 ou 1, R = 2, μ = 2,5;
+    // contagens de R = 2, 3: 2 e 2 → P(R ≤ 2) = 1/2, p = 1.
+    // Holm com m = 4: 4·2/3 passa de 1 → todos os ajustados = 1.
     let r =
         testar_aleatoriedade(&MINI, &historico_mini(&[[1, 2], [2, 3], [1, 2], [3, 4]])).unwrap();
     assert_eq!(r.qui_quadrado.pearson, 1.0);
     assert_eq!(r.qui_quadrado.estatistica, 1.5);
     assert_perto!(r.qui_quadrado.p_valor, 6.822_703_303_362_125e-1);
-    let p_z_raiz = 2.206_713_619_198_468e-1;
-    let p_z_um = 3.173_105_078_629_141e-1;
-    for (d, sequencias, media, z, p) in [
-        (0, 4, 3.0, 1.5_f64.sqrt(), p_z_raiz),
-        (1, 2, 2.5, -1.0, p_z_um),
-        (2, 4, 3.0, 1.5_f64.sqrt(), p_z_raiz),
-        (3, 2, 2.5, -1.0, p_z_um),
+    for (d, sequencias, media, p) in [
+        (0, 4, 3.0, 2.0 / 3.0),
+        (1, 2, 2.5, 1.0),
+        (2, 4, 3.0, 2.0 / 3.0),
+        (3, 2, 2.5, 1.0),
     ] {
         let x = &r.runs[d];
         assert_eq!(x.teste.sequencias, sequencias);
         assert_eq!(x.teste.media, media);
-        assert_perto!(x.teste.z.unwrap(), z, 1e-15);
-        assert_perto!(x.teste.p_valor.unwrap(), p);
-        assert_perto!(x.p_valor_holm.unwrap(), 4.0 * p_z_raiz);
+        assert_perto!(x.teste.p_valor, p, 1e-15);
+        assert_eq!(x.p_valor_holm, 1.0);
     }
-    assert_eq!(r.dezenas_testadas_runs, 4);
+    assert_eq!((r.dezenas_testadas_runs, r.dezenas_fixas_runs), (4, 0));
 }
 
 #[test]
-fn holm_do_resumo_e_o_holm_dos_p_valores_testaveis() {
+fn holm_do_resumo_e_o_holm_de_todas_as_dezenas() {
     let mut g = Gerador(2026);
     let l = cfg("quina");
     let r = testar_aleatoriedade(l, &historico_aleatorio(l, 300, &mut g)).unwrap();
-    let p: Vec<f64> = r.runs.iter().filter_map(|x| x.teste.p_valor).collect();
-    let ajustados: Vec<f64> = r.runs.iter().filter_map(|x| x.p_valor_holm).collect();
+    let p: Vec<f64> = r.runs.iter().map(|x| x.teste.p_valor).collect();
+    let ajustados: Vec<f64> = r.runs.iter().map(|x| x.p_valor_holm).collect();
     assert_eq!(ajustados, holm(&p).unwrap());
-    assert_eq!(r.dezenas_testadas_runs, p.len());
+    assert_eq!(r.dezenas_testadas_runs, 80);
     assert_eq!(
         r.rejeicoes_runs_sem_correcao,
         p.iter().filter(|&&p| p <= ALFA).count()
@@ -624,14 +1121,16 @@ fn serie_pode_comecar_depois_do_concurso_1() {
 }
 
 #[test]
-fn um_concurso_so_nao_testa_runs() {
+fn um_concurso_so_deixa_todas_as_dezenas_fixas() {
+    // Com T = 1 toda dezena é fixa: todas entram no Holm com p = 1.
     let r = testar_aleatoriedade(&MINI, &historico_mini(&[[2, 4]])).unwrap();
     assert_eq!(r.qui_quadrado.estatistica, 3.0);
-    assert_eq!(r.dezenas_testadas_runs, 0);
+    assert_eq!((r.dezenas_testadas_runs, r.dezenas_fixas_runs), (4, 4));
     assert!(r
         .runs
         .iter()
-        .all(|x| x.p_valor_holm.is_none() && !x.rejeita));
+        .all(|x| x.teste.fixa() && x.teste.p_valor == 1.0 && x.p_valor_holm == 1.0 && !x.rejeita));
+    assert_eq!((r.rejeicoes_runs_sem_correcao, r.rejeicoes_runs), (0, 0));
 }
 
 #[test]
@@ -734,8 +1233,10 @@ fn alternancia_perfeita_e_pega_pelo_runs_mas_nao_pelo_qui_quadrado() {
     assert!(!r.qui_quadrado.rejeita);
     assert_eq!(r.rejeicoes_runs, 4);
     for x in &r.runs {
+        // R = 200 é o máximo com n1 = n0 = 100: p = 2·2/C(200, 100) ≈ 4,4e-59.
         assert_eq!(x.teste.sequencias, 200);
-        assert!(x.teste.z.unwrap() > 13.0);
+        assert!(x.teste.sequencias as f64 > x.teste.media);
+        assert!(x.teste.p_valor < 1e-50, "{}", x.teste.p_valor);
     }
 }
 
@@ -760,12 +1261,17 @@ fn sob_o_acaso_as_estatisticas_tem_o_tamanho_certo() {
     // Simulação do nulo (Mega-Sena, 400 históricos de 500 concursos, semente
     // fixa). Esperados: média da corrigida = 59 (exata, desvio-padrão da
     // média ≈ √(2·59/400) ≈ 0,54) e de Pearson = 54; rejeição do
-    // qui-quadrado ≈ 5% (desvio ≈ 1,1 pp); rejeição dos runs por dezena,
-    // sem correção, ≈ 5%. Com Holm, o nominal seria alguma rejeição em
-    // ≤ 5% dos históricos, mas aqui sai ~9%: com n1 ≈ 50 de 500, a normal
-    // subestima a cauda esquerda de R no limiar α/60 (limitação documentada
-    // no módulo). O teto de 10% só pega erro grosseiro; se o p-valor do runs
-    // passar a ser exato, apertar para ~7%.
+    // qui-quadrado ≈ 5% (desvio ≈ 1,1 pp; sai 5,25%). Rejeição dos runs por
+    // dezena, sem correção: o teste exato é discreto e o dobro da menor
+    // cauda é conservador; o tamanho exato, com n1 ~ Binomial(500; 0,1) e a
+    // distribuição de R contada em inteiros no Python (`contagens` do
+    // comentário das referências), é 3,06% — sai 3,13%, e a janela
+    // [2,5%; 3,7%] (~±5 desvios-padrão de ~0,11 pp em 24 000 testes) pega
+    // tanto a volta da regra antiga (~4,3%) quanto um teste conservador
+    // demais. Com Holm, alguma rejeição em ≤ 5% dos históricos: sai 2,25%
+    // (com a aproximação normal antiga, ~9%). O teto de 7% fica ~6 desvios-
+    // padrão acima da taxa medida (desvio ≈ 0,7 pp com 400 históricos) e
+    // pegaria a volta da normal.
     let l = cfg("megasena");
     let mut g = Gerador(0x5eed_1c04);
     let repeticoes = 400;
@@ -792,6 +1298,6 @@ fn sob_o_acaso_as_estatisticas_tem_o_tamanho_certo() {
     assert!((media_corrigida - 59.0).abs() < 2.5, "{resumo}");
     assert!((media_pearson - 54.0).abs() < 2.5, "{resumo}");
     assert!((0.015..=0.095).contains(&taxa_qui), "{resumo}");
-    assert!((0.035..=0.065).contains(&taxa_runs), "{resumo}");
-    assert!(taxa_familia <= 0.10, "{resumo}");
+    assert!((0.025..=0.037).contains(&taxa_runs), "{resumo}");
+    assert!(taxa_familia <= 0.07, "{resumo}");
 }

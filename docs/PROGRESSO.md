@@ -749,3 +749,56 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   reposição; dezena que nunca/sempre saiu fora do Holm; histórico inclui o trancado). Resultado nos bancos
   reais a investigar: uniformidade rejeitada na Lotofácil (p 1,5e-4, desvio concentrado em 1899–3796),
   Mega-Sena (p 6,4e-3) e Quina (p 0,042); runs rejeita a dezena 25 da Quina.
+- 2026-10-05 — 1c.4, decisões do usuário: runs test com p-valor exato bilateral pela soma das probabilidades
+  até a observada; qui-quadrado corrigido sem reposição (confirmado); dezena que nunca/sempre saiu
+  **entra no Holm com p = 1** (muda o código atual, que a deixa de fora); histórico inteiro com o trancado
+  (confirmado). Investigação dos desvios de frequência registrada no Backlog do PLANEJAMENTO.md, para
+  depois da 1c.5. Ajuste da 1c.4 (p-valor exato + dezena fixa no Holm) a fazer antes da 1c.5.
+- 2026-10-05 — 1c.4, ajuste feito (continua [x]; sem commit): runs test com **p-valor exato**
+  (`p_valor_runs_exato`, distribuição exata de R em log por recorrência, O(min(n1,n0)), soma compensada,
+  bilateral pela soma das probabilidades com P(r) ≤ P(obs)·(1+1e-7), limitado a 1); aproximação normal
+  removida por inteiro (`p_valor_normal_bilateral`, campo `z`, `testavel()`); dezena fixa entra no Holm com
+  p = 1 (`p_valor`/`p_valor_holm` viraram f64; novos `TesteRuns::fixa()` e
+  `ResumoAleatoriedade::dezenas_fixas_runs`). Desvio: uma linha de reexport em `src/avaliacao/mod.rs`.
+  Testes do módulo 30 → 37 (enumeração para n ≤ 14, 39 referências de Python com `math.comb`/`Fraction`
+  com erro ≤ 1,7e-14, subnormal e zeros, dezena fixa mudando o m do Holm; teto da simulação 10% → 7%).
+  Alarme falso após Holm com o exato (2000 históricos): Lotofácil 4,65%, Mega-Sena 4,20%, Quina 4,50%,
+  Mega-Sena com 500 concursos 2,95%. Gate: fmt ok, clippy ok, 531 testes (380 lib + 28 + 56 + 57 + 10,
+  4 ignorados), `validar todas` ok. Revisão: aprovada com ressalvas, sem ALTA.
+  **Bancos reais (cópias, só leitura):** χ² sem mudança (Lotofácil 57,27/24 gl p 1,53e-4; Mega-Sena
+  89,47/59 gl p 6,41e-3; Quina 101,92/79 gl p 4,24e-2); nenhuma dezena fixa; runs após Holm rejeita só a
+  Quina 25 (n1 = 416, R = 748, p exato 6,59e-5, p Holm 5,27e-3). **Correção da nota anterior:** o
+  "p exato ≈ 3,0e-4" da Quina 25 era o dobro da cauda esquerda, não a regra decidida.
+  **Pendente de decisão do usuário (MÉDIA, revisor e implementador):** a distribuição de R é em serrote
+  (P(2k+1)/P(2k) = (n−2k)/(2k)) e, pela soma das probabilidades, a rejeição depende muito da paridade de R
+  (só diz se o primeiro e o último concurso têm o mesmo estado): Quina, nível 5%, rejeita 26,7% com R par
+  contra 1,95% com R ímpar (Mega-Sena 15,9% vs 2,1%); o tamanho segue ≤ α. Alternativa: "dobro da menor
+  cauda" (monótona em R). Nos dados reais a Quina 25 (R par) seria rejeitada nas duas regras (Holm 0,024
+  com o dobro da cauda). Pendências BAIXA: `p_valor_runs_exato` (pública) valida R só depois de montar os
+  pesos (validar a faixa antes); script Python das referências não está no repositório (scratchpad).
+- 2026-10-05 — 1c.4, decisão do usuário após o ajuste: bilateral do runs exato passa a ser o **dobro da menor
+  cauda** (a soma das probabilidades até a observada fazia a paridade de R decidir a rejeição), registrado no
+  PLANEJAMENTO.md. Junto: validar R (e n1, n0) antes de montar a distribuição em `p_valor_runs_exato`, e
+  colar como comentário no teste o trecho Python que gerou as referências.
+- 2026-10-05 — 1c.4, ajuste rodada 2 (continua [x]; sem commit): decisão do usuário, runs exato bilateral
+  pelo **dobro da menor cauda**, p = min(1, 2·min(P(R ≤ r), P(R ≥ r))) (registrado no PLANEJAMENTO.md),
+  por causa da dependência da paridade de R na regra anterior. `p_valor_runs_exato`: caudas em
+  log-soma-exp relativas ao modo, limite 1, folga 1+1e-7 removida; nova `validar_runs` confere n1/n0
+  (vazio, overflow) e a faixa de R antes de montar a distribuição (`AvaliacaoEntradaInvalida` com a faixa
+  possível). Testes do módulo 37 → 38: força bruta n ≤ 14 com a regra nova, 59 referências de Python
+  (trecho `math.comb` + `Fraction` colado como comentário em tests.rs), p unimodal com pico na mediana
+  (não no modo), `rejeicao_nao_depende_da_paridade_de_r` (Quina 446/6688: 5,36% par vs 4,35% ímpar a 5%;
+  a regra antiga daria razão > 5), dezena fixa mudando a decisão do Holm (m = 4 vs 3), simulação com teto
+  de 7% e janela por dezena 2,5–3,7%. Alarme falso após Holm (2000 históricos): Lotofácil 4,40%,
+  Mega-Sena 3,55%, Quina 4,10%, Mega-Sena 500 concursos 1,15%. Gate: fmt ok, clippy ok, 532 testes
+  (381 lib + 28 + 56 + 57 + 10, 4 ignorados), `validar todas` ok. Revisão: aprovada com ressalvas, só
+  BAIXA; os três achados da rodada 1 resolvidos.
+  **Bancos reais (cópias, só leitura):** χ² sem mudança (Lotofácil 57,27/24 gl p 1,54e-4; Mega-Sena
+  89,47/59 gl p 6,41e-3; Quina 101,92/79 gl p 4,24e-2); nenhuma dezena fixa; runs após Holm rejeita só a
+  Quina 25 (n1 = 416, R = 748, μ = 784,5, p 3,04e-4, p Holm 0,0243). Menores das outras: Lotofácil 7
+  (p 0,0154, Holm 0,385), Mega-Sena 26 (p 0,0100, Holm 0,600). As notas anteriores com p 6,59e-5 da
+  Quina 25 valem para a regra descartada.
+  Pendências BAIXA: comentário de `dobro_produto` em `teste_de_runs` diz que cabe em u128 para todo n em
+  u64 (só vale até n ≈ 2^32; inalcançável na prática); `p_valor_runs_exato` pública aloca O(min(n1,n0))
+  (documentar ou tornar `pub(crate)`); alinhar o número da paridade da regra antiga (26,7% no plano,
+  26,6% no teste, ≈ 27% na doc do módulo).

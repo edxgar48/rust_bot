@@ -32,9 +32,8 @@ mod topk;
 mod walk_forward;
 
 pub use aleatoriedade::{
-    holm, p_valor_normal_bilateral, p_valor_qui_quadrado, qui_quadrado_frequencia,
-    testar_aleatoriedade, teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena,
-    TesteRuns, ALFA,
+    holm, p_valor_qui_quadrado, p_valor_runs_exato, qui_quadrado_frequencia, testar_aleatoriedade,
+    teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena, TesteRuns, ALFA,
 };
 pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
 pub use metricas::{
