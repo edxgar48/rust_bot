@@ -283,12 +283,44 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 - Comando `sync avaliar <loteria> --perfil X`.
 - Baseline do acaso: probabilidade de cada dezena sair = 15/25 (Lotofácil),
   6/60 (Mega-Sena), 5/80 (Quina). Métricas: log loss e Brier.
+- **Índice → probabilidade** (decisões de 2026-10-05): calibração pela
+  posição, só com o passado. A probabilidade da dezena na posição *r* no
+  concurso *t* é a taxa com que a posição *r* saiu nos concursos anteriores a
+  *t*, puxada para o acaso (*K/N*):
+  `p_t(r) = (saídas da posição r antes de t + m·K/N) / (concursos antes de t + m)`,
+  com **m = 100** concursos fictícios e o histórico inteiro (sem janela). As
+  *N* probabilidades somam *K*; o primeiro concurso recebe a taxa do acaso.
+- **Concursos avaliados**: só os já sorteados, do segundo concurso do índice
+  até o corte da busca; o conjunto trancado fica de fora por padrão.
+- **Métricas**: log loss com logaritmo natural, *p* limitado a
+  [1e-15, 1 − 1e-15], média por par (concurso, dezena); Brier = média de
+  (*p* − saiu)².
+- **Incerteza**: erro padrão e intervalo de 95% da diferença perfil − acaso,
+  calculada **por concurso** (as dezenas de um mesmo concurso não são
+  independentes).
+- **Escopo da 1c.1**: só funções puras em `src/avaliacao/` (taxa do acaso do
+  `LoteriaConfig`, calibração, log loss, Brier, resumo), com testes contra
+  valores calculados à mão. Leitura do banco e comando ficam na 1c.5; o
+  corte do trancado entra no `LoteriaConfig` na 1c.3.
 - Ranking: acertos das top-k dezenas vs. esperado pela hipergeométrica
   (ex.: Lotofácil, 15 dezenas ao acaso → 9 acertos em média).
 - Validação **walk-forward** (treina até *t*, testa em *t+1…*; nunca embaralha o tempo).
-- **Conjunto final trancado** (sugestão: últimos ~10% dos concursos), usado
-  uma única vez para validar o perfil campeão — protege contra sobreajuste na
-  busca de pesos.
+- **Conjunto final trancado**: os últimos ~10% dos concursos, usados uma
+  única vez para validar o perfil campeão — protege contra sobreajuste na
+  busca de pesos. O corte é **fixo pelo número do concurso** (decisão de
+  2026-10-05, 10% do histórico de então), não uma porcentagem que se move:
+
+  | Loteria | Busca e walk-forward | Trancado | Concursos trancados em 2026-10-05 |
+  |---|---|---|---|
+  | Lotofácil | 1 … 3416 (até 2025-06-12) | 3417 em diante (desde 2025-06-13) | 380 |
+  | Mega-Sena | 1 … 2759 (até 2024-08-08) | 2760 em diante (desde 2024-08-10) | 307 |
+  | Quina | 1 … 6421 (até 2024-04-20) | 6422 em diante (desde 2024-04-22) | 713 |
+
+  Concursos sorteados depois também ficam trancados: o trancado cresce com o
+  tempo e os sorteios novos servem de teste extra, em dados que nem existiam
+  quando o perfil foi escolhido. Nem a busca de pesos (Python) nem a escolha
+  de perfil podem ler concursos acima do corte; o corte fica no código, por
+  loteria, e o dataset da 1.5 marca a qual parte cada concurso pertence.
 - Testes de aleatoriedade do histórico (qui-quadrado de frequência, runs test).
 
 ### Fase 1.5 — Ponte com o Python
@@ -343,7 +375,6 @@ com o planejamento do front-end.
 
 - Destino da publicação (Cloudflare R2/Pages, GitHub Pages, S3, …) — Fase 2.
 - Canal de alerta (Telegram, Discord, e-mail) — Fase 3.
-- Tamanho do conjunto trancado (sugestão: ~10% do histórico) — Fase 1c.
 
 ## Backlog
 

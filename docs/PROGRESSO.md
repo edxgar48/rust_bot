@@ -66,9 +66,10 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [ ] Destino da publicação — bloqueia 2.4
 - [ ] Canal de alerta — bloqueia 3.6
-- [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
+- [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Conversão do índice em probabilidade e regras do log loss / Brier — bloqueia 1c.1 → resolvidas (ver notas de 2026-10-05)
 - [x] Formato de `perfis.criado_em` e pontos ambíguos do `sync indice` — bloqueia 1b.3 → resolvidos (ver notas de 2026-10-05)
 - [x] Pontos ambíguos da normalização, posição e variação de posição — bloqueia 1b.2 → resolvidos (ver notas de 2026-10-04)
 - [x] Pontos ambíguos da especificação das features — bloqueia 1a.1 → resolvidos (ver notas de 2026-10-04)
@@ -522,3 +523,29 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   1..antigo próximo intacto; `saiu = 1` exatamente nas dezenas sorteadas. Os bancos reais agora têm
   `features_dezena`, `motor_estado`, `perfis` e `indice`.
   Usuário conferiu no site da Caixa os três concursos novos: ok.
+- 2026-10-05 — Conjunto trancado, decisão do usuário: 10% do histórico, com corte fixo pelo número do
+  concurso (registrado no PLANEJAMENTO.md, 1c): busca até Lotofácil 3416, Mega-Sena 2759 e Quina 6421;
+  trancados daí em diante (380, 307 e 713 concursos hoje), inclusive os sorteios futuros.
+- 2026-10-05 — 1c.1 não iniciada: o plano pede log loss e Brier do perfil contra o acaso, mas o índice
+  produz `total` e `posicao`, não probabilidade; sem definir a conversão, as métricas não têm valor
+  definido. Perguntas devolvidas ao usuário, com sugestões: (1) **índice → probabilidade**: sugestão
+  calibração pela posição, ponto no tempo — p_t(r) = (vezes em que a dezena na posição r saiu nos
+  concursos < t + m·K/N) / (concursos < t + m), suavizada para o acaso; a soma das N probabilidades dá
+  exatamente K e o primeiro concurso recebe o acaso. Alternativas: softmax do `total` escalado para somar
+  K (estoura 1 na Lotofácil, precisa de ajuste de β), ou regressão logística de `saiu` sobre `total`
+  ajustada até t−1 (é um modelo, se sobrepõe à 1c.3); (2) força do prior m (sugestão: 100 concursos
+  fictícios) e histórico acumulado inteiro, sem janela; (3) concursos avaliados: os com `saiu` não NULL,
+  só até o corte da busca (trancado fora por padrão), a partir do segundo concurso do índice;
+  (4) log loss em logaritmo natural, p limitado a [1e-15, 1−1e-15], média por par (concurso, dezena);
+  Brier = média de (p − saiu)²; (5) incerteza: erro padrão e IC 95% (normal) da diferença perfil − acaso
+  calculada **por concurso** (as dezenas de um concurso não são independentes); (6) escopo da 1c.1: só
+  funções puras em `src/avaliacao/` (baseline de `LoteriaConfig`, calibração, log loss, Brier, resumo)
+  com testes contra valores calculados à mão; leitura do banco e CLI ficam para a 1c.5; o corte do
+  trancado entra no `LoteriaConfig` na 1c.3. Nota à parte: a skill `avaliacao-estatistica` ainda trata
+  o tamanho do trancado como decisão em aberto — atualizar com a decisão de 2026-10-05 (pede aprovação).
+- 2026-10-05 — 1c.1, decisões do usuário: aceitas as 6 sugestões, registradas no PLANEJAMENTO.md (1c):
+  calibração pela posição com prior m = 100 sobre o histórico inteiro; avaliação do 2º concurso do
+  índice até o corte da busca, sem o trancado; log loss natural com p em [1e-15, 1−1e-15] e Brier, média
+  por par; erro padrão e IC 95% da diferença perfil − acaso por concurso; 1c.1 só com funções puras em
+  `src/avaliacao/`. Skill `avaliacao-estatistica` atualizada com o corte fixo do trancado (aprovação do
+  usuário). 1c.1 desbloqueada.
