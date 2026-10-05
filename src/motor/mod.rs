@@ -11,9 +11,13 @@
 
 mod estado;
 mod features;
+mod indice;
+mod pesos;
 
 pub use estado::EstadoMotor;
 pub use features::FeaturesDezena;
+pub use indice::{calcular_indice, IndiceDezena};
+pub use pesos::{Normalizacao, Pesos};
 
 use crate::config::LoteriaConfig;
 use crate::error::Result;

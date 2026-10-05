@@ -56,6 +56,14 @@ pub enum SpiderError {
     )]
     MotorEstadoIncompativel(String),
 
+    /// O índice normaliza entre as dezenas de cada concurso e mede a variação
+    /// contra o concurso anterior: precisa de uma série completa de features
+    /// (concursos seguidos, as mesmas dezenas em todos, a janela do perfil) e
+    /// de pesos finitos. O detalhe já traz o que fazer (regenerar as features
+    /// ou corrigir o perfil).
+    #[error("motor: entrada inválida para o índice de força: {0}")]
+    MotorIndiceEntradaInvalida(String),
+
     /// `sync features` só roda sobre um histórico que passa no `validar`
     /// (buraco incluso). Os problemas vão junto para a CLI imprimir.
     #[error("{loteria}: {} erro(s) de integridade nos resultados — nada foi calculado nem gravado; confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`", erros.len())]

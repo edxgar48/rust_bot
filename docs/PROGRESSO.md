@@ -25,7 +25,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1b — Índice de força · `engenheiro-motor`
 
 - [x] 1b.1 Leitura de perfis `.toml` (`perfis/`) + tabela `perfis`
-- [ ] 1b.2 Normalização, total, posição e variação de posição
+- [x] 1b.2 Normalização, total, posição e variação de posição
 - [ ] 1b.3 Tabela `indice` + comando `sync indice`
 
 ## Fase 1c — Avaliação · `engenheiro-avaliacao`
@@ -68,6 +68,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Pontos ambíguos da normalização, posição e variação de posição — bloqueia 1b.2 → resolvidos (ver notas de 2026-10-04)
 - [x] Pontos ambíguos da especificação das features — bloqueia 1a.1 → resolvidos (ver notas de 2026-10-04)
 
 ## Notas
@@ -354,3 +355,58 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `PerfilDeOutraLoteria`. Testes novos: `bom_e_ignorado_no_texto_e_no_hash` e
   `sugestao_de_versao_pula_registradas_e_arquivos_existentes`. Gate: fmt ok, clippy ok, 229 testes
   (150 lib + 13 sync + 56 features + 10 parser, 1 ignorado).
+- 2026-10-04 — 1b.2 não iniciada: a seção "Índice de força" do plano não define pontos que mudam o
+  `total`, a `posicao` e a `variacao_posicao` calculados. Perguntas devolvidas ao usuário: (1) desvio
+  padrão do z-score populacional (÷N) ou amostral (÷N−1); (2) média/desvio/mín/máx calculados só sobre
+  as dezenas com valor não `NULL`, e `NULL` → neutro depois; (3) valor neutro de `NULL` no `minmax`
+  (0,5? média dos normalizados? 0?); (4) componente constante no concurso (desvio 0 ou máx = mín) e
+  componente todo `NULL` → todos 0 (ou neutro)?; (5) sinal de `variacao_posicao` (anterior − atual,
+  positivo = subiu?) e valor no primeiro concurso do índice (`NULL`?); (6) empate no `total`: igualdade
+  exata de `f64`, ou arredondar antes de ordenar (ex.: 1e-9) para não depender de ruído de ponto
+  flutuante; ordem fixa da soma (a dos 9 componentes de `Pesos::componentes`)?; (7) a 1b.2 cobre todos
+  os concursos de `features_dezena`, inclusive o snapshot de último + 1 (`variacao_posicao` dele
+  relativa ao último concurso)?
+- 2026-10-04 — 1b.2, decisões do usuário: aceitas as 7 sugestões, registradas no PLANEJAMENTO.md
+  ("Índice de força" → "Regras do cálculo"): desvio populacional; NULL fora das estatísticas e
+  neutro depois (0 no z-score, 0,5 no minmax); componente sem variação → neutro; soma na ordem de
+  `Pesos::componentes`; total arredondado a 1e-9 antes de ordenar, desempate pela menor dezena;
+  variação = anterior − atual, NULL no primeiro; todos os concursos de `features_dezena`, inclusive
+  o último + 1. 1b.2 desbloqueada.
+- 2026-10-04 — 1b.2 concluída. `src/motor/indice.rs` (novo, puro, sem I/O nem SQL):
+  `calcular_indice(features, janela, normalizacao, pesos) -> Result<Vec<IndiceDezena>>`, com
+  `IndiceDezena { concurso, dezena, total, posicao, variacao_posicao: Option<i64> }`, saída ordenada
+  por (concurso, dezena) e sem a coluna `perfil`, que fica para quem grava. Reexportado em
+  `src/motor/mod.rs`. Erro novo `MotorIndiceEntradaInvalida` (`src/error.rs`). Segue as "Regras do cálculo"
+  do plano sem desvio. Decisões de implementação:
+  - `total` devolvido já arredondado a 1e-9, com -0,0 trocado por +0,0, para a posição poder ser refeita
+    a partir do total gravado;
+  - "sem variação" decidido nos inteiros (mín = máx); média do z-score somada em u64;
+  - peso casado com o componente pelo nome de `Pesos::componentes`; `saiu` nunca é lido;
+  - entrada em qualquer ordem dá os mesmos bits;
+  - erro para (concurso, dezena) repetido, buraco, conjunto de dezenas diferente entre concursos, janela
+    ausente ou com faixa de concursos diferente das outras janelas, peso ou total não finito;
+  - entrada vazia → vazio; o primeiro concurso da entrada tem variação `NULL`, mesmo que não seja o 1.
+  40 testes em `motor::indice::tests`: goldens z-score e minmax feitos à mão e conferidos pelo revisor,
+  NULL, componente constante e todo NULL, ruído 0,1+0,2, empate, variação, determinismo, ponto no tempo
+  e erros. Medido na Quina: cerca de 0,1 s por perfil (570.720 linhas, release). verificador-vazamento:
+  aprovado. Revisão: aprovada com ressalvas, só BAIXA. Gate: fmt ok, clippy ok, 269 testes (190 lib +
+  13 sync + 56 features + 10 parser, 1 ignorado), `validar todas` ok.
+  **Para a 1b.3:**
+  - como o primeiro concurso da entrada recebe variação `NULL`, `sync indice` não pode passar só os
+    concursos novos; recomendado regenerar o índice inteiro do perfil (cerca de 0,1 s), ou então incluir
+    o último concurso já indexado e descartar as linhas dele;
+  - conferir na orquestração que o conjunto de dezenas bate com o universo da `LoteriaConfig`.
+  **Pendências BAIXA (não bloqueiam):**
+  - dependência circular `motor` ↔ `perfil` (o motor usa `Pesos`/`Normalizacao`; `perfil` usa
+    `JANELAS` e lê disco); mover os dois tipos para `motor` ou `model` e reexportar em `perfil`;
+  - comentário impreciso sobre a ordenação instável (`indice.rs:83-85`);
+  - |total| > ~1,8e299 dá erro de "total não finito" (só com pesos absurdos);
+  - peso não finito é rejeitado mesmo com entrada vazia;
+  - dois totais a menos de 1e-9 um do outro, mas em lados opostos de uma fronteira de arredondamento,
+    não empatam (é inerente à regra; vale lembrar nos vetores de conformidade da 1.5).
+- 2026-10-04 — 1b.2, pendências BAIXA 1 e 2 corrigidas a pedido do usuário: `Normalizacao` e `Pesos`
+  movidos de `src/perfil.rs` para `src/motor/pesos.rs` (reexportados em `motor` e em `perfil`), o que
+  tira a dependência circular — o motor não usa mais nada de `perfil`; comentário da ordenação
+  instável em `indice.rs` corrigido (a checagem de repetidas vem depois, no laço). As BAIXA 3, 4 e 5
+  ficam só registradas. Gate: fmt ok, clippy ok, 269 testes (190 lib + 13 sync + 56 features +
+  10 parser, 1 ignorado).
