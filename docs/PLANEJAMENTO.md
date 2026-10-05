@@ -338,6 +338,28 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   - **escopo**: só funções puras em `src/avaliacao/`, reaproveitando
     `Observacao`; leitura do banco e comando na 1c.5.
 - Validação **walk-forward** (treina até *t*, testa em *t+1…*; nunca embaralha o tempo).
+  Regras da 1c.3 (decisões de 2026-10-05):
+  - **corte no config**: campo `ultimo_concurso_busca` no `LoteriaConfig`
+    (3416, 2759, 6421) e uma função que diz se o concurso é da busca ou do
+    trancado; o dataset da 1.5.1 usa a mesma função;
+  - **walk-forward em Rust** = avaliar o trecho de busca em **5 dobras
+    consecutivas de tamanho igual** (do segundo concurso do índice até o
+    corte; a sobra da divisão vai para a última), com log loss / Brier (1c.1)
+    e top-k (1c.2) contra o acaso em cada dobra, para ver se o resultado é
+    estável. A busca de pesos da 1.5.3 usa as mesmas dobras (ajusta até uma
+    dobra, testa nela);
+  - **calibração separada da avaliação**: a calibração sempre começa no
+    primeiro concurso do índice; um limite inferior só da avaliação define a
+    dobra que entra nas métricas;
+  - **trancado** só é avaliado quando pedido explicitamente (padrão = busca):
+    do corte + 1 até o último sorteado, com a calibração usando todo o
+    passado. Garantir o "uma única vez" (registro do que já foi avaliado no
+    trancado) fica para a 1c.5;
+  - **p-valor por dobra** sem otimização extra; otimizar só se a medição
+    passar de 2 s no total;
+  - **escopo**: só funções puras em `src/avaliacao/` e o campo novo em
+    `config.rs`; leitura do banco, comando e o teste robusto do veredito
+    (bootstrap por blocos) ficam na 1c.5.
 - **Conjunto final trancado**: os últimos ~10% dos concursos, usados uma
   única vez para validar o perfil campeão — protege contra sobreajuste na
   busca de pesos. O corte é **fixo pelo número do concurso** (decisão de
@@ -355,6 +377,14 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   de perfil podem ler concursos acima do corte; o corte fica no código, por
   loteria, e o dataset da 1.5 marca a qual parte cada concurso pertence.
 - Testes de aleatoriedade do histórico (qui-quadrado de frequência, runs test).
+  Decisões de 2026-10-05: o runs test roda **por dezena**, sobre a
+  sequência saiu/não saiu ao longo dos concursos, no **histórico inteiro**.
+  **Significância** (decisão de 2026-10-05): α = 5% por família de testes.
+  Nos testes feitos dezena a dezena (ex.: runs test das 80 dezenas da
+  Quina), correção de **Holm** para o conjunto; testes globais (qui-quadrado
+  de frequência sobre todas as dezenas) usam α = 5% direto. O relatório
+  mostra, por dezena, o p-valor original e o corrigido. Rejeição depois da
+  correção: conferir primeiro os dados (erros de planilha), depois o sorteio.
 
 ### Fase 1.5 — Ponte com o Python
 
