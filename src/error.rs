@@ -143,6 +143,19 @@ pub enum SpiderError {
         detalhe: String,
     },
 
+    /// A calibração índice → probabilidade percorre a série concurso a
+    /// concurso: precisa de concursos seguidos, todas as dezenas da loteria
+    /// com posições 1…N em cada um, e *K* saídas por concurso sorteado (só o
+    /// último, o snapshot do próximo sorteio, pode estar sem resultado).
+    #[error("avaliação: entrada inválida: {0} — confira a montagem das observações ou regenere as features e o índice (`sync features`/`sync indice`)")]
+    AvaliacaoEntradaInvalida(String),
+
+    /// O primeiro concurso do índice recebe o acaso por construção e não é
+    /// avaliado; concursos acima do corte e o snapshot não sorteado também
+    /// ficam de fora.
+    #[error("avaliação: nada para avaliar: {0} — a avaliação vai do segundo concurso do índice até o corte, só com concursos já sorteados")]
+    AvaliacaoSemConcursos(String),
+
     /// Cópia de segurança do banco antes de um `sync atualizar` com salto.
     #[error("backup do banco em `{}`: {motivo}", caminho.display())]
     Backup { caminho: PathBuf, motivo: String },

@@ -31,7 +31,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1c — Avaliação · `engenheiro-avaliacao`
 
-- [ ] 1c.1 Baseline do acaso + log loss / Brier
+- [x] 1c.1 Baseline do acaso + log loss / Brier
 - [ ] 1c.2 Top-k vs hipergeométrica
 - [ ] 1c.3 Walk-forward + conjunto final trancado
 - [ ] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
@@ -549,3 +549,26 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   por par; erro padrão e IC 95% da diferença perfil − acaso por concurso; 1c.1 só com funções puras em
   `src/avaliacao/`. Skill `avaliacao-estatistica` atualizada com o corte fixo do trancado (aprovação do
   usuário). 1c.1 desbloqueada.
+- 2026-10-05 — 1c.1 concluída. `src/avaliacao/` (novo, puro, sem I/O nem SQL): `mod.rs` (`taxa_do_acaso(cfg)`
+  = K/N do `LoteriaConfig`), `calibracao.rs` (`Observacao { concurso, dezena, posicao, saiu }`,
+  `CONCURSOS_FICTICIOS = 100`, `calibrar`, calculada em inteiros com uma divisão no fim — o primeiro
+  concurso dá exatamente o f64 de K/N), `metricas.rs` (`log_loss`, `brier`, `metricas_por_concurso`,
+  `resumir`, `avaliar(cfg, obs, corte)` → `ResumoAvaliacao` com `Comparacao { perfil, acaso, diferenca,
+  erro_padrao, ic95 }`), `tests.rs` (38 testes: valores à mão numa loteria fictícia N=4/K=2 com frações
+  exatas, referências do acaso nas três loterias, soma = K, ponto no tempo, corte, determinismo,
+  validação). `src/error.rs`: `AvaliacaoEntradaInvalida`, `AvaliacaoSemConcursos`.
+  Interpretações (orquestrador/engenheiro, aceitas pela revisão, **a confirmar pelo usuário**): (1) EP =
+  desvio amostral (÷(T−1)) de d_t / √T, IC normal ±1,96·EP; com T < 2, EP e IC ficam `None`; (2) Brier
+  sem limitar p (o limite é só do log loss); (3) `saiu` NULL fora do último concurso é erro; (4) o corte
+  é recebido como argumento e aplicado **antes** de validar e calibrar (nada acima do corte é lido);
+  (5) série vazia é erro; (6) "primeiro concurso do índice" = primeiro da entrada.
+  Revisão: aprovada com ressalvas, só BAIXA; corrigidas numa rodada (link de doc para item privado;
+  mensagem de `AvaliacaoEntradaInvalida` cobre também erro de montagem). verificador-vazamento (via
+  revisor): sem vazamento. Gate: fmt ok, clippy ok, 407 testes (256 lib + 28 sync + 56 features +
+  57 indice + 10 parser, 1 ignorado), `validar todas` ok.
+  **Para a 1c.3/1c.5:** passar as observações sempre a partir do 1º concurso do índice (a calibração
+  recomeça do acaso no primeiro concurso da entrada), ou criar um limite inferior de avaliação separado
+  da calibração para o walk-forward; aplicar o corte por loteria também na leitura do banco; `calibrar`
+  é pública e não recebe corte — quem a usar fora de `avaliar` precisa filtrar antes (documentar ou
+  reduzir visibilidade). **Pendências BAIXA (reforço de teste):** ponto no tempo mudando só o `saiu` de
+  t e só t' > t; `nada_acima_do_corte_e_lido` comparar também a série de `metricas_por_concurso`.
