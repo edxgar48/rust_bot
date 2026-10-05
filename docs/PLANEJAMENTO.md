@@ -385,6 +385,20 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   de frequência sobre todas as dezenas) usam α = 5% direto. O relatório
   mostra, por dezena, o p-valor original e o corrigido. Rejeição depois da
   correção: conferir primeiro os dados (erros de planilha), depois o sorteio.
+  Detalhes (decisões de 2026-10-05):
+  - **qui-quadrado corrigido para sorteio sem reposição** (o de Pearson
+    comum é conservador demais: na Lotofácil a média seria 10, não 24);
+  - **runs test com p-valor exato**, bilateral pelo **dobro da menor
+    cauda**: p = min(1, 2·min(P(R ≤ r), P(R ≥ r))). A aproximação normal
+    dava alarme falso acima dos 5% depois do Holm. A regra da soma das
+    probabilidades até a observada foi descartada: a distribuição de R é
+    "em serrote" (P(2k+1)/P(2k) = (n−2k)/(2k)), e a paridade de R — que só
+    diz se o primeiro e o último concurso têm o mesmo estado — passava a
+    decidir a rejeição (Quina: ≈ 27% com R par contra ≈ 2% com R ímpar);
+  - dezena que **nunca ou sempre saiu** no trecho **entra no Holm com
+    p = 1** (conta como um teste);
+  - histórico **inteiro**, do concurso 1 ao último, incluindo o trancado
+    (estes testes não escolhem perfil).
 
 ### Fase 1.5 — Ponte com o Python
 
@@ -441,6 +455,11 @@ com o planejamento do front-end.
 
 ## Backlog
 
+- Investigar os desvios de frequência apontados pela 1c.4 nos bancos reais
+  (uniformidade rejeitada na Lotofácil, p ≈ 1,5e-4, concentrada nos concursos
+  1899–3796; Mega-Sena, p ≈ 6,4e-3; Quina, p ≈ 0,042; runs da dezena 25 da
+  Quina): conferir esses trechos contra uma fonte independente antes de
+  qualquer conclusão sobre o sorteio. Depois da 1c.5.
 - Premiação (ganhadores, rateio, arrecadação, cidades/UF).
 - Outras loterias (Dupla Sena, Timemania, Dia de Sorte, +Milionária, Lotomania).
 - API própria (axum), se o front-end precisar de algo dinâmico.
