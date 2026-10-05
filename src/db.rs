@@ -1,6 +1,6 @@
 use crate::error::{Result, SpiderError};
 use crate::model::Resultado;
-use crate::motor::FeaturesDezena;
+use crate::motor::{FeaturesDezena, IndiceDezena};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::path::Path;
 
@@ -363,6 +363,33 @@ fn ler_features_onde<P: rusqlite::Params>(
     Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// Lê as linhas de `features_dezena` de uma janela (a do perfil do índice),
+/// ordenadas por (concurso, dezena).
+pub fn ler_features_da_janela(conn: &Connection, janela: u32) -> Result<Vec<LinhaFeatures>> {
+    ler_features_onde(conn, "janela = ?1", [janela])
+}
+
+/// Indica se a tabela (ou view) `nome` existe no banco. Serve para consultar
+/// uma tabela derivada sem criá-la (e sem cair em "no such table").
+pub fn tabela_existe(conn: &Connection, nome: &str) -> Result<bool> {
+    let quantas: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?1",
+        params![nome],
+        |row| row.get(0),
+    )?;
+    Ok(quantas > 0)
+}
+
+/// Maior concurso de `features_dezena` (o snapshot mais recente), ou `None`
+/// se a tabela está vazia. Usa a chave primária: não varre a tabela.
+pub fn maior_concurso_features(conn: &Connection) -> Result<Option<u32>> {
+    Ok(
+        conn.query_row("SELECT MAX(concurso) FROM features_dezena", [], |row| {
+            row.get(0)
+        })?,
+    )
+}
+
 /// Quantas linhas `features_dezena` tem e o maior concurso presente
 /// (`None` se vazia). Usado para conferir se a tabela bate com o estado salvo.
 pub fn resumo_features(conn: &Connection) -> Result<(u64, Option<u32>)> {
@@ -461,6 +488,109 @@ pub fn inserir_perfil(conn: &Connection, perfil: &PerfilRegistrado) -> Result<()
         ],
     )?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tabela `indice`: índice de força por (concurso, dezena, perfil).
+//
+// Derivada: `sync indice` apaga as linhas do perfil e insere todas de novo a
+// cada execução, na mesma transação do registro em `perfis`.
+// ---------------------------------------------------------------------------
+
+/// Cria `indice` se ainda não existe. Idempotente.
+///
+/// Esquema do plano: `perfil` é `perfis.nome`, sem chave estrangeira (a
+/// imutabilidade do perfil é garantida pelo registro, não pelo SQLite);
+/// `variacao_posicao` é `NULL` só no primeiro concurso. `WITHOUT ROWID`
+/// pelo mesmo motivo de `features_dezena`.
+pub fn criar_tabela_indice(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS indice (
+            concurso          INTEGER NOT NULL,
+            dezena            INTEGER NOT NULL,
+            perfil            TEXT NOT NULL,
+            total             REAL NOT NULL,
+            posicao           INTEGER NOT NULL,
+            variacao_posicao  INTEGER,
+            PRIMARY KEY (concurso, dezena, perfil)
+        ) WITHOUT ROWID;",
+    )?;
+    Ok(())
+}
+
+/// Apaga todas as linhas de `indice` do perfil. Devolve quantas apagou.
+pub fn apagar_indice_do_perfil(conn: &Connection, perfil: &str) -> Result<usize> {
+    Ok(conn.execute("DELETE FROM indice WHERE perfil = ?1", params![perfil])?)
+}
+
+const COLUNAS_INDICE: usize = 6;
+
+/// Insere linhas em `indice` com o `perfil` dado, em blocos de
+/// [`LINHAS_POR_INSERT`] linhas por `INSERT` (como [`inserir_features`]).
+/// Linha com chave já existente é erro: quem chama apaga antes as do perfil.
+pub fn inserir_indice(conn: &Connection, perfil: &str, linhas: &[IndiceDezena]) -> Result<usize> {
+    let (blocos, resto) = linhas.as_chunks::<LINHAS_POR_INSERT>();
+    if !blocos.is_empty() {
+        let mut stmt = conn.prepare_cached(&sql_inserir_indice(LINHAS_POR_INSERT))?;
+        let mut valores = Vec::with_capacity(LINHAS_POR_INSERT * COLUNAS_INDICE);
+        for bloco in blocos {
+            valores.clear();
+            for l in bloco {
+                valores.extend(valores_indice(l, perfil));
+            }
+            stmt.execute(rusqlite::params_from_iter(&valores))?;
+        }
+    }
+    if !resto.is_empty() {
+        let mut stmt = conn.prepare_cached(&sql_inserir_indice(1))?;
+        for l in resto {
+            stmt.execute(rusqlite::params_from_iter(valores_indice(l, perfil)))?;
+        }
+    }
+    Ok(linhas.len())
+}
+
+fn sql_inserir_indice(linhas: usize) -> String {
+    let marcadores = vec!["(?, ?, ?, ?, ?, ?)"; linhas].join(", ");
+    format!(
+        "INSERT INTO indice (
+            concurso, dezena, perfil, total, posicao, variacao_posicao
+         ) VALUES {marcadores}"
+    )
+}
+
+/// Valores de uma linha, na ordem das colunas de `sql_inserir_indice`.
+fn valores_indice(l: &IndiceDezena, perfil: &str) -> [rusqlite::types::Value; COLUNAS_INDICE] {
+    use rusqlite::types::Value;
+    [
+        Value::Integer(i64::from(l.concurso)),
+        Value::Integer(i64::from(l.dezena)),
+        Value::Text(perfil.to_string()),
+        // `f64` vai inteiro para o REAL do SQLite (IEEE 754 de 8 bytes): o
+        // valor lido de volta tem os mesmos bits.
+        Value::Real(l.total),
+        Value::Integer(i64::from(l.posicao)),
+        l.variacao_posicao.map_or(Value::Null, Value::Integer),
+    ]
+}
+
+/// Lê as linhas de `indice` do perfil, ordenadas por (concurso, dezena).
+pub fn ler_indice(conn: &Connection, perfil: &str) -> Result<Vec<IndiceDezena>> {
+    let mut stmt = conn.prepare(
+        "SELECT concurso, dezena, total, posicao, variacao_posicao
+         FROM indice WHERE perfil = ?1
+         ORDER BY concurso, dezena",
+    )?;
+    let linhas = stmt.query_map(params![perfil], |row| {
+        Ok(IndiceDezena {
+            concurso: row.get(0)?,
+            dezena: row.get(1)?,
+            total: row.get(2)?,
+            posicao: row.get(3)?,
+            variacao_posicao: row.get(4)?,
+        })
+    })?;
+    Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 #[cfg(test)]
@@ -713,6 +843,127 @@ mod tests {
             buscar_perfil(&conn, "padrao_v1").expect("busca"),
             Some(original)
         );
+    }
+
+    // --- indice e leituras usadas pelo `sync indice` ------------------------
+
+    fn linha_indice(concurso: u32, dezena: u32, i: u32) -> IndiceDezena {
+        IndiceDezena {
+            concurso,
+            dezena,
+            // Valores com bits "difíceis": negativos, frações sem
+            // representação exata, subnormal e zero.
+            total: match i % 5 {
+                0 => -1.234_567_891,
+                1 => 0.1 + 0.2,
+                2 => f64::MIN_POSITIVE / 4.0,
+                3 => 0.0,
+                _ => 1e9 + f64::from(i) / 3.0,
+            },
+            posicao: 1 + i % 80,
+            variacao_posicao: (concurso > 1).then_some(i64::from(i % 7) - 3),
+        }
+    }
+
+    #[test]
+    fn indice_round_trip_em_blocos_e_no_resto_preserva_bits_e_nulls() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabela_indice(&conn).expect("cria");
+        criar_tabela_indice(&conn).expect("idempotente");
+        let total = 2 * LINHAS_POR_INSERT + 7;
+        let gravadas: Vec<IndiceDezena> = (0..total as u32)
+            .map(|i| linha_indice(1 + i / 10, 1 + i % 10, i))
+            .collect();
+        assert_eq!(
+            inserir_indice(&conn, "p_v1", &gravadas).expect("insere"),
+            total
+        );
+        let lidas = ler_indice(&conn, "p_v1").expect("lê");
+        assert_eq!(lidas, gravadas);
+        // Igualdade de f64 não distingue 0,0 de -0,0: confere os bits.
+        for (l, g) in lidas.iter().zip(&gravadas) {
+            assert_eq!(l.total.to_bits(), g.total.to_bits());
+        }
+        let nulos: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM indice WHERE variacao_posicao IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("conta");
+        assert_eq!(nulos, 10, "só as 10 linhas do concurso 1");
+        let tipos: String = conn
+            .query_row(
+                "SELECT group_concat(DISTINCT typeof(total)) FROM indice",
+                [],
+                |r| r.get(0),
+            )
+            .expect("tipos");
+        assert_eq!(tipos, "real");
+    }
+
+    #[test]
+    fn apagar_indice_do_perfil_nao_toca_nos_outros() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabela_indice(&conn).expect("cria");
+        let a: Vec<_> = (0..5).map(|i| linha_indice(1, i + 1, i)).collect();
+        let b: Vec<_> = (0..3).map(|i| linha_indice(1, i + 1, i + 1)).collect();
+        inserir_indice(&conn, "a_v1", &a).expect("insere a");
+        inserir_indice(&conn, "b_v1", &b).expect("insere b");
+        assert_eq!(apagar_indice_do_perfil(&conn, "a_v1").expect("apaga"), 5);
+        assert!(ler_indice(&conn, "a_v1").expect("lê a").is_empty());
+        assert_eq!(ler_indice(&conn, "b_v1").expect("lê b"), b);
+        assert_eq!(
+            apagar_indice_do_perfil(&conn, "nenhum_v1").expect("apaga"),
+            0
+        );
+    }
+
+    #[test]
+    fn indice_com_chave_repetida_e_erro() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabela_indice(&conn).expect("cria");
+        inserir_indice(&conn, "a_v1", &[linha_indice(1, 1, 0)]).expect("insere");
+        assert!(inserir_indice(&conn, "a_v1", &[linha_indice(1, 1, 1)]).is_err());
+        // Mesma (concurso, dezena) em outro perfil é outra chave.
+        inserir_indice(&conn, "b_v1", &[linha_indice(1, 1, 1)]).expect("outro perfil");
+    }
+
+    #[test]
+    fn tabela_existe_e_maior_concurso_sem_criar_nada() {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        assert!(tabela_existe(&conn, "resultados").expect("consulta"));
+        assert!(!tabela_existe(&conn, "features_dezena").expect("consulta"));
+        assert!(!tabela_existe(&conn, "indice").expect("consulta"));
+        // Consultar não criou nada.
+        assert!(!tabela_existe(&conn, "features_dezena").expect("consulta"));
+
+        criar_tabelas_features(&conn).expect("cria");
+        assert!(tabela_existe(&conn, "features_dezena").expect("consulta"));
+        assert_eq!(maior_concurso_features(&conn).expect("maior"), None);
+        inserir_features(&conn, &[linha(3, 1, 0), linha(7, 2, 10)], 1).expect("insere");
+        assert_eq!(maior_concurso_features(&conn).expect("maior"), Some(7));
+    }
+
+    #[test]
+    fn ler_features_da_janela_filtra_e_ordena() {
+        let conn = conn_com_tabelas();
+        let gravadas = vec![
+            linha(2, 2, 50),
+            linha(1, 1, 10),
+            linha(2, 1, 50),
+            linha(1, 2, 50),
+            linha(1, 1, 50),
+        ];
+        inserir_features(&conn, &gravadas, 4).expect("insere");
+        let lidas = ler_features_da_janela(&conn, 50).expect("lê");
+        let chaves: Vec<_> = lidas
+            .iter()
+            .map(|l| (l.features.concurso, l.features.dezena, l.features.janela))
+            .collect();
+        assert_eq!(chaves, [(1, 1, 50), (1, 2, 50), (2, 1, 50), (2, 2, 50)]);
+        assert!(lidas.iter().all(|l| l.feature_version == 4));
+        assert!(ler_features_da_janela(&conn, 100).expect("lê").is_empty());
     }
 
     #[test]

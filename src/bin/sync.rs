@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use rust_spider::{
-    config, correcoes, db, downloader, manuais, orquestracao, parser, validacao, SpiderError,
+    config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, tempo, validacao,
+    SpiderError,
 };
 use std::path::PathBuf;
 
@@ -132,10 +133,32 @@ enum Comando {
         #[arg(long)]
         completo: bool,
     },
+    /// Calcula o índice de força (total, posição e variação de posição) de
+    /// cada dezena em cada concurso com um perfil de pesos e grava em `indice`,
+    /// regenerando o índice inteiro do perfil. Recusa rodar se as features não
+    /// estiverem em dia (rode `features` antes).
+    Indice {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Nome do perfil de pesos (arquivo `<perfis>/<loteria>/<nome>.toml`,
+        /// ex.: padrao_v1)
+        #[arg(long)]
+        perfil: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+    },
 }
 
 /// Quantos problemas imprimir antes de resumir o restante numa contagem.
 const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
+
+/// Por que `indice` não aceita `todas`.
+const MOTIVO_INDICE_UMA_LOTERIA: &str =
+    "calcule uma loteria por vez (cada uma tem seu banco e seus perfis)";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -241,6 +264,16 @@ async fn main() -> anyhow::Result<()> {
             )?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             calcular_features(cfg, &db_caminho, completo)?;
+        }
+        Comando::Indice {
+            loteria,
+            perfil,
+            db,
+            perfis,
+        } => {
+            let cfg = buscar_config_unica(&loteria, "indice", MOTIVO_INDICE_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            calcular_indice(cfg, &db_caminho, &perfis, &perfil)?;
         }
     }
 
@@ -560,7 +593,7 @@ fn carregar_existentes(
 }
 
 /// Para comandos que só fazem sentido com uma loteria (`importar`, `inserir`,
-/// `listar`, `features`): recusa `todas` explicando o porquê.
+/// `listar`, `features`, `indice`): recusa `todas` explicando o porquê.
 fn buscar_config_unica(
     loteria: &str,
     comando: &str,
@@ -834,6 +867,77 @@ fn calcular_features(
     Ok(())
 }
 
+/// `sync indice`: carrega o perfil, calcula e grava o índice (tudo em
+/// `orquestracao`) e imprime o resumo. Banco inexistente é erro, sem criar
+/// arquivo. É aqui que se lê o relógio para `perfis.criado_em`.
+fn calcular_indice(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let criado_em = agora_iso8601_utc()?;
+    let mut conn = db::abrir(db_caminho)?;
+    let p = &carregado.perfil;
+    println!(
+        "Calculando o índice de {} em {} com o perfil {} (versão {}, janela {}, {})...",
+        cfg.nome_exibicao,
+        db_caminho.display(),
+        p.nome,
+        p.versao,
+        descrever_janela(p.janela),
+        p.normalizacao.como_str()
+    );
+    let inicio = std::time::Instant::now();
+    let resumo = orquestracao::sincronizar_indice(&mut conn, cfg, &carregado, &criado_em)?;
+    let duracao = inicio.elapsed();
+
+    let registro = match resumo.registro {
+        orquestracao::RegistroPerfil::Novo => "registrado agora em perfis",
+        orquestracao::RegistroPerfil::JaRegistrado => "já registrado em perfis, sem alteração",
+    };
+    println!(
+        "Perfil {}: {registro} (hash {}).",
+        resumo.perfil, carregado.hash_toml
+    );
+    println!(
+        "{} concurso(s) indexado(s), do {} ao {}; {} linha(s) gravada(s) em indice \
+         ({} substituída(s)).",
+        resumo.concursos,
+        resumo.primeiro_concurso,
+        resumo.proximo_concurso,
+        resumo.linhas_gravadas,
+        resumo.linhas_apagadas
+    );
+    println!(
+        "Último concurso: {}; índice do próximo ({}) incluído. Tempo: {:.2} s.",
+        resumo.ultimo_concurso,
+        resumo.proximo_concurso,
+        duracao.as_secs_f64()
+    );
+    Ok(())
+}
+
+fn descrever_janela(janela: u32) -> String {
+    if janela == rust_spider::motor::JANELA_TOTAL {
+        "total".to_string()
+    } else {
+        janela.to_string()
+    }
+}
+
+/// Momento atual em ISO-8601 UTC com segundos, para `perfis.criado_em`.
+fn agora_iso8601_utc() -> anyhow::Result<String> {
+    let desde_1970 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| anyhow::anyhow!("relógio do sistema antes de 1970-01-01; acerte a data"))?;
+    Ok(tempo::iso8601_utc(desde_1970.as_secs()))
+}
+
 fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
     for o in ocorrencias {
         match o {
@@ -1007,6 +1111,70 @@ mod tests {
 
         assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
         assert!(!existe, "features não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn indice_banco_inexistente_da_erro_sem_criar_arquivo() {
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let caminho = std::env::temp_dir().join(format!(
+            "rust_spider_indice_{}_{unico}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&caminho);
+
+        let erro = calcular_indice(
+            quina(),
+            &caminho,
+            std::path::Path::new("perfis"),
+            "padrao_v1",
+        )
+        .expect_err("banco inexistente");
+        let existe = caminho.exists();
+        let _ = std::fs::remove_file(&caminho);
+
+        assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
+        assert!(!existe, "indice não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn indice_recusa_todas() {
+        let erro = buscar_config_unica("todas", "indice", MOTIVO_INDICE_UMA_LOTERIA)
+            .expect_err("todas é recusado");
+        let texto = erro.to_string();
+        assert!(texto.contains("`indice` não aceita `todas`"), "{texto}");
+    }
+
+    #[test]
+    fn indice_exige_perfil_e_usa_a_pasta_perfis_por_padrao() {
+        assert!(Cli::try_parse_from(["sync", "indice", "quina"]).is_err());
+        let cli = Cli::try_parse_from(["sync", "indice", "quina", "--perfil", "padrao_v1"])
+            .expect("com --perfil");
+        match cli.comando {
+            Comando::Indice {
+                loteria,
+                perfil,
+                db,
+                perfis,
+            } => {
+                assert_eq!(loteria, "quina");
+                assert_eq!(perfil, "padrao_v1");
+                assert_eq!(db, None);
+                assert_eq!(perfis, PathBuf::from("perfis"));
+            }
+            _ => panic!("esperava o comando indice"),
+        }
+    }
+
+    #[test]
+    fn agora_e_iso8601_utc_com_segundos() {
+        let agora = agora_iso8601_utc().expect("relógio");
+        assert_eq!(agora.len(), "2026-10-04T18:30:00Z".len(), "{agora}");
+        assert!(agora.ends_with('Z'), "{agora}");
+        assert_eq!(agora.as_bytes()[10], b'T', "{agora}");
+        assert!(agora.as_str() > "2026-01-01T00:00:00Z", "{agora}");
     }
 
     #[test]

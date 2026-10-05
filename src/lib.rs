@@ -9,6 +9,7 @@ pub mod motor;
 pub mod orquestracao;
 pub mod parser;
 pub mod perfil;
+pub mod tempo;
 pub mod validacao;
 
 pub use error::{Result, SpiderError};

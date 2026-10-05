@@ -26,7 +26,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1b.1 Leitura de perfis `.toml` (`perfis/`) + tabela `perfis`
 - [x] 1b.2 Normalização, total, posição e variação de posição
-- [ ] 1b.3 Tabela `indice` + comando `sync indice`
+- [x] 1b.3 Tabela `indice` + comando `sync indice`
 
 ## Fase 1c — Avaliação · `engenheiro-avaliacao`
 
@@ -68,6 +68,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] Tamanho do conjunto trancado (sugestão ~10%) — necessário em 1c.3
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Formato de `perfis.criado_em` e pontos ambíguos do `sync indice` — bloqueia 1b.3 → resolvidos (ver notas de 2026-10-05)
 - [x] Pontos ambíguos da normalização, posição e variação de posição — bloqueia 1b.2 → resolvidos (ver notas de 2026-10-04)
 - [x] Pontos ambíguos da especificação das features — bloqueia 1a.1 → resolvidos (ver notas de 2026-10-04)
 
@@ -410,3 +411,63 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   instável em `indice.rs` corrigido (a checagem de repetidas vem depois, no laço). As BAIXA 3, 4 e 5
   ficam só registradas. Gate: fmt ok, clippy ok, 269 testes (190 lib + 13 sync + 56 features +
   10 parser, 1 ignorado).
+- 2026-10-05 — 1b.3 não iniciada: o formato de `perfis.criado_em` segue sem decisão do usuário e o
+  plano não define pontos que mudam o comportamento do `sync indice` e o schema de `indice`. Perguntas
+  devolvidas ao usuário, com sugestões: (1) `criado_em` em ISO-8601 UTC com segundos
+  (`2026-10-04T18:30:00Z`), formatado a partir de `SystemTime` na CLI, sem crate nova; (2) features
+  desatualizadas ou ausentes (último concurso de `features_dezena` ≠ último de `resultados` + 1, ou
+  `feature_version` diferente da atual): `sync indice` **recusa** e manda rodar `sync features` antes,
+  ou roda as features sozinho? sugestão: recusar, sem gravar nada; (3) `--perfil` obrigatório ou com
+  padrão `padrao_v1`? sugestão: obrigatório, um perfil por execução, só uma loteria (sem `todas`, como
+  `features`); (4) cálculo: regenerar o índice inteiro do perfil a cada execução (DELETE das linhas do
+  perfil + INSERT, numa transação, junto com o registro em `perfis`), ~0,1 s na Quina, em vez de
+  incremental; (5) schema de `indice`: `concurso INTEGER, dezena INTEGER, perfil TEXT` (= `perfis.nome`),
+  `total REAL NOT NULL`, `posicao INTEGER NOT NULL`, `variacao_posicao INTEGER` (NULL só no primeiro
+  concurso), PK do plano, WITHOUT ROWID, sem FK; (6) usar as linhas de `features_dezena` da janela do
+  perfil, conferindo que o conjunto de dezenas de cada concurso é exatamente o universo da
+  `LoteriaConfig` (erro se não for); (7) banco/`features_dezena` vazios → erro, sem criar tabelas.
+- 2026-10-05 — 1b.3, decisões do usuário: aceitas as 7 sugestões, registradas no PLANEJAMENTO.md
+  (esquema de `indice` e de `perfis.criado_em`; regras do `sync indice` na Fase 1b): `criado_em` ISO-8601
+  UTC com segundos, feito na CLI a partir de `SystemTime`; recusa features desatualizadas ou de outra
+  versão; `--perfil` obrigatório, sem `todas`; regenera o índice inteiro do perfil numa transação com o
+  registro em `perfis`; esquema de `indice` WITHOUT ROWID sem FK; entrada só da janela do perfil com
+  dezenas conferidas contra a `LoteriaConfig`; banco ou features vazios dão erro sem criar tabelas.
+  1b.3 desbloqueada.
+- 2026-10-05 — 1b.3 concluída. `src/tempo.rs` (novo, na lib: `iso8601_utc`, `data_civil`, sem crate);
+  `src/error.rs` (`SemFeatures`, `FeaturesDesatualizadas`, `FeaturesDeOutraVersao`, `FeaturesIncoerentes`);
+  `src/db.rs` (`criar_tabela_indice` com o esquema do plano, `apagar_indice_do_perfil`, `inserir_indice` em
+  blocos de 64, `ler_indice`, `ler_features_da_janela`, `tabela_existe`, `maior_concurso_features`);
+  `src/orquestracao.rs` (`sincronizar_indice` → `ResumoIndice`; todas as recusas antes de qualquer CREATE;
+  depois `registrar_perfil`, DELETE do perfil e INSERT numa transação só); subcomando
+  `indice <loteria> --perfil <nome> [--db] [--perfis perfis]` em `src/bin/sync.rs` (CLI lê o relógio e
+  formata `criado_em`); README; `tests/indice.rs` (52 testes). Bancos reais não foram tocados.
+  Desvios aceitos pela revisão: (1) flag extra `--perfis <pasta>`, padrão `perfis`; (2) módulo novo
+  `src/tempo.rs`; (3) `feature_version` conferida só nas linhas da janela do perfil, não na tabela
+  inteira — **leitura do plano a registrar** ("forem de outra feature_version"); (4) checagem extra: a
+  série da janela tem de ir de 1 a último + 1 sem buraco, com as dezenas da config, senão
+  `FeaturesIncoerentes` pedindo `sync features --completo`; (5) perfil de outra loteria é recusado antes
+  de abrir a transação; `PerfilAlterado` só depois de calcular o índice (nada é gravado em nenhum dos dois).
+  Ponta a ponta em cópias (release, máquina carregada): Lotofácil 94.900 linhas ~0,5 s, Mega-Sena
+  183.960 ~0,9 s, Quina 570.720 ~2,4 s; segunda execução idêntica byte a byte, `criado_em` preservado;
+  recusa por features desatualizadas preserva tudo; após `features` incremental, linhas ≤ 7134 idênticas.
+  Revisão: aprovada com ressalvas, só BAIXA; corrigidas numa rodada (README com todas as recusas, a
+  limitação abaixo e a ressalva sobre apagar `perfis`; asserção de prefixo estável entre lotes no teste
+  incremental). verificador-vazamento: aprovado com ressalvas, sem vazamento; 3 regressões injetadas
+  numa cópia (somar `saiu`, normalizar com estatísticas de outro concurso, variação contra t+1), todas
+  pegas. Gate: fmt ok, clippy ok, 338 testes (203 lib + 17 sync + 56 features + 52 indice + 10 parser,
+  1 ignorado), `validar todas` ok. **Fase 1b concluída.**
+  **Pendências BAIXA (não bloqueiam):** a checagem de "desatualizado" compara só o último concurso — um
+  resultado antigo corrigido sem rodar `sync features` não é detectado (documentado no README; opção:
+  conferir `motor_estado.impressao` contra `resultados`, o que mudaria o plano); `saiu` é carregado em
+  `FeaturesDezena` e chega ao motor sem ser lido (protegido só por teste; opção: tipo/consulta sem `saiu`);
+  teste incremental cobre só um perfil (Quina, janela 10, minmax); `saiu` NULL no banco só testado na
+  unidade; com `PerfilAlterado` o índice é calculado à toa (~2 s na Quina) antes da recusa.
+- 2026-10-05 — 1b.3, decisões do usuário após a auditoria: (1) corrigido o achado "importante" do
+  verificador-vazamento — `sincronizar_indice` agora confere `motor_estado` (loteria, último concurso
+  e impressão de `resultados`) e recusa com `FeaturesDeResultadosAlterados` se não bater (resultado
+  antigo corrigido, só a data corrigida, ou `motor_estado` ausente); a limitação saiu do README;
+  5 testes novos em `tests/indice.rs`, e com a checagem desligada 4 deles falham; (2) registrado no
+  PLANEJAMENTO.md que a `feature_version` é conferida só na janela do perfil. Também reforçado
+  `saiu_nao_e_lido` (achado menor 2): `saiu` alternado por dezena com todos os pesos ≠ 0; pega
+  leitura de `saiu` via `frequencia` e via `repeticao_atual` (conferido com mutantes). Gate: fmt ok,
+  clippy ok, 343 testes (203 lib + 17 sync + 56 features + 57 indice + 10 parser, 1 ignorado).

@@ -43,8 +43,10 @@ src/
 ├── downloader.rs  # Playwright: abre a página, clica no botão, captura o evento de download
 ├── parser.rs      # calamine: lê a planilha (.xlsx) e extrai os concursos
 ├── db.rs          # rusqlite: schema, upsert por (loteria, concurso) e tabelas derivadas
-├── motor/         # features por dezena e janela (série temporal), puro: sem I/O nem SQL
-├── orquestracao.rs # `sync features`: validação + motor + gravação numa transação
+├── motor/         # features por dezena e janela (série temporal) e índice de força, puro: sem I/O nem SQL
+├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
+├── orquestracao.rs # `sync features` e `sync indice`: validação + motor + gravação numa transação
+├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
 └── bin/sync.rs    # CLI (clap) que orquestra tudo
@@ -82,6 +84,10 @@ cargo run --bin sync -- inserir lotofacil 3793 --data 2026-09-30 --dezenas 1,2,3
 cargo run --bin sync -- features quina
 cargo run --bin sync -- features quina --completo   # ignora o estado salvo e recalcula do zero
 
+# calcula o índice de força com um perfil de pesos e grava em `indice` (rode `features` antes)
+cargo run --bin sync -- indice quina --perfil padrao_v1
+cargo run --bin sync -- indice quina --perfil padrao_v1 --perfis outra/pasta   # perfis fora de `perfis/`
+
 # `todas` no lugar do slug percorre todas as loterias configuradas
 cargo run --bin sync -- validar todas
 cargo run --bin sync -- atualizar todas
@@ -94,9 +100,9 @@ combinados com `todas`). Uma loteria que falha não interrompe as demais: no
 fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
 alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
 padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
-`inserir`, `listar` e `features` aceitam só uma loteria. `listar`, `validar`,
-`buracos` e `features` falham com "banco não encontrado" em vez de criar um
-banco vazio.
+`inserir`, `listar`, `features` e `indice` aceitam só uma loteria. `listar`,
+`validar`, `buracos`, `features` e `indice` falham com "banco não encontrado"
+em vez de criar um banco vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
 banco daquela loteria: se não houver novidade, não grava nada; se o salto for
@@ -131,6 +137,39 @@ fim, imprime o modo (completo ou incremental, com o motivo), os concursos
 incorporados, as linhas gravadas e o próximo concurso. `features_dezena` e
 `motor_estado` são derivadas: podem ser apagadas e regeneradas a qualquer
 momento a partir de `resultados`.
+
+`indice <loteria> --perfil <nome>` calcula o índice de força de cada dezena
+em cada concurso (total ponderado, posição de 1 a N e variação de posição em
+relação ao concurso anterior; regras em `docs/PLANEJAMENTO.md`, "Índice de
+força") com o perfil `perfis/<loteria>/<nome>.toml` (outra pasta com
+`--perfis`), e grava na tabela `indice`, uma linha por (concurso, dezena,
+perfil). Usa só as linhas de `features_dezena` da janela do perfil, inclusive
+o snapshot do próximo concurso (o da tabela geral do app); `saiu` nunca entra
+no cálculo. `--perfil` é obrigatório e cada execução trata um perfil e uma
+loteria. A cada execução o índice inteiro do perfil é apagado e calculado de
+novo (os outros perfis não são tocados), numa única transação junto com o
+registro do perfil na tabela `perfis` — que guarda o `.toml`, o hash SHA-256 e
+o momento do primeiro registro (`criado_em`, ISO-8601 UTC). Perfil já
+registrado com o mesmo nome e outro conteúdo é erro: perfis são imutáveis,
+crie a versão seguinte (`padrao_v2`). O comando recusa, sem gravar nada (nem
+criar tabelas):
+
+- perfil de outra loteria (o `loteria` do `.toml` não é a loteria do banco):
+  use o perfil de `perfis/<loteria>/`;
+- banco sem resultados, `features_dezena` vazia, features desatualizadas (o
+  snapshot mais recente não é o último concurso + 1), calculadas com outros
+  resultados (um resultado antigo corrigido depois do último `features`: a
+  impressão de `resultados` não bate com a de `motor_estado`) ou de outra
+  versão das fórmulas na janela do perfil: rode `features` antes;
+- `features_dezena` incoerente na janela do perfil (a série `1 … último + 1`
+  com concurso faltando, ou com dezenas faltando ou fora do universo da
+  loteria — só acontece se a tabela foi mexida por fora): regenere com
+  `sync features <loteria> --completo`.
+
+`indice` é derivada: pode ser apagada e regenerada a qualquer momento a partir
+de `features_dezena` e dos `.toml`. `perfis` também é recriada pelo próprio
+`indice`, mas apagá-la perde o `criado_em` original de cada perfil (o novo
+registro passa a valer como o primeiro).
 
 Por padrão cada loteria grava em um banco SQLite separado —
 `resultados_<loteria>.db` (ex.: `resultados_lotofacil.db`,

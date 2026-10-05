@@ -1056,6 +1056,33 @@ mod tests {
                 &calcular_indice(&todos_true, 0, n, &PESOS_GOLDEN).expect("calcula"),
                 &base,
             );
+            // Os casos acima mudam `saiu` igual em todas as dezenas, e uma
+            // constante some na normalização. Aqui `saiu` varia entre as
+            // dezenas (dois padrões opostos): uma leitura dele mudaria a
+            // ordem relativa e, portanto, o total ou a posição. Todos os pesos
+            // são diferentes de 0, para nenhum componente ficar invisível.
+            let pesos = Pesos {
+                frequencia: 1.0,
+                maior_espaco: 0.9,
+                maior_espaco_ocorrencias: 0.8,
+                menor_espaco: 0.7,
+                menor_espaco_ocorrencias: 0.6,
+                soma_variacoes: -0.5,
+                espaco_final: 0.4,
+                repeticoes_total: 0.3,
+                repeticao_atual: 0.2,
+            };
+            let base = calcular_indice(&golden(), 0, n, &pesos).expect("calcula");
+            for par_saiu in [true, false] {
+                let mut alternado = golden();
+                for f in &mut alternado {
+                    f.saiu = Some((f.dezena % 2 == 0) == par_saiu);
+                }
+                assert_identico(
+                    &calcular_indice(&alternado, 0, n, &pesos).expect("calcula"),
+                    &base,
+                );
+            }
         }
     }
 
