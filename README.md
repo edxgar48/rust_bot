@@ -44,8 +44,10 @@ src/
 ├── parser.rs      # calamine: lê a planilha (.xlsx) e extrai os concursos
 ├── db.rs          # rusqlite: schema, upsert por (loteria, concurso) e tabelas derivadas
 ├── motor/         # features por dezena e janela (série temporal) e índice de força, puro: sem I/O nem SQL
+├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap) e testes de aleatoriedade, puro
+├── registros.rs   # registro de uso do conjunto trancado (`registros/trancado_<loteria>.json`, versionado)
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
-├── orquestracao.rs # `sync features` e `sync indice`: validação + motor + gravação numa transação
+├── orquestracao.rs # `sync features`, `indice`, `avaliar` e `aleatoriedade`: validação + motor/avaliação + banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
@@ -89,21 +91,30 @@ cargo run --bin sync -- features quina --completo   # ignora o estado salvo e re
 cargo run --bin sync -- indice quina --perfil padrao_v1
 cargo run --bin sync -- indice quina --perfil padrao_v1 --perfis outra/pasta   # perfis fora de `perfis/`
 
+# avalia o índice de um perfil contra o acaso no trecho de busca (rode `indice` antes; só lê o banco)
+cargo run --bin sync -- avaliar quina --perfil padrao_v1
+cargo run --bin sync -- avaliar quina --perfil padrao_v1 --k 10 --testados 3   # outro k; Bonferroni por 3 testados
+cargo run --bin sync -- avaliar quina --perfil padrao_v1 --trancado            # conjunto TRANCADO: uso único por perfil
+
+# testes de aleatoriedade do histórico inteiro (qui-quadrado e runs por dezena)
+cargo run --bin sync -- aleatoriedade todas
+
 # `todas` no lugar do slug percorre todas as loterias configuradas
 cargo run --bin sync -- validar todas
 cargo run --bin sync -- atualizar todas
 ```
 
-`todas` vale em `baixar`, `atualizar`, `validar` e `buracos`, na ordem de
+`todas` vale em `baixar`, `atualizar`, `validar`, `buracos` e `aleatoriedade`, na ordem de
 `LOTERIAS` em `config.rs`. Os bancos não são juntados: o comando roda em cada
 banco padrão, um por vez (por isso `--db` e `--seletor` não podem ser
 combinados com `todas`). Uma loteria que falha não interrompe as demais: no
 fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
 alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
 padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
-`inserir`, `listar`, `features` e `indice` aceitam só uma loteria. `listar`,
-`validar`, `buracos`, `features` e `indice` falham com "banco não encontrado"
-em vez de criar um banco vazio.
+`inserir`, `listar`, `features`, `indice` e `avaliar` aceitam só uma loteria.
+`listar`, `validar`, `buracos`, `features`, `indice`, `avaliar` e
+`aleatoriedade` falham com "banco não encontrado" em vez de criar um banco
+vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
 banco daquela loteria:
@@ -202,6 +213,71 @@ criar tabelas):
 de `features_dezena` e dos `.toml`. `perfis` também é recriada pelo próprio
 `indice`, mas apagá-la perde o `criado_em` original de cada perfil (o novo
 registro passa a valer como o primeiro).
+
+`avaliar <loteria> --perfil <nome>` mede o índice gravado do perfil contra o
+acaso (regras em `docs/PLANEJAMENTO.md`, 1c). A posição de cada dezena vira
+probabilidade pela calibração acumulada (só o passado), e o comando imprime
+log loss, Brier e acertos do top-k (k = K da loteria, ou `--k`) do perfil e do
+acaso, com diferença, erro padrão, IC 95% normal e o p-valor exato do top-k,
+em 5 dobras de walk-forward no trecho de busca (até o corte fixo da loteria,
+`ultimo_concurso_busca` em `config.rs`) e no trecho inteiro. O veredito
+"supera o acaso" vem do **bootstrap circular por blocos** de 50 concursos
+(10 000 reamostragens, semente fixa) sobre as diferenças perfil − acaso do log
+loss por concurso: p-valor unilateral e IC 95% percentil, α = 5% (o Brier
+passa pelo mesmo bootstrap só como informação). Trecho com menos de 100
+concursos fica sem veredito. Os p-valores só valem se o perfil e o k foram
+escolhidos sem ver o trecho: quem testou vários informa quantos com
+`--testados N` (Bonferroni, p·N limitado a 1). Só lê o banco (aberto só para
+leitura) e recusa, sem avaliar: `todas`; perfil de outra loteria, fora de
+`perfis` ou com hash diferente do `.toml` em disco; resultados com buraco ou
+erro de integridade; features desatualizadas (como no `indice`); índice que
+não vai até o último concurso + 1 ou que difere do índice recalculado em
+memória com as features atuais (por exemplo, `features` regenerado depois de
+corrigir um resultado antigo) — nos dois casos, rode `indice` de novo.
+
+`--trancado` avalia o **conjunto trancado** (do corte + 1 até o último
+sorteado), que é de uso único por perfil: cada uso fica registrado em
+`registros/trancado_<loteria>.json` **ao lado do banco** (no diretório do
+arquivo passado em `--db`, ou do banco padrão), com perfil, hash do `.toml`,
+até qual concurso e quando (ISO-8601 UTC). Os bancos reais ficam na raiz do
+repositório, então o registro é `registros/` na raiz, de onde quer que o
+comando seja rodado. Esse arquivo **vai para o git** — não fica no banco, que
+é derivado e pode ser refeito. O mesmo perfil e hash já registrados são
+recusados, a menos de `--repetir` (que mostra as avaliações anteriores e
+registra a nova). O trancado usa sempre k = K (`--k` e `--testados` valem só
+na busca). No trancado o p-valor sai também com Bonferroni pelo número de
+perfis distintos já registrados na loteria.
+
+Cuidados com o registro do trancado:
+
+- **Não troque a pasta.** Existe uma opção `--registros`, escondida da
+  ajuda, só para os testes: uso gravado em outra pasta não conta para o uso
+  único nem para o Bonferroni do registro versionado. Quando a pasta não é a
+  padrão, ou quando o arquivo de registro ainda não existe (primeiro uso da
+  loteria), o comando avisa na saída de erro com o caminho absoluto onde o
+  uso vai ficar; se não for o arquivo do git, interrompa. Além disso, todo
+  relatório do trancado traz no cabeçalho a linha `Registro do trancado
+  lido:` com o caminho absoluto do arquivo lido e quantos usos ele tinha
+  (`0 (arquivo inexistente; ...)` no primeiro uso); a recusa do uso único
+  também cita o arquivo e o total de usos.
+- **Ordem:** a avaliação roda, o relatório é montado em memória, o uso é
+  gravado e só então o relatório é impresso. Se a saída padrão estiver
+  fechada (`| head`, por exemplo), o comando não dá panic: sai com erro e
+  manda o relatório para a saída de erro, avisando que o uso já foi
+  registrado. Se a saída fechar antes da avaliação (no aviso inicial), nada é
+  avaliado nem registrado.
+- **Uma execução por vez.** Não há trava de arquivo: o registro é recarregado
+  logo antes de gravar e o uso novo é juntado ao conteúdo recarregado (o uso
+  gravado por outra execução não se perde; se ela registrou o mesmo perfil, a
+  segunda é recusada; se o registro mudar em 3 recargas seguidas, nada é
+  gravado). Ainda assim sobra uma janela mínima entre a última recarga e a
+  gravação: **não rode `--trancado` em paralelo**.
+
+`aleatoriedade <loteria|todas>` testa o histórico inteiro de `resultados`
+(inclusive o trancado; não depende de perfil nem de features): qui-quadrado
+de frequência (corrigido para sorteio sem reposição) e runs test por dezena
+com p-valor exato e correção de Holm, α = 5%. Rejeição costuma indicar dado
+errado antes de sorteio viciado: confira com `validar`. Só lê o banco.
 
 Por padrão cada loteria grava em um banco SQLite separado —
 `resultados_<loteria>.db` (ex.: `resultados_lotofacil.db`,

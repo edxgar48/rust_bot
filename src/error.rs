@@ -166,6 +166,61 @@ pub enum SpiderError {
     #[error("aleatoriedade: resultados inválidos para os testes: {0} — confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`; nada foi testado")]
     AleatoriedadeEntradaInvalida(String),
 
+    /// O `sync avaliar` lê o índice gravado pelo `sync indice`, e o perfil
+    /// tem de estar em `perfis` (registrado com o hash do `.toml`).
+    #[error("perfil `{nome}` não está registrado em `perfis` no banco da {loteria} — rode `sync indice {loteria} --perfil {nome}` antes; nada foi avaliado")]
+    PerfilNaoRegistrado { nome: String, loteria: String },
+
+    /// O índice do perfil não cobre do primeiro concurso ao snapshot do
+    /// próximo (último de `resultados` + 1): foi gravado antes de concursos
+    /// novos ou nunca foi gravado.
+    #[error("{loteria}: o índice do perfil `{perfil}` vai até o concurso {}, mas tem de ir até o {esperado} (último concurso em `resultados` + 1) — rode `sync indice {loteria} --perfil {perfil}` antes; nada foi avaliado", ultimo_indice.map_or_else(|| "nenhum".to_string(), |c| c.to_string()))]
+    IndiceDesatualizado {
+        loteria: String,
+        perfil: String,
+        ultimo_indice: Option<u32>,
+        esperado: u32,
+    },
+
+    /// Índice com buraco, dezena faltando ou fora das features (só acontece
+    /// se a tabela foi mexida por fora: o `sync indice` grava a série
+    /// inteira numa transação), ou diferente do índice recalculado com as
+    /// features atuais: features regeneradas depois do último `sync indice`,
+    /// como após corrigir um resultado antigo.
+    #[error("{loteria}: índice do perfil `{perfil}` incoerente: {detalhe} — regenere com `sync indice {loteria} --perfil {perfil}`; nada foi avaliado")]
+    IndiceIncoerente {
+        loteria: String,
+        perfil: String,
+        detalhe: String,
+    },
+
+    /// Combinação de opções do `sync avaliar` que não faz sentido.
+    #[error("avaliação: {0}")]
+    AvaliacaoOpcaoInvalida(String),
+
+    /// O arquivo de registro do trancado não pôde ser interpretado: na
+    /// dúvida, o trancado não é avaliado.
+    #[error("registro do conjunto trancado `{}` inválido: {motivo} — corrija o arquivo (está no git); nada foi avaliado", caminho.display())]
+    RegistroTrancadoInvalido { caminho: PathBuf, motivo: String },
+
+    /// O registro do trancado mudou entre a recarga e a gravação em todas as
+    /// tentativas: outra execução com `--trancado` está gravando ao mesmo
+    /// tempo. Nada é registrado nem mostrado.
+    #[error("o registro do conjunto trancado `{}` mudou durante a avaliação {tentativas} vez(es) seguidas (outra execução com `--trancado` em paralelo?) — nada foi registrado nem mostrado; rode de novo, uma execução por vez", caminho.display())]
+    RegistroTrancadoConcorrente { caminho: PathBuf, tentativas: u32 },
+
+    /// O conjunto trancado é de uso único por perfil (mesmo nome e hash).
+    /// `registro` diz qual arquivo foi lido (caminho absoluto) e quantos
+    /// usos, de qualquer perfil, ele tinha (em caixa: mantém o erro pequeno).
+    #[error("{loteria}: o perfil `{perfil}` (hash {hash_toml}) já avaliou o conjunto trancado {} vez(es), a última em {} (até o concurso {}), segundo o registro {} ({} uso(s) no total) — o trancado é de uso único por perfil; nada foi avaliado. Para olhar de novo de propósito (a nova avaliação também fica registrada), use `--repetir`", anteriores.len(), anteriores.last().map_or("?", |a| a.avaliado_em.as_str()), anteriores.last().map_or(0, |a| a.ate_concurso), registro.caminho.display(), registro.usos)]
+    TrancadoJaAvaliado {
+        loteria: String,
+        perfil: String,
+        hash_toml: String,
+        anteriores: Vec<crate::registros::AvaliacaoTrancado>,
+        registro: Box<crate::registros::RegistroConsultado>,
+    },
+
     /// Cópia de segurança do banco antes de um `sync atualizar` com salto.
     #[error("backup do banco em `{}`: {motivo}", caminho.display())]
     Backup { caminho: PathBuf, motivo: String },

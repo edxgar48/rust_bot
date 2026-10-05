@@ -278,6 +278,25 @@ fn holm_propriedades_em_p_valores_aleatorios() {
 // ------------------------------------------------- qui-quadrado (global)
 
 #[test]
+fn bonferroni_multiplica_e_limita_a_um() {
+    assert_eq!(bonferroni(0.01, 1).expect("1 teste"), 0.01);
+    assert_eq!(bonferroni(0.01, 3).expect("3 testes"), 0.03);
+    assert_eq!(bonferroni(0.4, 3).expect("teto"), 1.0);
+    assert_eq!(bonferroni(0.0, 1000).expect("zero"), 0.0);
+    assert_eq!(bonferroni(1.0, 1).expect("um"), 1.0);
+    for ruim in [-0.1, 1.1, f64::NAN] {
+        assert!(matches!(
+            bonferroni(ruim, 2),
+            Err(SpiderError::AvaliacaoEntradaInvalida(_))
+        ));
+    }
+    assert!(matches!(
+        bonferroni(0.5, 0),
+        Err(SpiderError::AvaliacaoEntradaInvalida(_))
+    ));
+}
+
+#[test]
 fn qui_quadrado_a_mao_na_mini() {
     // T = 3 concursos {1,2}, {2,3}, {1,2}: O = 2, 3, 1, 0 e E = 3·2/4 = 1,5.
     // Σ(O − E)² = 0,25 + 2,25 + 0,25 + 2,25 = 5; Pearson = 5/1,5 = 10/3;

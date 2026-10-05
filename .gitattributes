@@ -4,3 +4,5 @@ cache/*.json text eol=lf
 tests/fixtures/*.xlsx binary
 # Perfis de pesos: o hash SHA-256 gravado em `perfis` é do texto com LF; mantém os bytes iguais em qualquer máquina.
 perfis/**/*.toml text eol=lf
+# Registro de uso do conjunto trancado (sync avaliar --trancado): gerado com LF, versionado.
+registros/*.json text eol=lf

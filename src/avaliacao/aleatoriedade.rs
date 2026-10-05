@@ -419,7 +419,7 @@ pub fn teste_de_runs(sequencia: &[bool]) -> Result<TesteRuns> {
 /// antes de montar a distribuição (`validar_runs`): sequência vazia,
 /// `saidas + nao_saidas` fora de `u64` e `sequencias` fora de
 /// `2..=2·min(n1, n0) + [n1 ≠ n0]` (ou ≠ 1 na dezena fixa).
-pub fn p_valor_runs_exato(saidas: u64, nao_saidas: u64, sequencias: u64) -> Result<f64> {
+pub(crate) fn p_valor_runs_exato(saidas: u64, nao_saidas: u64, sequencias: u64) -> Result<f64> {
     validar_runs(saidas, nao_saidas, sequencias)?;
     if saidas == 0 || nao_saidas == 0 {
         return Ok(1.0);
@@ -593,6 +593,25 @@ pub fn holm(p_valores: &[f64]) -> Result<Vec<f64>> {
         ajustados[i] = maximo;
     }
     Ok(ajustados)
+}
+
+/// p-valor corrigido por Bonferroni para `testes` comparações:
+/// `min(1, p·testes)`. Usado no `sync avaliar` quando vários perfis ou k
+/// foram testados (`--testados N`) e no trancado (perfis registrados).
+/// p-valor fora de `[0, 1]` (ou NaN) e `testes` = 0 são
+/// [`SpiderError::AvaliacaoEntradaInvalida`].
+pub fn bonferroni(p_valor: f64, testes: u32) -> Result<f64> {
+    if !(0.0..=1.0).contains(&p_valor) {
+        return Err(invalida(format!(
+            "p-valor {p_valor} na correção de Bonferroni (deve estar em [0, 1])"
+        )));
+    }
+    if testes == 0 {
+        return Err(invalida(
+            "correção de Bonferroni com 0 testes (conta ao menos o próprio)".to_string(),
+        ));
+    }
+    Ok((p_valor * f64::from(testes)).min(1.0))
 }
 
 /// `P(χ² ≥ estatistica)` com `graus_liberdade` graus de liberdade:

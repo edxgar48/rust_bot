@@ -1209,3 +1209,164 @@ fn custo_do_walk_forward_nas_tres_loterias() {
     }
     println!("total: walk-forward {total_wf:?}; p-valor no pior caso {total_p:?}");
 }
+
+// ------------------------------------------------------------ veredito (1c.5)
+
+/// Série perfil − acaso por concurso do log loss e do Brier em
+/// `inicio..=fim`, calibrada desde o primeiro concurso da entrada.
+fn diferencas(c: &LoteriaConfig, serie: &[Observacao], inicio: u32, fim: u32) -> [Vec<f64>; 2] {
+    let m = metricas_por_concurso_entre(c, serie, inicio, fim).expect("métricas");
+    [
+        m.iter()
+            .map(|x| x.log_loss_perfil - x.log_loss_acaso)
+            .collect(),
+        m.iter().map(|x| x.brier_perfil - x.brier_acaso).collect(),
+    ]
+}
+
+fn bootstrap_padrao(d: &[f64]) -> Bootstrap {
+    bootstrap_circular(
+        d,
+        BLOCO_BOOTSTRAP,
+        REAMOSTRAGENS_BOOTSTRAP,
+        SEMENTE_BOOTSTRAP,
+    )
+    .expect("bootstrap")
+}
+
+#[test]
+fn veredito_da_busca_e_o_bootstrap_da_uniao_das_dobras() {
+    let c = mini_com_corte(300);
+    let serie = serie_aleatoria(&MINI, 320, 404, true);
+    let wf = walk_forward(&c, &serie, 2).expect("walk-forward");
+    let v = veredito_da_busca(&c, &serie, 2).expect("veredito");
+
+    // O trecho é a união das 5 dobras: do primeiro da 1ª ao último da 5ª.
+    assert_eq!(v.avaliacao.faixa, faixa(2, 300));
+    assert_eq!(v.avaliacao.faixa.primeiro, wf.dobras[0].faixa.primeiro);
+    assert_eq!(v.avaliacao.faixa.ultimo, wf.dobras[4].faixa.ultimo);
+    assert_eq!(v.concursos_minimos, 2 * BLOCO_BOOTSTRAP);
+
+    // Métricas e top-k do trecho = as da série inteira até o corte.
+    let metricas = metricas_por_concurso(&c, &serie, 300).expect("métricas");
+    assert_eq!(
+        bits(&resumir(&metricas).expect("resumo")),
+        bits(&v.avaliacao.metricas)
+    );
+    let acertos = acertos_por_concurso(&c, &serie, 2, 300).expect("acertos");
+    assert_eq!(
+        bits(&resumir_topk(&c, 2, &acertos).expect("resumo")),
+        bits(&v.avaliacao.topk)
+    );
+
+    // Bootstrap: o da série d_t por concurso, bit a bit, log loss e Brier.
+    let [ll, br] = diferencas(&c, &serie, 2, 300);
+    assert_eq!(ll.len(), 299);
+    let b = v.bootstrap.as_ref().expect("299 ≥ 100 concursos");
+    assert_eq!(bits(&b.log_loss), bits(&bootstrap_padrao(&ll)));
+    assert_eq!(bits(&b.brier), bits(&bootstrap_padrao(&br)));
+    assert_eq!(b.log_loss.concursos, 299);
+    assert_eq!(
+        (
+            b.log_loss.bloco,
+            b.log_loss.reamostragens,
+            b.log_loss.semente
+        ),
+        (BLOCO_BOOTSTRAP, REAMOSTRAGENS_BOOTSTRAP, SEMENTE_BOOTSTRAP)
+    );
+    // Série aleatória: sem ganho sobre o acaso.
+    assert_eq!(v.supera_o_acaso(), Some(false), "{:?}", b.log_loss);
+
+    // Determinístico.
+    assert_eq!(v, veredito_da_busca(&c, &serie, 2).expect("veredito"));
+}
+
+#[test]
+fn veredito_da_busca_nao_le_nada_acima_do_corte() {
+    let c = mini_com_corte(150);
+    let serie = serie_aleatoria(&MINI, 220, 405, true);
+    let antes = veredito_da_busca(&c, &serie, 2).expect("veredito");
+    // Lixo acima do corte (posições e `saiu` trocados, concurso sem saída).
+    let mut alterada = complementando_o_saiu(&serie, 151);
+    alterada.retain(|o| o.concurso <= 160);
+    alterada.extend(concurso_mini(161, [4, 3, 2, 1], None));
+    let depois = veredito_da_busca(&c, &alterada, 2).expect("veredito");
+    assert_eq!(bits(&antes), bits(&depois));
+}
+
+#[test]
+fn veredito_sem_bootstrap_quando_o_trecho_e_curto() {
+    // Busca da MINI: 2..=20, 19 concursos < 100.
+    let serie = serie_aleatoria(&MINI, 31, 406, true);
+    let v = veredito_da_busca(&MINI, &serie, 2).expect("sem erro");
+    assert_eq!(v.avaliacao.faixa, faixa(2, 20));
+    assert_eq!(v.bootstrap, None);
+    assert_eq!(v.supera_o_acaso(), None);
+    // Limite: 99 concursos sem, 100 com.
+    let serie = serie_aleatoria(&MINI, 120, 407, true);
+    assert_eq!(
+        veredito_da_busca(&mini_com_corte(100), &serie, 2)
+            .expect("99")
+            .bootstrap,
+        None
+    );
+    assert!(veredito_da_busca(&mini_com_corte(101), &serie, 2)
+        .expect("100")
+        .bootstrap
+        .is_some());
+}
+
+#[test]
+fn veredito_do_trancado_usa_o_trancado_inteiro_com_o_passado() {
+    let c = mini_com_corte(100);
+    let serie = serie_aleatoria(&MINI, 301, 408, true);
+    let v = veredito_do_trancado(&c, &serie, 2).expect("veredito");
+    let trancado = avaliar_trancado(&c, &serie, 2).expect("trancado");
+    assert_eq!(v.avaliacao, trancado);
+    assert_eq!(v.avaliacao.faixa, faixa(101, 300));
+    let [ll, br] = diferencas(&c, &serie, 101, 300);
+    let b = v.bootstrap.as_ref().expect("200 concursos");
+    assert_eq!(bits(&b.log_loss), bits(&bootstrap_padrao(&ll)));
+    assert_eq!(bits(&b.brier), bits(&bootstrap_padrao(&br)));
+
+    // Trancado vazio é erro, como em `avaliar_trancado`.
+    let curta = serie_aleatoria(&MINI, 101, 408, true);
+    assert!(eh_erro_sem_concursos(veredito_do_trancado(&c, &curta, 2)));
+}
+
+#[test]
+fn veredito_recusa_k_invalido() {
+    let serie = serie_aleatoria(&MINI, 31, 409, true);
+    for k in [0, 4] {
+        assert!(eh_erro_entrada_invalida(veredito_da_busca(
+            &MINI, &serie, k
+        )));
+        assert!(eh_erro_entrada_invalida(veredito_do_trancado(
+            &MINI, &serie, k
+        )));
+    }
+}
+
+#[test]
+fn ranking_previsivel_supera_o_acaso_no_veredito() {
+    // As posições 1 e 2 saem sempre: a calibração aprende e o log loss do
+    // perfil fica abaixo do acaso em todo bloco.
+    let mut g = Gerador(78);
+    let mut serie = Vec::new();
+    for c in 1..=300 {
+        let mut posicoes = [1_u32, 2, 3, 4];
+        g.embaralhar(&mut posicoes);
+        let saidas: Vec<u32> = (1..=4).filter(|&d| posicoes[d as usize - 1] <= 2).collect();
+        serie.extend(concurso_mini(c, posicoes, Some([saidas[0], saidas[1]])));
+    }
+    let v = veredito_da_busca(&mini_com_corte(300), &serie, 2).expect("veredito");
+    let b = v.bootstrap.as_ref().expect("bootstrap");
+    assert!(b.log_loss.media < 0.0);
+    assert!(b.log_loss.ic95.superior < 0.0, "{:?}", b.log_loss);
+    // Toda reamostra tem média negativa: p no mínimo, 1/(B+1).
+    assert_eq!(
+        b.log_loss.p_valor,
+        1.0 / (REAMOSTRAGENS_BOOTSTRAP + 1) as f64
+    );
+    assert_eq!(v.supera_o_acaso(), Some(true));
+}

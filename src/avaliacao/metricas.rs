@@ -119,7 +119,7 @@ pub fn metricas_por_concurso(
 /// Assim, as métricas de um concurso não dependem de `inicio` nem de `fim`:
 /// o resultado é o trecho `inicio..=fim` da série sem limite inferior e com
 /// o maior `fim`. `inicio > fim` dá série vazia.
-pub fn metricas_por_concurso_entre(
+pub(crate) fn metricas_por_concurso_entre(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     inicio: u32,
@@ -201,7 +201,9 @@ pub fn resumir(serie: &[MetricasConcurso]) -> Result<ResumoAvaliacao> {
 /// [`metricas_por_concurso`] seguido de [`resumir`]. Sem nenhum concurso
 /// sorteado entre o segundo da entrada e `corte` é
 /// [`SpiderError::AvaliacaoSemConcursos`].
-pub fn avaliar(
+// Só os testes chamam: em produção o trecho vem do config (`walk_forward`).
+#[cfg(test)]
+pub(crate) fn avaliar(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     corte: u32,
@@ -219,7 +221,9 @@ pub fn avaliar(
 /// `inicio..=fim` com a calibração desde o primeiro concurso da entrada. Sem
 /// nenhum concurso sorteado no trecho (descontado o primeiro da entrada) é
 /// [`SpiderError::AvaliacaoSemConcursos`].
-pub fn avaliar_entre(
+// Só os testes chamam: em produção o trecho vem do config (`walk_forward`).
+#[cfg(test)]
+pub(crate) fn avaliar_entre(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     inicio: u32,

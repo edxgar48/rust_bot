@@ -7,47 +7,72 @@
 //!
 //! Funções puras: sem I/O, sem SQL e sem nada específico de uma loteria além
 //! do que vem em `LoteriaConfig`. Quem lê o banco (índice + `saiu` das
-//! features) monta as [`Observacao`]es e chama [`avaliar`].
+//! features) monta as [`Observacao`]es e chama [`walk_forward`] (ou, só
+//! quando pedido, `avaliar_trancado`).
 //!
 //! Ponto no tempo: a probabilidade do concurso `t` ([`calibrar`]) usa só os
-//! concursos anteriores a `t`; [`avaliar`] e [`avaliar_topk`] descartam tudo
-//! acima do corte antes de qualquer cálculo, então o conjunto trancado não é
-//! lido nem na validação.
+//! concursos anteriores a `t`; as avaliações descartam tudo acima do corte
+//! antes de qualquer cálculo, então o conjunto trancado não é lido nem na
+//! validação.
 //!
-//! Corte da busca e trancado (1c.3): o caminho padrão é [`walk_forward`],
-//! que tira o corte de `LoteriaConfig::ultimo_concurso_busca`; o trancado só
-//! entra por [`avaliar_trancado`], pedido explicitamente. As funções com
-//! corte ou limites recebidos como argumento (`avaliar`, `avaliar_entre`…)
-//! são blocos de construção: em produção, o corte vem sempre do config,
-//! nunca `u32::MAX`.
+//! Corte da busca e trancado (1c.3): o caminho padrão é [`walk_forward`]
+//! (com o veredito em [`veredito_da_busca`]), que tira o corte de
+//! `LoteriaConfig::ultimo_concurso_busca`; o trancado só entra por
+//! `avaliar_trancado` e `veredito_do_trancado`, pedido explicitamente.
+//! As funções com corte ou limites recebidos como argumento (`avaliar`,
+//! `avaliar_entre`, `avaliar_topk`…) são blocos de construção, só visíveis
+//! dentro do crate (1c.5): em produção, o corte vem sempre do config, nunca
+//! `u32::MAX`.
+//!
+//! Veredito "supera o acaso" (1c.5): bootstrap circular por blocos
+//! ([`bootstrap_circular`]) sobre a série por concurso perfil − acaso do log
+//! loss, com gerador próprio ([`SplitMix64`]) e semente fixa.
 //!
 //! Testes de aleatoriedade do histórico (1c.4, [`testar_aleatoriedade`]):
 //! qui-quadrado de frequência e runs test por dezena com Holm, sobre
 //! `resultados` inteiro (não usam índice nem perfil).
 
 mod aleatoriedade;
+mod bootstrap;
 mod calibracao;
 mod metricas;
 mod topk;
 mod walk_forward;
 
+// Blocos de construção com corte ou limites como argumento: visíveis só no
+// crate (1c.5) e, como nenhum fluxo de produção os chama (o corte vem do
+// config via `walk_forward`/`avaliar_trancado`), reexportados só para os
+// testes.
+#[cfg(test)]
+pub(crate) use metricas::{avaliar, avaliar_entre};
+#[cfg(test)]
+pub(crate) use topk::{acertos_por_concurso_entre, avaliar_topk, avaliar_topk_entre};
+
 pub use aleatoriedade::{
-    holm, p_valor_qui_quadrado, p_valor_runs_exato, qui_quadrado_frequencia, testar_aleatoriedade,
+    bonferroni, holm, p_valor_qui_quadrado, qui_quadrado_frequencia, testar_aleatoriedade,
     teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena, TesteRuns, ALFA,
+};
+pub use bootstrap::{
+    bootstrap_circular, concursos_minimos, Bootstrap, SplitMix64, BLOCO_BOOTSTRAP,
+    REAMOSTRAGENS_BOOTSTRAP, SEMENTE_BOOTSTRAP,
 };
 pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
 pub use metricas::{
-    avaliar, avaliar_entre, brier, log_loss, metricas_por_concurso, metricas_por_concurso_entre,
-    resumir, Comparacao, Intervalo, MetricasConcurso, ResumoAvaliacao, LIMITE_PROBABILIDADE, Z_95,
+    brier, log_loss, metricas_por_concurso, resumir, Comparacao, Intervalo, MetricasConcurso,
+    ResumoAvaliacao, LIMITE_PROBABILIDADE, Z_95,
 };
 pub use topk::{
-    acertos_por_concurso, acertos_por_concurso_entre, avaliar_topk, avaliar_topk_entre, binomial,
-    p_valor_soma, resumir_topk, AcertosConcurso, Cauda, FaixaAcertos, Hipergeometrica, ResumoTopK,
+    acertos_por_concurso, binomial, p_valor_soma, resumir_topk, AcertosConcurso, Cauda,
+    FaixaAcertos, Hipergeometrica, ResumoTopK,
 };
 pub use walk_forward::{
-    avaliar_trancado, dividir_em_dobras, dobras_da_busca, faixa_da_busca, walk_forward,
-    AvaliacaoFaixa, FaixaConcursos, WalkForward, QTD_DOBRAS,
+    dividir_em_dobras, dobras_da_busca, faixa_da_busca, veredito_da_busca, walk_forward,
+    AvaliacaoFaixa, BootstrapTrecho, FaixaConcursos, VereditoTrecho, WalkForward, QTD_DOBRAS,
 };
+// O trancado só é avaliado pela orquestração, que passa pelo registro de uso
+// único (`registros`); fora do crate não há como avaliá-lo sem o registro.
+// `avaliar_trancado` (avaliação por faixa do trancado) só existe nos testes.
+pub(crate) use walk_forward::veredito_do_trancado;
 
 use crate::config::LoteriaConfig;
 

@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
+use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
 use rust_spider::{
-    backup, config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, tempo,
-    validacao, SpiderError,
+    backup, config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, registros,
+    tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -160,6 +161,57 @@ enum Comando {
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
     },
+    /// Avalia o índice de força de um perfil contra o acaso: log loss, Brier
+    /// e top-k em 5 dobras de walk-forward no trecho de busca, e o veredito
+    /// "supera o acaso" (bootstrap por blocos) no trecho inteiro. Só lê o
+    /// banco; recusa se o índice ou as features não estiverem em dia.
+    Avaliar {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Nome do perfil de pesos (já registrado pelo `indice`)
+        #[arg(long)]
+        perfil: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+        /// k do top-k (padrão: K, as dezenas sorteadas por concurso); só na
+        /// busca: o trancado usa sempre K
+        #[arg(long, conflicts_with = "trancado")]
+        k: Option<u32>,
+        /// Avalia o conjunto TRANCADO (concursos acima do corte da busca), de
+        /// uso único por perfil: o uso fica registrado em
+        /// `registros/trancado_<loteria>.json`, na pasta do banco (versionado
+        /// no git)
+        #[arg(long)]
+        trancado: bool,
+        /// Com `--trancado`: avalia de novo um perfil que já usou o trancado
+        /// (mostra as avaliações anteriores; a nova também é registrada)
+        #[arg(long, requires = "trancado")]
+        repetir: bool,
+        /// Quantos perfis/k foram testados na busca: mostra também os
+        /// p-valores com Bonferroni (p·N, limitado a 1)
+        #[arg(long, conflicts_with = "trancado")]
+        testados: Option<u32>,
+        /// Só para testes (escondida na ajuda): pasta dos registros de uso do
+        /// trancado. O padrão é `registros/` ao lado do banco, e trocar a
+        /// pasta tira a proteção do uso único e o Bonferroni do registro
+        /// versionado.
+        #[arg(long, hide = true)]
+        registros: Option<PathBuf>,
+    },
+    /// Testes de aleatoriedade do histórico inteiro (qui-quadrado de
+    /// frequência e runs test por dezena, com Holm). Só lê o banco.
+    Aleatoriedade {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
+        loteria: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
 
 /// Quantos problemas imprimir antes de resumir o restante numa contagem.
@@ -168,6 +220,10 @@ const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
 /// Por que `indice` não aceita `todas`.
 const MOTIVO_INDICE_UMA_LOTERIA: &str =
     "calcule uma loteria por vez (cada uma tem seu banco e seus perfis)";
+
+/// Por que `avaliar` não aceita `todas`.
+const MOTIVO_AVALIAR_UMA_LOTERIA: &str =
+    "avalie uma loteria e um perfil por vez (cada loteria tem seu banco, seus perfis e seu trancado)";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -290,6 +346,50 @@ async fn main() -> anyhow::Result<()> {
             let cfg = buscar_config_unica(&loteria, "indice", MOTIVO_INDICE_UMA_LOTERIA)?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             calcular_indice(cfg, &db_caminho, &perfis, &perfil)?;
+        }
+        Comando::Avaliar {
+            loteria,
+            perfil,
+            db,
+            perfis,
+            k,
+            trancado,
+            repetir,
+            testados,
+            registros,
+        } => {
+            let cfg = buscar_config_unica(&loteria, "avaliar", MOTIVO_AVALIAR_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            let opcoes = orquestracao::OpcoesAvaliacao {
+                k,
+                trancado,
+                repetir,
+                testados,
+            };
+            // O registro fica ao lado do banco, não no diretório de trabalho:
+            // rodar de outra pasta com `--db` acha o mesmo registro.
+            let padrao = registros::pasta_padrao(&db_caminho);
+            let pasta_registros = PastaRegistros {
+                escolhida: registros.unwrap_or_else(|| padrao.clone()),
+                padrao,
+            };
+            avaliar(
+                cfg,
+                &db_caminho,
+                &perfis,
+                &perfil,
+                &opcoes,
+                &pasta_registros,
+            )?;
+        }
+        Comando::Aleatoriedade { loteria, db } => {
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                execucao.registrar(cfg, testar_aleatoriedade(cfg, &db_caminho))?;
+            }
+            execucao.concluir()?;
         }
     }
 
@@ -1082,6 +1182,638 @@ fn calcular_indice(
         resumo.proximo_concurso,
         duracao.as_secs_f64()
     );
+    Ok(())
+}
+
+/// `println!` do relatório do `sync avaliar`, que é montado num `String`
+/// antes de o uso do trancado ser gravado (e só depois impresso, sem panic se
+/// a saída estiver fechada). Escrever num `String` não falha, por isso o
+/// `fmt::Result` é descartado.
+macro_rules! linha {
+    ($s:expr) => {
+        $s.push('\n')
+    };
+    ($s:expr, $($arg:tt)*) => {{
+        use std::fmt::Write as _;
+        let _ = writeln!($s, $($arg)*);
+    }};
+}
+
+/// Pasta dos registros do trancado: a escolhida (`--registros`, escondida,
+/// só para testes) ou a padrão, ao lado do banco.
+struct PastaRegistros {
+    escolhida: PathBuf,
+    padrao: PathBuf,
+}
+
+/// `sync avaliar`: carrega o perfil, avalia (tudo em `orquestracao`, que só
+/// lê o banco), monta o relatório num `String` antes de o uso do trancado
+/// ser gravado e só então o imprime. O banco é aberto só para leitura;
+/// inexistente é erro, sem criar arquivo. O relógio é lido aqui, para o
+/// registro do trancado.
+///
+/// Toda a saída padrão é determinística (mesma entrada, mesmos bytes,
+/// inclusive o bootstrap); o tempo de execução e os avisos sobre a pasta de
+/// registros vão para a saída de erro.
+fn avaliar(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+    opcoes: &orquestracao::OpcoesAvaliacao,
+    pasta_registros: &PastaRegistros,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let avaliado_em = agora_iso8601_utc()?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let arquivo_registro = absoluto(&registros::caminho(&pasta_registros.escolhida, cfg.slug));
+    if opcoes.trancado {
+        avisar_pasta_de_registros(cfg, &arquivo_registro, pasta_registros)?;
+        imprimir(&format!(
+            "ATENÇÃO: --trancado avalia o conjunto TRANCADO da {} (concursos acima de {}). \
+             Ele é de uso único por perfil: se a avaliação der certo, o uso fica registrado \
+             em {} (versione no git).\n\n",
+            cfg.nome_exibicao,
+            cfg.ultimo_concurso_busca,
+            arquivo_registro.display()
+        ))?;
+    }
+    let inicio = std::time::Instant::now();
+    let (_, texto) = orquestracao::avaliar_perfil_e_formatar(
+        &mut conn,
+        cfg,
+        &carregado,
+        opcoes,
+        &pasta_registros.escolhida,
+        &avaliado_em,
+        |r| {
+            let mut s = String::new();
+            escrever_relatorio(&mut s, cfg, r);
+            s
+        },
+    )?;
+    let duracao = inicio.elapsed();
+    if let Err(e) = imprimir(&texto) {
+        if !opcoes.trancado {
+            return Err(e);
+        }
+        // O uso já conta: o veredito não pode se perder. Tenta a saída de
+        // erro (sem panic se também estiver fechada).
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr().lock(),
+            format!(
+                "Não foi possível imprimir o relatório na saída padrão ({e:#}). O uso do \
+                 trancado JÁ foi registrado em {}; o relatório vai abaixo, na saída de erro.\n\n\
+                 {texto}",
+                arquivo_registro.display()
+            )
+            .as_bytes(),
+        );
+        return Err(e.context(format!(
+            "o uso do trancado já foi registrado em {}",
+            arquivo_registro.display()
+        )));
+    }
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!("Tempo: {:.2} s.\n", duracao.as_secs_f64()).as_bytes(),
+    );
+    Ok(())
+}
+
+/// Avisa, na saída de erro, quando o uso do trancado vai para um lugar que
+/// pede conferência: o primeiro registro da loteria (o arquivo ainda não
+/// existe) ou uma pasta que não é a padrão, ao lado do banco. Mostra sempre
+/// o caminho absoluto, para quem rodou de outro diretório perceber.
+fn avisar_pasta_de_registros(
+    cfg: &config::LoteriaConfig,
+    arquivo: &std::path::Path,
+    pasta: &PastaRegistros,
+) -> anyhow::Result<()> {
+    let mut avisos = String::new();
+    if absoluto(&pasta.escolhida) != absoluto(&pasta.padrao) {
+        linha!(
+            avisos,
+            "Aviso: pasta de registros FORA DO PADRÃO. O uso do trancado da {} vai ficar \
+             gravado em {}, e não em {} (a pasta ao lado do banco, versionada no git): \
+             usos registrados em outra pasta não contam para o uso único nem para o \
+             Bonferroni.",
+            cfg.nome_exibicao,
+            arquivo.display(),
+            absoluto(&registros::caminho(&pasta.padrao, cfg.slug)).display()
+        );
+    }
+    if !arquivo.exists() {
+        linha!(
+            avisos,
+            "Aviso: primeiro registro do trancado da {}: o arquivo {} ainda não existe e será \
+             criado com este uso. Confira se é o registro versionado no git (ele deve estar \
+             na pasta `{}` ao lado do banco); se não for, interrompa agora.",
+            cfg.nome_exibicao,
+            arquivo.display(),
+            registros::PASTA_PADRAO
+        );
+    }
+    if avisos.is_empty() {
+        return Ok(());
+    }
+    std::io::Write::write_all(&mut std::io::stderr().lock(), avisos.as_bytes())
+        .map_err(|e| anyhow::anyhow!("não foi possível escrever o aviso na saída de erro: {e}"))
+}
+
+/// Caminho absoluto (sem exigir que exista); se não der, o próprio caminho.
+fn absoluto(caminho: &std::path::Path) -> PathBuf {
+    std::path::absolute(caminho).unwrap_or_else(|_| caminho.to_path_buf())
+}
+
+/// Escreve na saída padrão sem `println!`, que dá panic com a saída fechada
+/// (`| head`, por exemplo): aqui vira um erro comum.
+fn imprimir(texto: &str) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    let mut saida = std::io::stdout().lock();
+    saida
+        .write_all(texto.as_bytes())
+        .and_then(|()| saida.flush())
+        .map_err(|e| anyhow::anyhow!("não foi possível escrever na saída padrão: {e}"))
+}
+
+fn escrever_relatorio(
+    s: &mut String,
+    cfg: &config::LoteriaConfig,
+    r: &orquestracao::RelatorioAvaliacao,
+) {
+    let faixa = r.veredito.avaliacao.faixa;
+    linha!(
+        s,
+        "Avaliação de {} ({}) com o perfil {} (versão {}, janela {}, {}).",
+        cfg.nome_exibicao,
+        r.loteria,
+        r.perfil,
+        r.versao,
+        descrever_janela(r.janela),
+        r.normalizacao
+    );
+    linha!(s, "  Hash do perfil: {}", r.hash_toml);
+    if let orquestracao::TrechoAvaliado::Trancado(uso) = &r.trecho {
+        // Sempre, em toda execução com --trancado: qual arquivo foi lido
+        // (caminho absoluto) e quantos usos ele tinha. É a leitura sobre a
+        // qual este uso é gravado e o Bonferroni é contado.
+        let conteudo = if uso.arquivo_existia {
+            format!(
+                "{} uso(s) registrado(s) antes deste, {} deste perfil",
+                uso.usos_lidos,
+                uso.anteriores.len()
+            )
+        } else {
+            "0 (arquivo inexistente; é criado com este uso)".to_string()
+        };
+        linha!(
+            s,
+            "  Registro do trancado lido: {}; usos: {conteudo}.",
+            uso.arquivo.display()
+        );
+    }
+    let linhas: Vec<(String, &AvaliacaoFaixa)> = match &r.trecho {
+        orquestracao::TrechoAvaliado::Busca(wf) => {
+            linha!(s,
+                "  Trecho: busca, walk-forward em {} dobras consecutivas; concursos {} ({} avaliados).",
+                wf.dobras.len(),
+                descrever_faixa(faixa.primeiro, faixa.ultimo),
+                faixa.tamanho()
+            );
+            linha!(s,
+                "  Corte da busca: concurso {} (o trancado, do {} em diante, fica fora desta avaliação).",
+                r.corte,
+                u64::from(r.corte) + 1
+            );
+            wf.dobras
+                .iter()
+                .enumerate()
+                .map(|(i, d)| ((i + 1).to_string(), d))
+                .chain(std::iter::once((
+                    "total".to_string(),
+                    &r.veredito.avaliacao,
+                )))
+                .collect()
+        }
+        orquestracao::TrechoAvaliado::Trancado(_) => {
+            linha!(
+                s,
+                "  Trecho: TRANCADO; concursos {} ({} avaliados).",
+                descrever_faixa(faixa.primeiro, faixa.ultimo),
+                faixa.tamanho()
+            );
+            linha!(
+                s,
+                "  Corte da busca: concurso {} (o trancado vai do {} até o último sorteado).",
+                r.corte,
+                u64::from(r.corte) + 1
+            );
+            // O veredito do trancado cobre exatamente o trancado inteiro.
+            vec![("trancado".to_string(), &r.veredito.avaliacao)]
+        }
+    };
+    linha!(
+        s,
+        "  Índice: concursos {} (último sorteado {} e o snapshot do próximo); a calibração começa \
+         no {} com m = {} concursos fictícios, e esse primeiro concurso não é avaliado.",
+        descrever_faixa(r.primeiro_indice, r.ultimo_concurso + 1),
+        r.ultimo_concurso,
+        r.primeiro_indice,
+        avaliacao::CONCURSOS_FICTICIOS
+    );
+    let padrao = if r.k as usize == cfg.qtd_dezenas {
+        " (padrão: K da loteria)"
+    } else {
+        ""
+    };
+    linha!(s, "  Top-k: k = {}{padrao}.", r.k);
+
+    linha!(s);
+    linha!(
+        s,
+        "Log loss (menor é melhor; diferença < 0 = perfil melhor que o acaso):"
+    );
+    escrever_tabela_metrica(s, &linhas, |a| &a.metricas.log_loss);
+    linha!(s);
+    linha!(
+        s,
+        "Brier (menor é melhor; diferença < 0 = perfil melhor que o acaso):"
+    );
+    escrever_tabela_metrica(s, &linhas, |a| &a.metricas.brier);
+    linha!(s);
+    let topk = &r.veredito.avaliacao.topk;
+    linha!(
+        s,
+        "Top-{} (acertos por concurso; maior é melhor; ao acaso k·K/N = {:.4}):",
+        r.k,
+        topk.acertos.acaso
+    );
+    escrever_tabela_topk(s, &linhas);
+    linha!(s);
+    linha!(
+        s,
+        "Distribuição de acertos do top-{} no trecho inteiro (concursos; observado × acaso):",
+        r.k
+    );
+    for f in &topk.distribuicao {
+        linha!(
+            s,
+            "  {:>2} acerto(s): {:>6} × {:>9.1}",
+            f.acertos,
+            f.observados,
+            f.esperados
+        );
+    }
+    linha!(s);
+    escrever_veredito(s, r);
+    linha!(s);
+    match &r.trecho {
+        orquestracao::TrechoAvaliado::Busca(_) => {
+            linha!(
+                s,
+                "Aviso: os p-valores só valem se o perfil e o k foram escolhidos sem ver os \
+                 sorteios deste trecho. Se a busca de pesos usou estes concursos, ou se este é o \
+                 melhor entre vários perfis ou k, eles saem otimistas: informe quantos foram \
+                 testados com --testados N (Bonferroni) ou avalie o campeão no conjunto trancado \
+                 (--trancado, uso único)."
+            );
+            linha!(
+                s,
+                "Aviso: o IC normal e o EP das tabelas ignoram a correlação serial da calibração \
+                 acumulada (tendem a sair estreitos); o veredito usa o bootstrap por blocos."
+            );
+        }
+        orquestracao::TrechoAvaliado::Trancado(uso) => {
+            linha!(
+                s,
+                "Registro do trancado: uso gravado em {} (perfil {}, hash {}, até o concurso {}, \
+                 em {}).",
+                uso.arquivo.display(),
+                uso.registrada.perfil,
+                uso.registrada.hash_toml,
+                uso.registrada.ate_concurso,
+                uso.registrada.avaliado_em
+            );
+            if !uso.anteriores.is_empty() {
+                linha!(
+                    s,
+                    "Avaliações anteriores deste perfil no trancado (--repetir; cada olhada a \
+                     mais enfraquece o trancado como teste independente):"
+                );
+                for a in &uso.anteriores {
+                    linha!(
+                        s,
+                        "  - em {}, até o concurso {}",
+                        a.avaliado_em,
+                        a.ate_concurso
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Uma tabela de log loss ou Brier: uma linha por dobra (ou o trancado).
+fn escrever_tabela_metrica(
+    s: &mut String,
+    linhas: &[(String, &AvaliacaoFaixa)],
+    metrica: fn(&AvaliacaoFaixa) -> &Comparacao,
+) {
+    linha!(
+        s,
+        "  {:>8}  {:>11}  {:>5}  {:>10}  {:>10}  {:>11}  {:>10}  IC 95% (normal)",
+        "dobra",
+        "concursos",
+        "T",
+        "perfil",
+        "acaso",
+        "diferença",
+        "EP"
+    );
+    for (rotulo, a) in linhas {
+        let c = metrica(a);
+        linha!(
+            s,
+            "  {:>8}  {:>11}  {:>5}  {:>10.6}  {:>10.6}  {:>11}  {:>10}  {}",
+            rotulo,
+            descrever_faixa(a.faixa.primeiro, a.faixa.ultimo),
+            a.metricas.concursos_avaliados,
+            c.perfil,
+            c.acaso,
+            format!("{:+.3e}", c.diferenca),
+            c.erro_padrao
+                .map_or_else(|| "—".to_string(), |ep| format!("{ep:.3e}")),
+            c.ic95.map_or_else(
+                || "—".to_string(),
+                |ic| formatar_intervalo(ic, |x| format!("{x:+.3e}"))
+            )
+        );
+    }
+}
+
+/// A tabela do top-k: acertos por concurso e o p-valor exato da 1c.2.
+fn escrever_tabela_topk(s: &mut String, linhas: &[(String, &AvaliacaoFaixa)]) {
+    linha!(
+        s,
+        "  {:>8}  {:>11}  {:>5}  {:>7}  {:>7}  {:>9}  {:>7}  {:>19}  p exato",
+        "dobra",
+        "concursos",
+        "T",
+        "perfil",
+        "acaso",
+        "diferença",
+        "EP",
+        "IC 95% (normal)"
+    );
+    for (rotulo, a) in linhas {
+        let c = &a.topk.acertos;
+        linha!(
+            s,
+            "  {:>8}  {:>11}  {:>5}  {:>7.4}  {:>7.4}  {:>9}  {:>7}  {:>19}  {}",
+            rotulo,
+            descrever_faixa(a.faixa.primeiro, a.faixa.ultimo),
+            a.topk.concursos_avaliados,
+            c.perfil,
+            c.acaso,
+            format!("{:+.4}", c.diferenca),
+            c.erro_padrao
+                .map_or_else(|| "—".to_string(), |ep| format!("{ep:.4}")),
+            c.ic95.map_or_else(
+                || "—".to_string(),
+                |ic| formatar_intervalo(ic, |x| format!("{x:+.4}"))
+            ),
+            formatar_cauda(a.topk.p_valor)
+        );
+    }
+}
+
+fn escrever_veredito(s: &mut String, r: &orquestracao::RelatorioAvaliacao) {
+    let v = &r.veredito;
+    let faixa = v.avaliacao.faixa;
+    linha!(
+        s,
+        "Veredito no trecho inteiro (concursos {}, {} avaliados):",
+        descrever_faixa(faixa.primeiro, faixa.ultimo),
+        faixa.tamanho()
+    );
+    match &v.bootstrap {
+        None => {
+            linha!(s,
+            "  Sem bootstrap: o trecho tem {} concursos, menos que os {} (dois blocos de {}) que \
+             o bootstrap por blocos exige.",
+            faixa.tamanho(),
+            v.concursos_minimos,
+            avaliacao::BLOCO_BOOTSTRAP
+        )
+        }
+        Some(b) => {
+            linha!(
+                s,
+                "  Bootstrap circular por blocos de {} concursos, {} reamostragens, semente {}.",
+                b.log_loss.bloco,
+                b.log_loss.reamostragens,
+                b.log_loss.semente
+            );
+            linha!(
+                s,
+                "  Log loss, perfil − acaso: média {:+.3e}, IC 95% percentil {}, p unilateral \
+                 (perfil melhor) = {}.",
+                b.log_loss.media,
+                formatar_intervalo(b.log_loss.ic95, |x| format!("{x:+.3e}")),
+                formatar_p(b.log_loss.p_valor)
+            );
+            linha!(
+                s,
+                "  Brier (só informativo): média {:+.3e}, IC 95% percentil {}, p = {}.",
+                b.brier.media,
+                formatar_intervalo(b.brier.ic95, |x| format!("{x:+.3e}")),
+                formatar_p(b.brier.p_valor)
+            );
+        }
+    }
+    let topk = &v.avaliacao.topk;
+    linha!(
+        s,
+        "  Top-{} (p exato unilateral, trecho inteiro): {} acertos em {} concursos (ao acaso, \
+         {:.1} em média), p = {}.",
+        r.k,
+        topk.total_acertos,
+        topk.concursos_avaliados,
+        topk.acertos.acaso * topk.concursos_avaliados as f64,
+        formatar_cauda(topk.p_valor)
+    );
+    if let Some(c) = &r.bonferroni {
+        let origem = match r.trecho {
+            orquestracao::TrechoAvaliado::Busca(_) => "perfis/k testados (--testados)",
+            orquestracao::TrechoAvaliado::Trancado(_) => {
+                "perfis distintos que já usaram o trancado, contando este"
+            }
+        };
+        linha!(
+            s,
+            "  Bonferroni, N = {} {origem}: log loss p = {}; top-{} p = {}.",
+            c.comparacoes,
+            c.p_log_loss.map_or_else(|| "—".to_string(), formatar_p),
+            r.k,
+            formatar_cauda(c.p_topk)
+        );
+    }
+    let alfa = avaliacao::ALFA;
+    let decisao = match (&v.bootstrap, &r.bonferroni) {
+        (None, _) => None,
+        (Some(b), Some(c)) => c.p_log_loss.map(|p| {
+            (
+                p <= alfa,
+                format!(
+                    "p corrigido = {} (sem correção: {})",
+                    formatar_p(p),
+                    formatar_p(b.log_loss.p_valor)
+                ),
+            )
+        }),
+        (Some(b), None) => Some((
+            b.log_loss.p_valor <= alfa,
+            format!("p = {}", formatar_p(b.log_loss.p_valor)),
+        )),
+    };
+    match decisao {
+        None => linha!(s, "=> SEM VEREDITO: trecho curto demais para o bootstrap."),
+        Some((true, p)) => {
+            linha!(s, "=> SUPERA o acaso no log loss: {p} ≤ α = {alfa}.");
+            linha!(
+                s,
+                "   Ganho sobre sorteios independentes é suspeito por princípio: confira \
+                 vazamento (ponto no tempo) e sobreajuste antes de acreditar."
+            );
+        }
+        Some((false, p)) => linha!(s, "=> NÃO supera o acaso no log loss: {p} > α = {alfa}."),
+    }
+}
+
+fn formatar_intervalo(ic: Intervalo, numero: impl Fn(f64) -> String) -> String {
+    format!("[{}, {}]", numero(ic.inferior), numero(ic.superior))
+}
+
+/// p-valor com 4 casas, ou em notação científica abaixo de 0,001.
+fn formatar_p(p: f64) -> String {
+    if p >= 1e-3 {
+        format!("{p:.4}")
+    } else {
+        format!("{p:.3e}")
+    }
+}
+
+/// Cauda do top-k: como [`formatar_p`], ou pela potência de 10 quando a
+/// probabilidade é pequena demais para o `f64`.
+fn formatar_cauda(c: Cauda) -> String {
+    if c.probabilidade >= f64::MIN_POSITIVE {
+        formatar_p(c.probabilidade)
+    } else {
+        format!("10^{:.1}", c.log10)
+    }
+}
+
+/// `sync aleatoriedade`: qui-quadrado e runs test por dezena com Holm sobre
+/// o histórico inteiro (em `orquestracao`) e o relatório. Banco aberto só
+/// para leitura; inexistente é erro, sem criar arquivo.
+fn testar_aleatoriedade(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let conn = db::abrir_somente_leitura(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let r = orquestracao::testar_aleatoriedade_do_banco(&conn, cfg)?;
+    let duracao = inicio.elapsed();
+
+    println!(
+        "Testes de aleatoriedade de {} ({}): concursos {} ({} concursos, o histórico inteiro, \
+         inclusive o trancado), α = {}.",
+        cfg.nome_exibicao,
+        cfg.slug,
+        descrever_faixa(r.primeiro_concurso, r.ultimo_concurso),
+        r.concursos,
+        r.alfa
+    );
+    let q = &r.qui_quadrado;
+    println!();
+    println!("Qui-quadrado de frequência (corrigido para sorteio sem reposição; teste global):");
+    println!(
+        "  estatística {:.4} com {} graus de liberdade, p = {} → {}.",
+        q.estatistica,
+        q.graus_liberdade,
+        formatar_p(q.p_valor),
+        if q.rejeita {
+            "REJEITA a uniformidade (p ≤ α)"
+        } else {
+            "não rejeita a uniformidade (p > α)"
+        }
+    );
+    println!(
+        "  Esperado por dezena: {:.2} saídas; Pearson sem a correção (só referência): {:.4}.",
+        q.esperado, q.pearson
+    );
+    println!();
+    println!(
+        "Runs test por dezena (p exato bilateral pelo dobro da menor cauda; Holm sobre as {} \
+         dezenas):",
+        r.dezenas_testadas_runs
+    );
+    println!(
+        "  {:>6}  {:>7}  {:>10}  {:>9}  {:>10}  {:>10}",
+        "dezena", "saídas", "sequências", "média", "p", "p Holm"
+    );
+    for d in &r.runs {
+        let t = &d.teste;
+        let marca = if d.rejeita {
+            "  REJEITA"
+        } else if t.fixa() {
+            "  fixa (p = 1)"
+        } else {
+            ""
+        };
+        println!(
+            "  {:>6}  {:>7}  {:>10}  {:>9.1}  {:>10}  {:>10}{marca}",
+            format!("{:02}", d.dezena),
+            t.saidas,
+            t.sequencias,
+            t.media,
+            formatar_p(t.p_valor),
+            formatar_p(d.p_valor_holm)
+        );
+    }
+    let rejeitadas: Vec<String> = r
+        .runs
+        .iter()
+        .filter(|d| d.rejeita)
+        .map(|d| format!("{:02}", d.dezena))
+        .collect();
+    println!(
+        "  {} dezena(s) testada(s), {} fixa(s) (nunca ou sempre saíram); {} com p ≤ α sem \
+         correção; {} rejeitada(s) depois do Holm{}.",
+        r.dezenas_testadas_runs,
+        r.dezenas_fixas_runs,
+        r.rejeicoes_runs_sem_correcao,
+        r.rejeicoes_runs,
+        if rejeitadas.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", rejeitadas.join(", "))
+        }
+    );
+    if q.rejeita || r.rejeicoes_runs > 0 {
+        println!(
+            "Rejeição: confira primeiro os dados (sync validar; erros da planilha), depois o \
+             sorteio."
+        );
+    }
+    eprintln!("Tempo: {:.2} s.", duracao.as_secs_f64());
     Ok(())
 }
 

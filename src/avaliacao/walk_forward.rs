@@ -12,7 +12,7 @@
 //! - a calibração começa sempre no primeiro concurso da entrada e usa todo o
 //!   passado; a dobra só define quais concursos entram nas métricas
 //!   ([`super::metricas_por_concurso_entre`]);
-//! - o trancado ([`avaliar_trancado`]) só é avaliado quando pedido: do
+//! - o trancado (`avaliar_trancado`) só é avaliado quando pedido: do
 //!   corte + 1 até o último sorteado, com a calibração usando todo o passado
 //!   (inclusive o trecho de busca). Registrar o "uma única vez" fica na 1c.5.
 //!
@@ -24,9 +24,22 @@
 //! escolhidos sem ver os sorteios da dobra). Numa busca de pesos que ajusta
 //! até uma dobra e testa nela (1.5.3), escolher o melhor entre muitos perfis
 //! deixa o p-valor otimista; o trancado existe para isso.
+//!
+//! Veredito "supera o acaso" (1c.5, [`veredito_da_busca`] e
+//! `veredito_do_trancado`): sobre o trecho **inteiro** (na busca, a união
+//! das dobras; no trancado, o próprio trancado), com o bootstrap circular por
+//! blocos ([`super::bootstrap`]) da série por concurso perfil − acaso do log
+//! loss; o Brier passa pelo mesmo bootstrap só para informar. As dobras do
+//! [`walk_forward`] mostram a estabilidade, não decidem. Os limites do trecho
+//! vêm do config, como no walk-forward e no trancado.
 
+use super::aleatoriedade::ALFA;
+use super::bootstrap::{
+    bootstrap_circular, concursos_minimos, Bootstrap, BLOCO_BOOTSTRAP, REAMOSTRAGENS_BOOTSTRAP,
+    SEMENTE_BOOTSTRAP,
+};
 use super::calibracao::{ordenar_e_validar, Observacao};
-use super::metricas::{metricas_por_concurso_entre, resumir, ResumoAvaliacao};
+use super::metricas::{metricas_por_concurso_entre, resumir, MetricasConcurso, ResumoAvaliacao};
 use super::topk::{acertos_por_concurso_entre, resumir_topk, validar_k, ResumoTopK};
 use super::{ate_o_corte, concursos_avaliados};
 use crate::config::LoteriaConfig;
@@ -163,7 +176,7 @@ pub fn walk_forward(
     validar_k(cfg, k)?;
     let dobras = dobras_da_busca(cfg, observacoes)?
         .into_iter()
-        .map(|dobra| avaliar_faixa(cfg, observacoes, k, dobra))
+        .map(|dobra| Ok(avaliar_faixa(cfg, observacoes, k, dobra)?.0))
         .collect::<Result<Vec<_>>>()?;
     Ok(WalkForward {
         corte: cfg.ultimo_concurso_busca,
@@ -186,24 +199,145 @@ pub fn walk_forward(
 /// Erros: série inválida ou `k` fora de `1..=N−1` são
 /// [`SpiderError::AvaliacaoEntradaInvalida`]; nenhum concurso sorteado acima
 /// do corte é [`SpiderError::AvaliacaoSemConcursos`].
-pub fn avaliar_trancado(
+#[cfg(test)]
+pub(crate) fn avaliar_trancado(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
 ) -> Result<AvaliacaoFaixa> {
     validar_k(cfg, k)?;
+    let faixa = faixa_do_trancado(cfg, observacoes)?;
+    Ok(avaliar_faixa(cfg, observacoes, k, faixa)?.0)
+}
+
+/// Trecho avaliado do trancado: do concurso seguinte ao corte da busca até o
+/// último sorteado (o snapshot ainda não sorteado fica de fora). Nenhum
+/// concurso sorteado acima do corte é [`SpiderError::AvaliacaoSemConcursos`].
+fn faixa_do_trancado(cfg: &LoteriaConfig, observacoes: &[Observacao]) -> Result<FaixaConcursos> {
     let corte = cfg.ultimo_concurso_busca;
-    let faixa = match corte.checked_add(1) {
-        Some(inicio) => faixa_avaliada(cfg, observacoes, inicio, u32::MAX)?,
-        None => None,
+    // O trancado vai até o último concurso da entrada (é o único caminho que
+    // lê acima do corte); o limite é o maior concurso recebido, não um
+    // sentinela como `u32::MAX`.
+    let ultimo_da_entrada = observacoes.iter().map(|o| o.concurso).max();
+    match (corte.checked_add(1), ultimo_da_entrada) {
+        (Some(inicio), Some(fim)) if inicio <= fim => {
+            faixa_avaliada(cfg, observacoes, inicio, fim)?
+        }
+        _ => None,
     }
     .ok_or_else(|| {
         SpiderError::AvaliacaoSemConcursos(format!(
             "nenhum concurso sorteado no conjunto trancado da {} (do concurso seguinte ao corte {corte} até o último sorteado; o primeiro concurso da entrada não é avaliado)",
             cfg.nome_exibicao
         ))
-    })?;
-    avaliar_faixa(cfg, observacoes, k, faixa)
+    })
+}
+
+/// Bootstrap do veredito: log loss (decide) e Brier (só informa), com as
+/// mesmas reamostras (mesmo T e mesma semente).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BootstrapTrecho {
+    /// Sobre `d_t` = log loss do perfil − log loss do acaso, por concurso.
+    pub log_loss: Bootstrap,
+    /// Sobre `d_t` = Brier do perfil − Brier do acaso, por concurso.
+    pub brier: Bootstrap,
+}
+
+/// Veredito de um trecho inteiro (a união das dobras na busca, ou o
+/// trancado).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VereditoTrecho {
+    /// Log loss/Brier e top-k do trecho inteiro, como numa dobra: o p-valor
+    /// exato do top-k (1c.2) é o do trecho todo.
+    pub avaliacao: AvaliacaoFaixa,
+    /// `None` quando o trecho tem menos de `concursos_minimos` concursos: o
+    /// bootstrap por blocos não estima a incerteza e não há veredito.
+    pub bootstrap: Option<BootstrapTrecho>,
+    /// Dois blocos de [`BLOCO_BOOTSTRAP`] concursos.
+    pub concursos_minimos: usize,
+}
+
+impl VereditoTrecho {
+    /// "Supera o acaso" = p-valor do bootstrap do log loss ≤ [`ALFA`]
+    /// (`None` sem bootstrap). Não corrige por múltiplas comparações: quem
+    /// testou vários perfis ou k aplica a correção ao p-valor
+    /// ([`super::bonferroni`]).
+    pub fn supera_o_acaso(&self) -> Option<bool> {
+        self.bootstrap.as_ref().map(|b| b.log_loss.p_valor <= ALFA)
+    }
+}
+
+/// Veredito do trecho de **busca** inteiro (o mesmo das dobras do
+/// [`walk_forward`]: do segundo concurso da entrada até o corte do config, só
+/// os sorteados). Nada acima do corte é lido.
+///
+/// Erros: os de [`walk_forward`] (série inválida, `k` fora de `1..=N−1`,
+/// nenhum concurso na busca). Trecho curto demais para o bootstrap não é
+/// erro: sai sem veredito (`bootstrap` = `None`).
+pub fn veredito_da_busca(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    k: u32,
+) -> Result<VereditoTrecho> {
+    validar_k(cfg, k)?;
+    let faixa = faixa_da_busca(cfg, observacoes)?;
+    veredito_da_faixa(cfg, observacoes, k, faixa)
+}
+
+/// Veredito do conjunto **trancado** inteiro (o mesmo trecho de
+/// `avaliar_trancado`, com a calibração usando todo o passado). Só deve
+/// ser chamado quando o trancado for pedido explicitamente; o registro do
+/// uso fica com quem chama.
+///
+/// Erros: os de `avaliar_trancado`. Trecho curto demais para o bootstrap
+/// sai sem veredito (`bootstrap` = `None`).
+pub(crate) fn veredito_do_trancado(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    k: u32,
+) -> Result<VereditoTrecho> {
+    validar_k(cfg, k)?;
+    let faixa = faixa_do_trancado(cfg, observacoes)?;
+    veredito_da_faixa(cfg, observacoes, k, faixa)
+}
+
+fn veredito_da_faixa(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    k: u32,
+    faixa: FaixaConcursos,
+) -> Result<VereditoTrecho> {
+    let (avaliacao, serie) = avaliar_faixa(cfg, observacoes, k, faixa)?;
+    let minimo = concursos_minimos(BLOCO_BOOTSTRAP);
+    let bootstrap = if serie.len() >= minimo {
+        let log_loss: Vec<f64> = serie
+            .iter()
+            .map(|m| m.log_loss_perfil - m.log_loss_acaso)
+            .collect();
+        let brier: Vec<f64> = serie
+            .iter()
+            .map(|m| m.brier_perfil - m.brier_acaso)
+            .collect();
+        let reamostrar = |d: &[f64]| {
+            bootstrap_circular(
+                d,
+                BLOCO_BOOTSTRAP,
+                REAMOSTRAGENS_BOOTSTRAP,
+                SEMENTE_BOOTSTRAP,
+            )
+        };
+        Some(BootstrapTrecho {
+            log_loss: reamostrar(&log_loss)?,
+            brier: reamostrar(&brier)?,
+        })
+    } else {
+        None
+    };
+    Ok(VereditoTrecho {
+        avaliacao,
+        bootstrap,
+        concursos_minimos: minimo,
+    })
 }
 
 /// Primeiro e último concurso avaliados em `inicio..=fim` (mesma regra de
@@ -227,13 +361,14 @@ fn faixa_avaliada(
 }
 
 /// Log loss/Brier e top-`k` dos concursos de `faixa`, lendo só até
-/// `faixa.ultimo` e calibrando desde o primeiro concurso da entrada.
+/// `faixa.ultimo` e calibrando desde o primeiro concurso da entrada. Devolve
+/// também a série de métricas por concurso (a do bootstrap do veredito).
 fn avaliar_faixa(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
     faixa: FaixaConcursos,
-) -> Result<AvaliacaoFaixa> {
+) -> Result<(AvaliacaoFaixa, Vec<MetricasConcurso>)> {
     let metricas = metricas_por_concurso_entre(cfg, observacoes, faixa.primeiro, faixa.ultimo)?;
     let acertos = acertos_por_concurso_entre(cfg, observacoes, k, faixa.primeiro, faixa.ultimo)?;
     // Defesa: a faixa vem de `faixa_avaliada` com a mesma regra, então as
@@ -248,11 +383,12 @@ fn avaliar_faixa(
             faixa.tamanho()
         )));
     }
-    Ok(AvaliacaoFaixa {
+    let avaliacao = AvaliacaoFaixa {
         faixa,
         metricas: resumir(&metricas)?,
         topk: resumir_topk(cfg, k, &acertos)?,
-    })
+    };
+    Ok((avaliacao, metricas))
 }
 
 #[cfg(test)]

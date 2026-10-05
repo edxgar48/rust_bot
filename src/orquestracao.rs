@@ -24,15 +24,18 @@
 //! E decide o que o `sync atualizar` faz com o concurso lido na página
 //! ([`classificar_atualizacao`], tarefa 0.8).
 
+use crate::avaliacao::{self, Cauda, Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward};
 use crate::config::LoteriaConfig;
 use crate::db::{self, MotorEstadoSalvo, PerfilRegistrado};
 use crate::error::{Result, SpiderError};
 use crate::model::Resultado;
-use crate::motor::{self, EstadoMotor, FeaturesDezena, FEATURE_VERSION, JANELAS};
+use crate::motor::{self, EstadoMotor, FeaturesDezena, IndiceDezena, FEATURE_VERSION, JANELAS};
 use crate::perfil::{Perfil, PerfilCarregado};
+use crate::registros::AvaliacaoTrancado;
 use crate::validacao::{self, Problema, Severidade};
 use rusqlite::Connection;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 /// Por que as features foram recalculadas do zero.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -368,23 +371,7 @@ pub fn registrar_perfil(
         Some(registrado) if registrado.hash_toml == carregado.hash_toml => {
             Ok(RegistroPerfil::JaRegistrado)
         }
-        Some(registrado) => {
-            // Não sugere versão que já tem arquivo ao lado ou já está no banco.
-            let (proximo_nome, proxima_versao) = perfil.proxima_versao(|nome| {
-                carregado
-                    .origem
-                    .with_file_name(format!("{nome}.toml"))
-                    .exists()
-                    || matches!(db::buscar_perfil(conn, nome), Ok(Some(_)))
-            });
-            Err(SpiderError::PerfilAlterado {
-                nome: perfil.nome.clone(),
-                hash_registrado: registrado.hash_toml,
-                hash_arquivo: carregado.hash_toml.clone(),
-                proximo_nome,
-                proxima_versao,
-            })
-        }
+        Some(registrado) => Err(perfil_alterado(conn, carregado, registrado.hash_toml)),
         None => {
             db::inserir_perfil(
                 conn,
@@ -401,6 +388,31 @@ pub fn registrar_perfil(
             )?;
             Ok(RegistroPerfil::Novo)
         }
+    }
+}
+
+/// Erro de perfil editado sob o mesmo nome (`hash_registrado` em `perfis`
+/// diferente do `.toml` em disco), sugerindo a próxima versão livre: não
+/// sugere versão que já tem arquivo ao lado ou já está no banco.
+fn perfil_alterado(
+    conn: &Connection,
+    carregado: &PerfilCarregado,
+    hash_registrado: String,
+) -> SpiderError {
+    let perfil = &carregado.perfil;
+    let (proximo_nome, proxima_versao) = perfil.proxima_versao(|nome| {
+        carregado
+            .origem
+            .with_file_name(format!("{nome}.toml"))
+            .exists()
+            || matches!(db::buscar_perfil(conn, nome), Ok(Some(_)))
+    });
+    SpiderError::PerfilAlterado {
+        nome: perfil.nome.clone(),
+        hash_registrado,
+        hash_arquivo: carregado.hash_toml.clone(),
+        proximo_nome,
+        proxima_versao,
     }
 }
 
@@ -483,36 +495,13 @@ pub fn sincronizar_indice(
     // do `commit` desfaz tudo, inclusive tabelas criadas e o registro do
     // perfil. As checagens vêm antes de qualquer `CREATE`.
     let tx = db::iniciar_escrita(conn)?;
-    let Some(ultimo) = db::ultimo_concurso(&tx, cfg.slug)? else {
-        return Err(SpiderError::SemResultados(cfg.slug.to_string()));
-    };
-    let sem_features = || SpiderError::SemFeatures(cfg.slug.to_string());
-    if !db::tabela_existe(&tx, "features_dezena")? {
-        return Err(sem_features());
-    }
-    let Some(snapshot) = db::maior_concurso_features(&tx)? else {
-        return Err(sem_features());
-    };
+    let FeaturesEmDia {
+        ultimo,
+        primeiro,
+        concursos,
+        features,
+    } = ler_features_em_dia(&tx, cfg, perfil.janela)?;
     let proximo = ultimo + 1;
-    if snapshot != proximo {
-        return Err(SpiderError::FeaturesDesatualizadas {
-            loteria: cfg.slug.to_string(),
-            ultimo_concurso: ultimo,
-            snapshot,
-        });
-    }
-    conferir_resultados_das_features(&tx, cfg, ultimo)?;
-
-    let linhas = db::ler_features_da_janela(&tx, perfil.janela)?;
-    if let Some(l) = linhas.iter().find(|l| l.feature_version != FEATURE_VERSION) {
-        return Err(SpiderError::FeaturesDeOutraVersao {
-            loteria: cfg.slug.to_string(),
-            encontrada: l.feature_version,
-            atual: FEATURE_VERSION,
-        });
-    }
-    let features: Vec<FeaturesDezena> = linhas.into_iter().map(|l| l.features).collect();
-    let (primeiro, concursos) = conferir_serie(cfg, perfil.janela, &features, proximo)?;
 
     let indice =
         motor::calcular_indice(&features, perfil.janela, perfil.normalizacao, &perfil.pesos)?;
@@ -533,6 +522,68 @@ pub fn sincronizar_indice(
         proximo_concurso: proximo,
         linhas_apagadas,
         linhas_gravadas,
+    })
+}
+
+/// Features de uma janela já conferidas contra `resultados`
+/// ([`ler_features_em_dia`]).
+struct FeaturesEmDia {
+    /// Último concurso de `resultados`.
+    ultimo: u32,
+    /// Primeiro concurso das features (o 1).
+    primeiro: u32,
+    /// Concursos das features: do primeiro ao snapshot do próximo, inclusive.
+    concursos: usize,
+    /// Só a janela pedida, ordenadas por (concurso, dezena).
+    features: Vec<FeaturesDezena>,
+}
+
+/// Lê as features da `janela` e confere que estão em dia com `resultados`,
+/// com as recusas do `sync indice` (decisões de 2026-10-05), na ordem:
+/// banco sem resultados, `features_dezena` ausente ou vazia, snapshot mais
+/// recente diferente do último concurso + 1, resultados diferentes dos usados
+/// no último `sync features`, linha da janela com outra `feature_version` e
+/// janela sem a série completa (`1 … último + 1`, todas as dezenas). Só lê.
+fn ler_features_em_dia(
+    conn: &Connection,
+    cfg: &LoteriaConfig,
+    janela: u32,
+) -> Result<FeaturesEmDia> {
+    let Some(ultimo) = db::ultimo_concurso(conn, cfg.slug)? else {
+        return Err(SpiderError::SemResultados(cfg.slug.to_string()));
+    };
+    let sem_features = || SpiderError::SemFeatures(cfg.slug.to_string());
+    if !db::tabela_existe(conn, "features_dezena")? {
+        return Err(sem_features());
+    }
+    let Some(snapshot) = db::maior_concurso_features(conn)? else {
+        return Err(sem_features());
+    };
+    let proximo = ultimo + 1;
+    if snapshot != proximo {
+        return Err(SpiderError::FeaturesDesatualizadas {
+            loteria: cfg.slug.to_string(),
+            ultimo_concurso: ultimo,
+            snapshot,
+        });
+    }
+    conferir_resultados_das_features(conn, cfg, ultimo)?;
+
+    let linhas = db::ler_features_da_janela(conn, janela)?;
+    if let Some(l) = linhas.iter().find(|l| l.feature_version != FEATURE_VERSION) {
+        return Err(SpiderError::FeaturesDeOutraVersao {
+            loteria: cfg.slug.to_string(),
+            encontrada: l.feature_version,
+            atual: FEATURE_VERSION,
+        });
+    }
+    let features: Vec<FeaturesDezena> = linhas.into_iter().map(|l| l.features).collect();
+    let (primeiro, concursos) = conferir_serie(cfg, janela, &features, proximo)?;
+    Ok(FeaturesEmDia {
+        ultimo,
+        primeiro,
+        concursos,
+        features,
     })
 }
 
@@ -628,6 +679,614 @@ fn conferir_serie(
         )));
     }
     Ok((features[0].concurso, concursos))
+}
+
+// ---------------------------------------------------------------------------
+// Avaliação contra o acaso (`sync avaliar`, 1c.5) e testes de aleatoriedade
+// do histórico (`sync aleatoriedade`).
+// ---------------------------------------------------------------------------
+
+/// Opções do `sync avaliar` (decisões de 2026-10-05, `docs/PLANEJAMENTO.md`,
+/// 1c).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OpcoesAvaliacao {
+    /// k do top-k; `None` = *K* da loteria. Só na busca: com `trancado` é
+    /// recusado (o trancado usa sempre *K*).
+    pub k: Option<u32>,
+    /// Avalia o conjunto trancado em vez do walk-forward na busca.
+    pub trancado: bool,
+    /// Com `trancado`: avalia mesmo que o perfil (nome e hash) já tenha usado
+    /// o trancado.
+    pub repetir: bool,
+    /// Só na busca: quantos perfis/k foram testados, para a correção de
+    /// Bonferroni (`None` = sem correção).
+    pub testados: Option<u32>,
+}
+
+/// p-valores do veredito corrigidos por Bonferroni.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CorrecaoBonferroni {
+    /// N: `--testados` na busca; perfis distintos (nome e hash) que já usaram
+    /// o trancado, contando este, no trancado.
+    pub comparacoes: u32,
+    /// `min(1, N·p)` do bootstrap do log loss (`None` sem bootstrap).
+    pub p_log_loss: Option<f64>,
+    /// `min(1, N·p)` do p-valor exato do top-k no trecho inteiro.
+    pub p_topk: Cauda,
+    /// p corrigido do log loss ≤ α.
+    pub supera_o_acaso: Option<bool>,
+}
+
+/// Uso do conjunto trancado registrado nesta avaliação. As métricas do
+/// trancado (a única "dobra") estão em `RelatorioAvaliacao::veredito`, que
+/// cobre exatamente o trancado inteiro.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsoDoTrancado {
+    /// Usos anteriores do mesmo perfil (nome e hash), em ordem; vazio na
+    /// primeira vez.
+    pub anteriores: Vec<AvaliacaoTrancado>,
+    /// O registro gravado agora.
+    pub registrada: AvaliacaoTrancado,
+    /// Arquivo do registro, sempre com caminho absoluto: o lido e o gravado.
+    pub arquivo: PathBuf,
+    /// Quantos usos (de qualquer perfil) o arquivo tinha na leitura sobre a
+    /// qual este uso foi gravado (a última recarga), antes deste.
+    pub usos_lidos: usize,
+    /// Se o arquivo existia nessa leitura (`false` = primeiro registro da
+    /// loteria; `usos_lidos` é 0).
+    pub arquivo_existia: bool,
+}
+
+/// O trecho avaliado.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrechoAvaliado {
+    /// Padrão: walk-forward nas dobras do trecho de busca.
+    Busca(WalkForward),
+    /// `--trancado`.
+    Trancado(Box<UsoDoTrancado>),
+}
+
+/// Tudo o que o `sync avaliar` imprime.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelatorioAvaliacao {
+    pub loteria: String,
+    pub perfil: String,
+    pub versao: u32,
+    pub janela: u32,
+    pub normalizacao: String,
+    pub hash_toml: String,
+    /// k do top-k usado.
+    pub k: u32,
+    /// `cfg.ultimo_concurso_busca`.
+    pub corte: u32,
+    /// Primeiro concurso do índice (a calibração começa nele).
+    pub primeiro_indice: u32,
+    /// Último concurso de `resultados`; o índice vai até ele + 1.
+    pub ultimo_concurso: u32,
+    pub trecho: TrechoAvaliado,
+    /// Veredito do trecho inteiro (a união das dobras ou o trancado).
+    pub veredito: VereditoTrecho,
+    /// Com `--testados` (busca) ou sempre no trancado.
+    pub bonferroni: Option<CorrecaoBonferroni>,
+}
+
+/// `sync avaliar <loteria> --perfil X`: avalia o índice gravado do perfil
+/// contra o acaso, com o veredito "supera o acaso" pelo bootstrap
+/// (`docs/PLANEJAMENTO.md`, 1c, decisões de 2026-10-05).
+///
+/// **Não grava nada no banco**: só lê, numa transação de leitura desfeita no
+/// fim. O único arquivo gravado é o registro do trancado, em `registros`
+/// (pasta injetada por quem chama; a CLI usa
+/// [`crate::registros::pasta_padrao`] do banco), e só com `trancado` e
+/// depois de a avaliação dar certo. `avaliado_em` (ISO-8601 UTC) vem de quem
+/// chama, que lê o relógio.
+///
+/// É [`avaliar_perfil_e_formatar`] sem formatação.
+///
+/// Recusas (nada avaliado nem gravado):
+/// - opções incoerentes: `repetir` sem `trancado`, `testados` = 0 ou com
+///   `trancado`, `k` com `trancado` ([`SpiderError::AvaliacaoOpcaoInvalida`]);
+/// - perfil de outra loteria ([`SpiderError::PerfilDeOutraLoteria`]);
+/// - com `trancado`: registro ilegível
+///   ([`SpiderError::RegistroTrancadoInvalido`]) ou perfil (nome e hash) que
+///   já usou o trancado, sem `repetir` ([`SpiderError::TrancadoJaAvaliado`]);
+///   conferido antes de ler o banco e de novo, na recarga, antes de gravar;
+/// - com `trancado`: registro que muda entre a recarga e a gravação em
+///   [`TENTATIVAS_REGISTRO`] tentativas seguidas
+///   ([`SpiderError::RegistroTrancadoConcorrente`]);
+/// - banco sem resultados ou com erro de integridade, buraco incluso
+///   ([`SpiderError::SemResultados`], [`SpiderError::ResultadosReprovados`]);
+/// - perfil fora de `perfis` ([`SpiderError::PerfilNaoRegistrado`]) ou com
+///   hash diferente do `.toml` em disco ([`SpiderError::PerfilAlterado`]);
+/// - features fora de dia, como no `sync indice` (`SemFeatures`,
+///   `FeaturesDesatualizadas`, `FeaturesDeResultadosAlterados`,
+///   `FeaturesDeOutraVersao`, `FeaturesIncoerentes`);
+/// - índice que não vai até o último concurso + 1
+///   ([`SpiderError::IndiceDesatualizado`]), que não tem exatamente os
+///   (concurso, dezena) das features ou que difere, em qualquer linha, do
+///   índice recalculado em memória com as features atuais pela mesma função
+///   do `sync indice` (`total` bit a bit, `posicao`, `variacao_posicao`):
+///   features regeneradas depois do último `sync indice`, como após corrigir
+///   um resultado antigo ([`SpiderError::IndiceIncoerente`]);
+/// - `k` fora de `1..=N−1` e trecho sem concursos (erros da avaliação).
+///
+/// Ponto no tempo: cada [`Observacao`] junta a posição do índice em `t`
+/// (calculada pelo `sync indice` com as features de `t`, que olham só
+/// `1 … t−1`) e o `saiu` de `t` (o alvo). A calibração, a busca e o trancado
+/// usam essas observações só como `avaliacao` define: a busca não lê nada
+/// acima do corte do config.
+pub fn avaliar_perfil(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    opcoes: &OpcoesAvaliacao,
+    registros: &Path,
+    avaliado_em: &str,
+) -> Result<RelatorioAvaliacao> {
+    avaliar_perfil_e_formatar(conn, cfg, carregado, opcoes, registros, avaliado_em, |_| ())
+        .map(|(relatorio, ())| relatorio)
+}
+
+/// Quantas vezes o registro do trancado é recarregado e conferido antes de
+/// desistir de gravar porque outra execução o alterou no meio.
+pub const TENTATIVAS_REGISTRO: u32 = 3;
+
+/// [`avaliar_perfil`] com o relatório formatado por `formatar` **antes** de
+/// o uso do trancado ser gravado: devolve o relatório e o que `formatar`
+/// produziu. Com isso quem chama já tem o texto pronto quando o uso passa a
+/// contar, e só falta imprimir (a CLI monta o relatório num `String`).
+///
+/// Ordem no trancado: avaliação → recarga do registro (de novo a recusa de
+/// uso único, contra o conteúdo atual) → relatório com o Bonferroni do
+/// conteúdo recarregado → `formatar` → nova recarga → se o registro não
+/// mudou, grava o conteúdo recarregado mais o uso novo. Se mudou (outra
+/// execução gravou no meio), refaz o relatório e chama `formatar` de novo,
+/// até [`TENTATIVAS_REGISTRO`] vezes; o uso gravado por outra execução nunca
+/// é apagado. Sem trava de arquivo: entre a última recarga e a gravação
+/// sobra uma janela de microssegundos, por isso o README pede para não rodar
+/// `--trancado` em paralelo. Na busca, `formatar` é chamada uma vez e nada é
+/// gravado.
+pub fn avaliar_perfil_e_formatar<T>(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    opcoes: &OpcoesAvaliacao,
+    registros: &Path,
+    avaliado_em: &str,
+    mut formatar: impl FnMut(&RelatorioAvaliacao) -> T,
+) -> Result<(RelatorioAvaliacao, T)> {
+    let perfil = &carregado.perfil;
+    conferir_opcoes(opcoes)?;
+    conferir_loteria_do_perfil(cfg, perfil)?;
+    let k = match opcoes.k {
+        Some(k) => k,
+        None => u32::try_from(cfg.qtd_dezenas).map_err(|_| {
+            SpiderError::AvaliacaoOpcaoInvalida(format!(
+                "a {} sorteia {} dezenas",
+                cfg.nome_exibicao, cfg.qtd_dezenas
+            ))
+        })?,
+    };
+
+    // O registro é conferido antes de qualquer leitura do banco: perfil que
+    // já usou o trancado nem chega a montar as observações.
+    let arquivo = if opcoes.trancado {
+        // Absoluto: o relatório diz exatamente qual arquivo foi lido, mesmo
+        // com pasta relativa ao diretório de trabalho.
+        let relativo = crate::registros::caminho(registros, cfg.slug);
+        let arquivo = std::path::absolute(&relativo).map_err(|origem| SpiderError::Io {
+            caminho: relativo,
+            origem,
+        })?;
+        conferir_uso_unico(&arquivo, cfg, carregado, opcoes.repetir)?;
+        Some(arquivo)
+    } else {
+        None
+    };
+
+    // Só leitura: a transação nunca recebe `commit` e é desfeita ao sair
+    // (leitura consistente de resultados, features, perfis e índice).
+    let tx = db::iniciar_leitura(conn)?;
+    let lidas = ler_observacoes(&tx, cfg, carregado)?;
+    drop(tx);
+    let observacoes = &lidas.observacoes;
+
+    let montar = |trecho, veredito, bonferroni| RelatorioAvaliacao {
+        loteria: cfg.slug.to_string(),
+        perfil: perfil.nome.clone(),
+        versao: perfil.versao,
+        janela: perfil.janela,
+        normalizacao: perfil.normalizacao.como_str().to_string(),
+        hash_toml: carregado.hash_toml.clone(),
+        k,
+        corte: cfg.ultimo_concurso_busca,
+        primeiro_indice: lidas.primeiro_indice,
+        ultimo_concurso: lidas.ultimo,
+        trecho,
+        veredito,
+        bonferroni,
+    };
+
+    let Some(arquivo) = arquivo else {
+        let wf = avaliacao::walk_forward(cfg, observacoes, k)?;
+        let veredito = avaliacao::veredito_da_busca(cfg, observacoes, k)?;
+        let bonferroni = opcoes
+            .testados
+            .map(|n| corrigir(&veredito, n))
+            .transpose()?;
+        let relatorio = montar(TrechoAvaliado::Busca(wf), veredito, bonferroni);
+        let formatado = formatar(&relatorio);
+        return Ok((relatorio, formatado));
+    };
+
+    // O veredito do trancado cobre exatamente o trancado inteiro (a mesma
+    // `AvaliacaoFaixa` de `avaliacao::avaliar_trancado`).
+    let veredito = avaliacao::veredito_do_trancado(cfg, observacoes, k)?;
+    let registrada = AvaliacaoTrancado {
+        perfil: perfil.nome.clone(),
+        hash_toml: carregado.hash_toml.clone(),
+        ate_concurso: veredito.avaliacao.faixa.ultimo,
+        avaliado_em: avaliado_em.to_string(),
+    };
+    // A avaliação leva segundos: outra execução pode ter gravado no
+    // registro desde a primeira leitura. Recarrega e confere de novo.
+    let mut atual = conferir_uso_unico(&arquivo, cfg, carregado, opcoes.repetir)?;
+    for _ in 0..TENTATIVAS_REGISTRO {
+        let mut novas = atual.todas.clone();
+        novas.push(registrada.clone());
+        let distintos = crate::registros::perfis_distintos(&novas);
+        let comparacoes = u32::try_from(distintos).map_err(|_| {
+            SpiderError::AvaliacaoOpcaoInvalida(format!(
+                "{distintos} perfis no registro do trancado"
+            ))
+        })?;
+        let bonferroni = Some(corrigir(&veredito, comparacoes)?);
+        let uso = UsoDoTrancado {
+            anteriores: atual.anteriores.clone(),
+            registrada: registrada.clone(),
+            arquivo: arquivo.clone(),
+            usos_lidos: atual.todas.len(),
+            arquivo_existia: atual.existia,
+        };
+        let relatorio = montar(
+            TrechoAvaliado::Trancado(Box::new(uso)),
+            veredito.clone(),
+            bonferroni,
+        );
+        let formatado = formatar(&relatorio);
+        // Recarga logo antes de gravar: o uso gravado por outra execução
+        // entra no arquivo junto com este, nunca é apagado.
+        let recarregado = conferir_uso_unico(&arquivo, cfg, carregado, opcoes.repetir)?;
+        if recarregado.todas == atual.todas && recarregado.existia == atual.existia {
+            // Só agora, com a avaliação pronta e o relatório montado, o uso
+            // é registrado.
+            crate::registros::salvar(&arquivo, cfg.slug, &novas)?;
+            return Ok((relatorio, formatado));
+        }
+        atual = recarregado;
+    }
+    Err(SpiderError::RegistroTrancadoConcorrente {
+        caminho: arquivo,
+        tentativas: TENTATIVAS_REGISTRO,
+    })
+}
+
+/// O registro do trancado como está agora em disco.
+struct RegistroAtual {
+    /// Todas as avaliações registradas, em ordem.
+    todas: Vec<AvaliacaoTrancado>,
+    /// As do perfil avaliado (nome e hash).
+    anteriores: Vec<AvaliacaoTrancado>,
+    /// Se o arquivo existia.
+    existia: bool,
+}
+
+/// Lê o registro e aplica o uso único: perfil (nome e hash) já registrado,
+/// sem `repetir`, é [`SpiderError::TrancadoJaAvaliado`].
+fn conferir_uso_unico(
+    arquivo: &Path,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    repetir: bool,
+) -> Result<RegistroAtual> {
+    let crate::registros::RegistroLido {
+        avaliacoes: todas,
+        existia,
+    } = crate::registros::ler(arquivo, cfg.slug)?;
+    let anteriores: Vec<AvaliacaoTrancado> = todas
+        .iter()
+        .filter(|a| a.mesmo_perfil(&carregado.perfil.nome, &carregado.hash_toml))
+        .cloned()
+        .collect();
+    if !anteriores.is_empty() && !repetir {
+        return Err(SpiderError::TrancadoJaAvaliado {
+            loteria: cfg.slug.to_string(),
+            perfil: carregado.perfil.nome.clone(),
+            hash_toml: carregado.hash_toml.clone(),
+            anteriores,
+            registro: Box::new(crate::registros::RegistroConsultado {
+                caminho: arquivo.to_path_buf(),
+                usos: todas.len(),
+            }),
+        });
+    }
+    Ok(RegistroAtual {
+        todas,
+        anteriores,
+        existia,
+    })
+}
+
+fn conferir_opcoes(opcoes: &OpcoesAvaliacao) -> Result<()> {
+    let invalida = |m: &str| Err(SpiderError::AvaliacaoOpcaoInvalida(m.to_string()));
+    if opcoes.repetir && !opcoes.trancado {
+        return invalida(
+            "`--repetir` só vale com `--trancado` (a busca pode ser avaliada quantas vezes quiser)",
+        );
+    }
+    // O registro do trancado guarda perfil e hash, não o k: escolher o k
+    // olhando o trancado (`--repetir --k X`) seria uma comparação múltipla
+    // que o Bonferroni pelos perfis registrados não conta. O k vale só na
+    // busca, como no plano ("vários perfis ou k na busca").
+    if opcoes.trancado && opcoes.k.is_some() {
+        return invalida(
+            "`--k` vale só na busca; o trancado usa sempre k = K da loteria (o registro de uso não guarda o k)",
+        );
+    }
+    match opcoes.testados {
+        Some(0) => invalida("`--testados` precisa ser ao menos 1 (o próprio perfil conta)"),
+        Some(_) if opcoes.trancado => invalida(
+            "`--testados` vale só na busca; no trancado a correção de Bonferroni usa o número de perfis registrados",
+        ),
+        _ => Ok(()),
+    }
+}
+
+/// Bonferroni sobre os p-valores do veredito (log loss pelo bootstrap,
+/// top-k exato), com `comparacoes` ≥ 1.
+fn corrigir(veredito: &VereditoTrecho, comparacoes: u32) -> Result<CorrecaoBonferroni> {
+    let p_log_loss = veredito
+        .bootstrap
+        .as_ref()
+        .map(|b| avaliacao::bonferroni(b.log_loss.p_valor, comparacoes))
+        .transpose()?;
+    let topk = veredito.avaliacao.topk.p_valor;
+    let p_topk = Cauda {
+        probabilidade: avaliacao::bonferroni(topk.probabilidade, comparacoes)?,
+        log10: (topk.log10 + f64::from(comparacoes).log10()).min(0.0),
+    };
+    Ok(CorrecaoBonferroni {
+        comparacoes,
+        p_log_loss,
+        p_topk,
+        supera_o_acaso: p_log_loss.map(|p| p <= avaliacao::ALFA),
+    })
+}
+
+/// Observações montadas do banco para a avaliação.
+struct ObservacoesLidas {
+    observacoes: Vec<Observacao>,
+    primeiro_indice: u32,
+    ultimo: u32,
+}
+
+/// Confere as pré-condições do `sync avaliar` e monta as observações: uma
+/// por (concurso, dezena), do primeiro concurso do índice ao snapshot do
+/// próximo, com a posição do índice e o `saiu` das features (da janela do
+/// perfil; `saiu` não depende da janela). Só lê.
+fn ler_observacoes(
+    conn: &Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+) -> Result<ObservacoesLidas> {
+    let perfil = &carregado.perfil;
+
+    // Resultados: buraco ou qualquer erro do `validar` é recusa.
+    let resultados = db::listar_crescente(conn, cfg.slug)?;
+    if resultados.is_empty() {
+        return Err(SpiderError::SemResultados(cfg.slug.to_string()));
+    }
+    let (erros, avisos): (Vec<Problema>, Vec<Problema>) = validacao::validar(cfg, &resultados)
+        .into_iter()
+        .partition(|p| p.severidade() == Severidade::Erro);
+    if !erros.is_empty() {
+        return Err(SpiderError::ResultadosReprovados {
+            loteria: cfg.slug.to_string(),
+            erros,
+            avisos,
+        });
+    }
+    drop(resultados);
+
+    // Perfil registrado, com o mesmo conteúdo do `.toml` em disco.
+    let nao_registrado = || SpiderError::PerfilNaoRegistrado {
+        nome: perfil.nome.clone(),
+        loteria: cfg.slug.to_string(),
+    };
+    if !db::tabela_existe(conn, "perfis")? {
+        return Err(nao_registrado());
+    }
+    match db::buscar_perfil(conn, &perfil.nome)? {
+        None => return Err(nao_registrado()),
+        Some(r) if r.hash_toml != carregado.hash_toml => {
+            return Err(perfil_alterado(conn, carregado, r.hash_toml))
+        }
+        Some(r) if r.loteria != cfg.slug => {
+            return Err(SpiderError::PerfilDeOutraLoteria {
+                nome: r.nome,
+                loteria_perfil: r.loteria,
+                loteria_banco: cfg.slug.to_string(),
+            })
+        }
+        Some(_) => {}
+    }
+
+    // Features em dia, como no `sync indice` (dão o `saiu`).
+    let FeaturesEmDia {
+        ultimo, features, ..
+    } = ler_features_em_dia(conn, cfg, perfil.janela)?;
+    let proximo = ultimo + 1;
+
+    // Índice do perfil até o snapshot do próximo concurso.
+    let desatualizado = |ultimo_indice| SpiderError::IndiceDesatualizado {
+        loteria: cfg.slug.to_string(),
+        perfil: perfil.nome.clone(),
+        ultimo_indice,
+        esperado: proximo,
+    };
+    if !db::tabela_existe(conn, "indice")? {
+        return Err(desatualizado(None));
+    }
+    let indice = db::ler_indice(conn, &perfil.nome)?;
+    let ultimo_indice = indice.last().map(|l| l.concurso);
+    if ultimo_indice != Some(proximo) {
+        return Err(desatualizado(ultimo_indice));
+    }
+
+    let observacoes = juntar_indice_e_features(cfg, &perfil.nome, &indice, &features)?;
+
+    // O índice gravado tem de ser exatamente o que o `sync indice` gravaria
+    // hoje com estas features. Sem isso, um resultado antigo corrigido seguido
+    // de `sync features` (que regenera tudo) deixa o índice velho terminando
+    // no último + 1, e a avaliação juntaria posições de features antigas com
+    // o `saiu` novo. Mesma função e mesma entrada do `sync indice`: o cálculo
+    // é determinístico, então a comparação é exata (`total` bit a bit).
+    let recalculado =
+        motor::calcular_indice(&features, perfil.janela, perfil.normalizacao, &perfil.pesos)?;
+    conferir_indice_recalculado(cfg, &perfil.nome, &indice, &recalculado)?;
+    drop(recalculado);
+
+    Ok(ObservacoesLidas {
+        primeiro_indice: observacoes.first().map_or(proximo, |o| o.concurso),
+        observacoes,
+        ultimo,
+    })
+}
+
+/// Junta índice e features, ambos ordenados por (concurso, dezena): têm de
+/// ter exatamente as mesmas chaves (as features já foram conferidas como a
+/// série completa `1 … último + 1`, então o índice também cobre todos os
+/// concursos, sem buraco). A posição vem só do índice, o `saiu` só das
+/// features.
+fn juntar_indice_e_features(
+    cfg: &LoteriaConfig,
+    perfil: &str,
+    indice: &[IndiceDezena],
+    features: &[FeaturesDezena],
+) -> Result<Vec<Observacao>> {
+    let incoerente = |detalhe: String| SpiderError::IndiceIncoerente {
+        loteria: cfg.slug.to_string(),
+        perfil: perfil.to_string(),
+        detalhe,
+    };
+    if indice.len() != features.len() {
+        let concursos = |chaves: &mut dyn Iterator<Item = u32>| {
+            let mut v: Vec<u32> = chaves.collect();
+            v.dedup();
+            v.len()
+        };
+        return Err(incoerente(format!(
+            "{} linha(s) em {} concurso(s) no índice e {} linha(s) em {} concurso(s) nas features da janela {}",
+            indice.len(),
+            concursos(&mut indice.iter().map(|l| l.concurso)),
+            features.len(),
+            concursos(&mut features.iter().map(|f| f.concurso)),
+            features.first().map_or(0, |f| f.janela)
+        )));
+    }
+    indice
+        .iter()
+        .zip(features)
+        .map(|(i, f)| {
+            if (i.concurso, i.dezena) != (f.concurso, f.dezena) {
+                return Err(incoerente(format!(
+                    "a linha (concurso {}, dezena {}) do índice não tem par nas features (no mesmo ponto delas está concurso {}, dezena {})",
+                    i.concurso, i.dezena, f.concurso, f.dezena
+                )));
+            }
+            Ok(Observacao {
+                concurso: i.concurso,
+                dezena: i.dezena,
+                posicao: i.posicao,
+                saiu: f.saiu,
+            })
+        })
+        .collect()
+}
+
+/// Confere que o índice `gravado` é idêntico ao `recalculado` com as features
+/// atuais (ambos ordenados por (concurso, dezena)): mesmas chaves, `total`
+/// igual bit a bit, mesma `posicao` e mesma `variacao_posicao`. Divergência
+/// é [`SpiderError::IndiceIncoerente`], com quantas linhas diferem e a
+/// primeira delas.
+fn conferir_indice_recalculado(
+    cfg: &LoteriaConfig,
+    perfil: &str,
+    gravado: &[IndiceDezena],
+    recalculado: &[IndiceDezena],
+) -> Result<()> {
+    let incoerente = |detalhe: String| SpiderError::IndiceIncoerente {
+        loteria: cfg.slug.to_string(),
+        perfil: perfil.to_string(),
+        detalhe,
+    };
+    if gravado.len() != recalculado.len() {
+        return Err(incoerente(format!(
+            "{} linha(s) no índice gravado e {} no índice recalculado com as features atuais",
+            gravado.len(),
+            recalculado.len()
+        )));
+    }
+    let igual = |g: &IndiceDezena, r: &IndiceDezena| {
+        (g.concurso, g.dezena) == (r.concurso, r.dezena)
+            && g.total.to_bits() == r.total.to_bits()
+            && g.posicao == r.posicao
+            && g.variacao_posicao == r.variacao_posicao
+    };
+    let mut divergentes = gravado
+        .iter()
+        .zip(recalculado)
+        .filter(|(g, r)| !igual(g, r));
+    let Some((g, r)) = divergentes.next() else {
+        return Ok(());
+    };
+    let quantas = 1 + divergentes.count();
+    let variacao = |v: Option<i64>| v.map_or_else(|| "NULL".to_string(), |v| v.to_string());
+    Err(incoerente(format!(
+        "{quantas} linha(s) diferem do índice recalculado com as features atuais (as features \
+         mudaram depois do último `sync indice`, por exemplo um resultado antigo corrigido e \
+         `sync features` regenerado); a primeira é (concurso {}, dezena {}): gravado total \
+         {:?}, posição {}, variação {}; recalculado (concurso {}, dezena {}) total {:?}, \
+         posição {}, variação {}",
+        g.concurso,
+        g.dezena,
+        g.total,
+        g.posicao,
+        variacao(g.variacao_posicao),
+        r.concurso,
+        r.dezena,
+        r.total,
+        r.posicao,
+        variacao(r.variacao_posicao)
+    )))
+}
+
+/// `sync aleatoriedade <loteria>`: qui-quadrado de frequência e runs test
+/// por dezena com Holm (1c.4) sobre o histórico **inteiro** de `resultados`
+/// (inclusive o trancado: aqui se testa o sorteio, não um perfil). Não
+/// depende de perfil nem de features e não grava nada.
+///
+/// Banco sem resultados é [`SpiderError::SemResultados`]; buraco ou
+/// resultado inválido é [`SpiderError::AleatoriedadeEntradaInvalida`].
+pub fn testar_aleatoriedade_do_banco(
+    conn: &Connection,
+    cfg: &LoteriaConfig,
+) -> Result<ResumoAleatoriedade> {
+    let resultados = db::listar_crescente(conn, cfg.slug)?;
+    if resultados.is_empty() {
+        return Err(SpiderError::SemResultados(cfg.slug.to_string()));
+    }
+    avaliacao::testar_aleatoriedade(cfg, &resultados)
 }
 
 /// O que fazer com o concurso lido na página pelo `sync atualizar`, comparado

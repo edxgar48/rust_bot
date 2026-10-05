@@ -138,6 +138,24 @@ pub fn iniciar_escrita(conn: &mut Connection) -> Result<Transaction<'_>> {
     Ok(conn.transaction_with_behavior(TransactionBehavior::Immediate)?)
 }
 
+/// Começa uma transação só para ler (`BEGIN DEFERRED`): as consultas feitas
+/// dentro dela veem o banco num único estado, mesmo que outro processo grave
+/// no meio. Quem chama não faz `commit`: ao sair, ela é desfeita.
+pub fn iniciar_leitura(conn: &mut Connection) -> Result<Transaction<'_>> {
+    Ok(conn.transaction_with_behavior(TransactionBehavior::Deferred)?)
+}
+
+/// Abre um banco existente **só para leitura** (comandos que não gravam
+/// nada, como `sync avaliar` e `sync aleatoriedade`): qualquer escrita
+/// falharia no SQLite. Ao contrário de [`abrir`], não cria o arquivo nem a
+/// tabela `resultados`.
+pub fn abrir_somente_leitura(caminho: &Path) -> Result<Connection> {
+    Ok(Connection::open_with_flags(
+        caminho,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?)
+}
+
 /// Cria `features_dezena` e `motor_estado` se ainda não existem. Idempotente.
 ///
 /// `features_dezena`: uma linha por (concurso, dezena, janela), colunas do

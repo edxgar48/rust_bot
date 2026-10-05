@@ -35,7 +35,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1c.2 Top-k vs hipergeométrica
 - [x] 1c.3 Walk-forward + conjunto final trancado
 - [x] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
-- [ ] 1c.5 Comando `sync avaliar`
+- [x] 1c.5 Comando `sync avaliar`
 
 ## Fase 1.5 — Ponte com Python · `cientista-ml`
 
@@ -802,3 +802,95 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   u64 (só vale até n ≈ 2^32; inalcançável na prática); `p_valor_runs_exato` pública aloca O(min(n1,n0))
   (documentar ou tornar `pub(crate)`); alinhar o número da paridade da regra antiga (26,7% no plano,
   26,6% no teste, ≈ 27% na doc do módulo).
+- 2026-10-05 — 1c.5 não iniciada (continua [ ]): o plano diz só "Comando `sync avaliar <loteria> --perfil X`"
+  e deixa para a 1c.5 pontos que mudam esquema, valores e saída. Perguntas devolvidas ao usuário, com
+  sugestões: (1) **teste robusto do veredito**: bootstrap circular por blocos (Politis–Romano) sobre as
+  diferenças por concurso perfil − acaso; bloco b = ⌈T^(1/3)⌉ (busca: Lotofácil 16, Mega-Sena 15, Quina 19)
+  — ou fixo (ex.: 50), já que a calibração acumulada tem memória longa; B = 10 000 reamostragens; PRNG
+  próprio (SplitMix64/xoshiro256**, sem crate nova) com semente fixa no código (ex.: 20261005), para a saída
+  ser determinística; p-valor unilateral (fração das médias reamostradas e centradas ≥ média observada) e IC
+  95% percentil; alternativa: teste de permutação recalculando a calibração (mais fiel ao nulo, mais caro);
+  (2) **qual métrica decide**: veredito "supera o acaso" pelo log loss (bootstrap, α = 5%); Brier com o
+  mesmo bootstrap, só informativo; top-k com o p-valor exato da 1c.2 (já robusto à correlação serial);
+  (3) **trecho do veredito**: na busca, o trecho inteiro (2º concurso do índice até o corte = união das 5
+  dobras), com as dobras só descritivas (estabilidade); no trancado, o trecho do trancado;
+  (4) **trancado**: flag `--trancado` (só `avaliar_trancado`; padrão = walk-forward); "uma única vez"
+  pela tabela `avaliacoes_trancado(perfil, hash_toml, ate_concurso, avaliado_em)` — **muda o esquema e
+  não é regenerável** (é um registro, foge da regra das tabelas derivadas; alternativa: arquivo de
+  registro por loteria fora do banco); política sugerida: mesmo `(perfil, hash_toml)` já avaliado →
+  recusa sem `--repetir`, que avalia e mostra as avaliações anteriores; perfis diferentes no trancado →
+  p-valores também com Bonferroni pelo nº de `(perfil, hash_toml)` distintos registrados na loteria;
+  (5) **correção por vários perfis/k na busca**: o comando avalia um perfil por vez e não sabe quantos
+  foram testados; sugestão: `--k` opcional (padrão K), aviso fixo na saída sobre a condição de validade do
+  p-valor e opção `--testados N` para Bonferroni (p·N, limitado a 1) junto do original;
+  (6) **aleatoriedade**: não depende de perfil; sugestão: comando à parte `sync aleatoriedade <loteria|todas>`
+  (é comando novo, fora do plano — precisa de aprovação) ou, sem mudar o plano, flag `--aleatoriedade` no
+  `sync avaliar`; (7) **saída**: só texto no terminal (cabeçalho com loteria/perfil/hash/trecho/corte,
+  tabela por dobra com log loss, Brier e top-k perfil × acaso, diferença, EP, IC normal, p exato, e linha
+  final do veredito com o bootstrap); nada gravado além do registro do trancado; sem `--json` por ora;
+  (8) **pré-condições** (como no `sync indice`): uma loteria e um perfil por execução, sem `todas`; recusa
+  se o perfil não estiver em `perfis`, se o hash do `.toml` em disco diferir do gravado, se o índice não
+  cobrir até o último concurso de `resultados` + 1, se as features estiverem desatualizadas ou se faltar
+  concurso (buraco = erro); observações de `indice` + `features_dezena` (janela do perfil) desde o 1º
+  concurso do índice; o SQL fica em `db.rs`, o fluxo em `orquestracao`, a CLI só imprime.
+  Já decididos e a aplicar: `avaliar`, `avaliar_topk`, variantes `_entre` e `p_valor_runs_exato` passam a
+  `pub(crate)`; a CLI chama só `walk_forward` e `avaliar_trancado`; nunca `u32::MAX` como corte.
+- 2026-10-05 — 1c.5, decisões do usuário: aceitas as 8 sugestões com 3 ajustes, registradas no
+  PLANEJAMENTO.md (1c): bloco fixo de 50 no bootstrap (em vez de ⌈T^(1/3)⌉); registro do trancado em
+  `registros/trancado_<loteria>.json` versionado no git (em vez de tabela no banco); testes de
+  aleatoriedade num comando à parte, `sync aleatoriedade <loteria|todas>`, que entra junto com a 1c.5.
+  1c.5 desbloqueada.
+- 2026-10-05 — 1c.5 concluída (sem commit). Comandos `sync avaliar <loteria> --perfil X [--k K]
+  [--testados N] [--trancado [--repetir]]` e `sync aleatoriedade <loteria|todas>`. Novos:
+  `src/avaliacao/bootstrap.rs` (puro: SplitMix64 próprio, sorteio sem viés, bootstrap circular com blocos
+  fixos de 50, B = 10 000, semente 20261005, p unilateral (1+#{m*−m ≤ m})/(B+1), IC 95% percentil sem
+  interpolação), `src/registros.rs` (`trancado_<loteria>.json` determinístico, LF, gravação atômica,
+  `deny_unknown_fields`; pasta padrão `registros/` **ao lado do banco usado**), `tests/avaliar.rs` (85
+  testes). Alterados: `src/avaliacao/{aleatoriedade, metricas, mod, topk, walk_forward}.rs` (`veredito_da_busca`,
+  `veredito_do_trancado`, `bonferroni`; `avaliar`/`avaliar_topk`/`_entre` viraram `#[cfg(test)] pub(crate)`,
+  `p_valor_runs_exato` `pub(crate)`; `faixa_do_trancado` sem `u32::MAX`), `src/orquestracao.rs`
+  (`avaliar_perfil`/`avaliar_perfil_e_formatar`, `testar_aleatoriedade_do_banco`, `ler_features_em_dia`
+  extraída de `sincronizar_indice`), `src/db.rs` (`iniciar_leitura`, `abrir_somente_leitura`; banco só
+  leitura), `src/error.rs`, `src/bin/sync.rs`, `src/lib.rs`, `README.md`, `.gitattributes`
+  (`registros/*.json text eol=lf`). A execução anterior caiu por limite de API (HTTP 429) e foi retomada
+  sobre o trabalho parcial.
+  Rodadas: (1) revisão aprovada com ressalvas — MÉDIA pasta de registros relativa ao diretório de trabalho
+  (corrigida: ancorada no banco, `--registros` escondido, avisos com caminho absoluto); BAIXAS corrigidas:
+  relatório montado antes de gravar o uso e impresso sem panic (saída fechada no trancado → relatório na
+  saída de erro, código 1), recarga do registro antes de salvar (até 3 tentativas, senão
+  `RegistroTrancadoConcorrente`), campo duplicado removido. (2) auditoria de vazamento, duas MÉDIAS
+  corrigidas: índice gravado agora é recalculado em memória (`motor::calcular_indice`) e conferido bit a bit
+  com o gravado (`IndiceIncoerente` se divergir; fecha "resultado antigo corrigido + `sync features` sem
+  `sync indice`"; custo +0,02 a +0,2 s); com `--trancado` o cabeçalho sempre diz qual registro foi lido e
+  quantos usos tinha (inclusive "0 (arquivo inexistente…)"). 2ª revisão: **aprovada com ressalvas, só
+  BAIXA**; verificador-vazamento: **sem vazamento**.
+  Gate: fmt ok, clippy ok, 645 testes (409 lib + 28 sync + 85 avaliar + 56 features + 57 indice + 10 parser,
+  4 ignorados), `validar todas` ok; sha256 dos bancos da raiz inalterado; sem `registros/` na raiz; o
+  trancado não foi rodado em banco real nem cópia.
+  **Cópias, padrao_v1, walk-forward:** log loss perfil − acaso (bootstrap) Lotofácil +3,51e-4 (p 0,9999),
+  Mega-Sena +4,24e-4 (p 1,0), Quina +2,53e-4 (p 1,0) → **não supera o acaso** nas três; top-k p exato
+  Lotofácil 0,0014 (30950 vs 30735), Mega-Sena 0,545, Quina 0,0104 (2105 vs 2006) — coincide com a não
+  uniformidade da 1c.4 (backlog), não é sinal do perfil. Tempos 1,1 s / 0,65 s / 2,2 s. `sync
+  aleatoriedade` igual à 1c.4 (χ² rejeita nas três; runs rejeita só Quina 25 após Holm).
+  **Desvios a aprovar pelo usuário:** `--k` e `--testados` recusados com `--trancado` (k fixo = K; o
+  registro não guarda k); bootstrap exige T ≥ 100 (2 blocos), senão sai sem veredito e sem erro; `--repetir`
+  sem uso anterior é aceito; Bonferroni do trancado conta pares (perfil, hash) distintos incluindo o atual,
+  também no top-k; `--repetir` não aumenta o Bonferroni; avisos de pasta na saída de erro; registro ao lado
+  do banco (o plano diz `registros/` sem fixar a âncora); `PLANEJAMENTO.md:314` diz "só a CLI chama
+  `walk_forward`/`avaliar_trancado`", mas quem chama é a orquestração (ajustar o texto).
+  **Pendências BAIXA:** `avaliacao::avaliar_trancado`/`veredito_do_trancado` seguem `pub` (sem uso de
+  produção a primeira; sugestão: `pub(crate)`/`#[cfg(test)]`, para a 1.5 não avaliar o trancado sem
+  registro); `--registros` escondido e `--db` em outra pasta ou apagar o arquivo contornam o uso único (só
+  aviso; opção mais forte: recusar `--trancado` fora da pasta padrão); janela de corrida entre a última
+  recarga e o rename (sem trava; README pede não rodar em paralelo); doc de `avaliar` em sync.rs diz que
+  toda a saída é determinística (no trancado variam data e caminho); `saiu` vem de `features_dezena` sem
+  recomparar com `resultados`; checagem de chaves duplicada entre `juntar_indice_e_features` e
+  `conferir_indice_recalculado`; segunda cópia do índice em memória; erro do trancado depois de ler o
+  registro não mostra a contagem de usos; a busca lê e valida também as linhas do trancado (só integridade).
+- 2026-10-05 — 1c.5, decisões do usuário: aceitos os itens 1–5 (k fixo no trancado, mínimo de 100
+  concursos no bootstrap, Bonferroni do trancado, `--repetir` sem uso anterior, `registros/` ao lado do
+  banco), registrados no PLANEJAMENTO.md; frase "só a CLI chama" corrigida (quem chama é a
+  orquestração); `avaliar_trancado` virou `#[cfg(test)] pub(crate)` (sem uso em produção) e
+  `veredito_do_trancado` `pub(crate)`, ambos fora do reexport público. Item 8 (registro contornável
+  por `--db`/`--registros`/apagar o arquivo) segue só com aviso, sem decisão nova. Gate: fmt, clippy e
+  645 testes (409 lib + 28 sync + 85 avaliar + 56 features + 57 indice + 10 parser, 4 ignorados).

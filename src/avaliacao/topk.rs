@@ -449,7 +449,7 @@ pub fn acertos_por_concurso(
 /// lido, a série é validada desde o primeiro concurso da entrada e só entram
 /// os concursos sorteados em `inicio..=fim`, nunca o primeiro da entrada.
 /// `inicio > fim` dá série vazia.
-pub fn acertos_por_concurso_entre(
+pub(crate) fn acertos_por_concurso_entre(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
@@ -535,7 +535,9 @@ pub fn resumir_topk(cfg: &LoteriaConfig, k: u32, serie: &[AcertosConcurso]) -> R
 /// [`acertos_por_concurso`] seguido de [`resumir_topk`]. Sem nenhum concurso
 /// sorteado entre o segundo da entrada e `corte` é
 /// [`SpiderError::AvaliacaoSemConcursos`].
-pub fn avaliar_topk(
+// Só os testes chamam: em produção o trecho vem do config (`walk_forward`).
+#[cfg(test)]
+pub(crate) fn avaliar_topk(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
@@ -553,7 +555,9 @@ pub fn avaliar_topk(
 /// [`acertos_por_concurso_entre`] seguido de [`resumir_topk`]: avalia
 /// `inicio..=fim`. Sem nenhum concurso sorteado no trecho (descontado o
 /// primeiro da entrada) é [`SpiderError::AvaliacaoSemConcursos`].
-pub fn avaliar_topk_entre(
+// Só os testes chamam: em produção o trecho vem do config (`walk_forward`).
+#[cfg(test)]
+pub(crate) fn avaliar_topk_entre(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
