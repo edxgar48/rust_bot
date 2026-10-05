@@ -158,6 +158,14 @@ pub enum SpiderError {
     #[error("avaliação: nada para avaliar: {0}")]
     AvaliacaoSemConcursos(String),
 
+    /// Os testes de aleatoriedade (1c.4) leem `resultados` direto, sem passar
+    /// por features nem índice: concurso repetido, buraco na numeração ou
+    /// concurso que não passa nas regras de `validacao` (outra loteria,
+    /// quantidade de dezenas, faixa, repetidas, data) é problema do histórico
+    /// gravado, não da montagem da avaliação.
+    #[error("aleatoriedade: resultados inválidos para os testes: {0} — confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`; nada foi testado")]
+    AleatoriedadeEntradaInvalida(String),
+
     /// Cópia de segurança do banco antes de um `sync atualizar` com salto.
     #[error("backup do banco em `{}`: {motivo}", caminho.display())]
     Backup { caminho: PathBuf, motivo: String },

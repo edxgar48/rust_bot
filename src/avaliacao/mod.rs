@@ -20,12 +20,22 @@
 //! corte ou limites recebidos como argumento (`avaliar`, `avaliar_entre`…)
 //! são blocos de construção: em produção, o corte vem sempre do config,
 //! nunca `u32::MAX`.
+//!
+//! Testes de aleatoriedade do histórico (1c.4, [`testar_aleatoriedade`]):
+//! qui-quadrado de frequência e runs test por dezena com Holm, sobre
+//! `resultados` inteiro (não usam índice nem perfil).
 
+mod aleatoriedade;
 mod calibracao;
 mod metricas;
 mod topk;
 mod walk_forward;
 
+pub use aleatoriedade::{
+    holm, p_valor_normal_bilateral, p_valor_qui_quadrado, qui_quadrado_frequencia,
+    testar_aleatoriedade, teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena,
+    TesteRuns, ALFA,
+};
 pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
 pub use metricas::{
     avaliar, avaliar_entre, brier, log_loss, metricas_por_concurso, metricas_por_concurso_entre,

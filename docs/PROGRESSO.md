@@ -34,7 +34,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1c.1 Baseline do acaso + log loss / Brier
 - [x] 1c.2 Top-k vs hipergeométrica
 - [x] 1c.3 Walk-forward + conjunto final trancado
-- [ ] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
+- [x] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
 - [ ] 1c.5 Comando `sync avaliar`
 
 ## Fase 1.5 — Ponte com Python · `cientista-ml`
@@ -706,3 +706,46 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   (registrado no PLANEJAMENTO.md); 1c.4 desbloqueada. Para a 1c.5: as funções de avaliação que aceitam
   corte arbitrário (`avaliar`, `avaliar_topk`, variantes `_entre`) passam a `pub(crate)`, e a CLI chama
   só `walk_forward` e `avaliar_trancado`.
+- 2026-10-05 — 1c.4: interpretações do orquestrador para pontos que o plano não fixa (**a confirmar pelo
+  usuário**, depois registrar no PLANEJAMENTO.md): (1) só funções puras em `src/avaliacao/`, CLI na 1c.5;
+  (2) entrada `cfg` + `&[Resultado]` (histórico de `resultados`, trancado incluído; série consecutiva, não
+  precisa começar no 1); (3) qui-quadrado de frequência **corrigido para sorteio sem reposição**,
+  X² = (N−1)/(N−K)·Σ(O−E)²/E com N−1 gl (o Pearson puro tem média N−K, não N−1), p-valor pela gama
+  incompleta regularizada; (4) runs test de Wald–Wolfowitz por dezena, aproximação normal, sem correção de
+  continuidade, bilateral; dezena com n1 = 0 ou n0 = 0 fica sem p-valor e fora da família do Holm;
+  (5) Holm step-down público (reutilizável na 1c.5), `ALFA = 0.05`, empate pela menor dezena.
+- 2026-10-05 — 1c.4 concluída. `src/avaliacao/aleatoriedade.rs` (novo, puro, sem crate nova):
+  `testar_aleatoriedade(cfg, &[Resultado]) -> ResumoAleatoriedade`, `qui_quadrado_frequencia`,
+  `teste_de_runs`, `holm`, `p_valor_qui_quadrado`, `p_valor_normal_bilateral`, `ALFA`; gama incompleta
+  (série + fração contínua de Lentz) com ln Γ exato para a inteiro/semi-inteiro. Usa
+  `validacao::validar_resultado` por concurso; repetido/buraco checados no próprio laço (`validar_sequencia`
+  exige começar no 1). `src/error.rs`: `AleatoriedadeEntradaInvalida` (erros do histórico, orienta para
+  `sync validar`/`buracos`/`inserir`); config inválida e argumentos das funções numéricas seguem em
+  `AvaliacaoEntradaInvalida`, série vazia em `AvaliacaoSemConcursos`. Testes em
+  `src/avaliacao/aleatoriedade/tests.rs` (30): p-valores de χ² e normal contra referências em `decimal` de
+  1200 dígitos (erro ≤ 6e-14, caudas até 1e-299), Holm igual ao `p.adjust` do R, contas à mão na loteria
+  MINI, média exata da corrigida = N−1 por enumeração, μ/σ² do runs contra a distribuição exata, erros,
+  determinismo, simulação do nulo (Mega-Sena 400×500, 1,5 s).
+  **Bancos reais (histórico inteiro, só leitura):** qui-quadrado rejeita a uniformidade nas três —
+  Lotofácil X² = 57,27 (24 gl, p = 1,5e-4; desvio concentrado em 1899–3796: dezenas 25, 20, 10 acima, 16 e
+  23 abaixo), Mega-Sena 89,47 (59 gl, p = 6,4e-3), Quina 101,92 (79 gl, p = 0,042). Runs após Holm: só a
+  Quina 25 (z = −3,94, p Holm 0,0066; p exato ≈ 3,0e-4 confirma). Pela regra do plano, conferir primeiro os
+  dados (ex.: segunda metade da Lotofácil contra fonte independente).
+  Revisão: aprovada com ressalvas, sem ALTA; corrigidos numa rodada a variante de erro própria (MÉDIA), o
+  reuso de `validar_resultado` e o texto dos arredondamentos (BAIXA). Efeito colateral: concurso 0 e data
+  inválida agora reprovam, como no motor. verificador-vazamento (via revisor): sem vazamento; a 1c.5 não pode
+  usar este resultado para escolher perfil/pesos, só como diagnóstico. Gate: fmt ok, clippy ok, 524 testes
+  (373 lib + 28 sync + 56 features + 57 indice + 10 parser, 4 ignorados), `validar todas` ok.
+  **Pendente de decisão do usuário (MÉDIA):** a normal do runs subestima a cauda esquerda com n1 pequeno —
+  chance de alarme falso após o Holm medida em ~5,7% Lotofácil, 6,0% Mega-Sena, 7,0% Quina (≈9–11% com
+  Mega-Sena T = 500), acima do α = 5% por família do plano; o teste de simulação aceita até 10%. Proposta:
+  p-valor exato pela distribuição condicional de R (em log, barato), decidindo a definição bilateral
+  (2·min das caudas ou soma das probabilidades ≤ a observada), e apertar o teto do teste para ~7%.
+- 2026-10-05 — 1c.4, decisão do usuário: o runs test passa a usar **p-valor exato** (a aproximação normal
+  dá alarme falso acima dos 5% depois do Holm: ~7% na Quina, ~6% na Mega-Sena). Commit da 1c.4 feito com a
+  aproximação normal; a troca para o exato é um ajuste à parte, antes da 1c.5, e depende de escolher a
+  regra do teste bilateral (dobro da menor cauda ou soma das probabilidades até a observada). Ainda sem
+  confirmação do usuário: as 3 escolhas do implementador (qui-quadrado corrigido para sorteio sem
+  reposição; dezena que nunca/sempre saiu fora do Holm; histórico inclui o trancado). Resultado nos bancos
+  reais a investigar: uniformidade rejeitada na Lotofácil (p 1,5e-4, desvio concentrado em 1899–3796),
+  Mega-Sena (p 6,4e-3) e Quina (p 0,042); runs rejeita a dezena 25 da Quina.
