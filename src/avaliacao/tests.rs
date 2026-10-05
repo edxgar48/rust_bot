@@ -20,6 +20,8 @@ pub(super) const MINI: LoteriaConfig = LoteriaConfig {
     coluna_concurso: 0,
     coluna_data: 1,
     primeira_coluna_dezena: 2,
+    // Corte fictício da busca: os testes do walk-forward usam séries maiores.
+    ultimo_concurso_busca: 20,
 };
 
 pub(super) fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {
@@ -393,7 +395,7 @@ fn acaso_por_concurso_e_a_entropia_de_k_sobre_n() {
 }
 
 /// Médias à mão dos concursos 2 e 3 da `serie_mini` (perfil; acaso = 1/2).
-fn metricas_mini_a_mao() -> [(f64, f64); 2] {
+pub(super) fn metricas_mini_a_mao() -> [(f64, f64); 2] {
     // Concurso 2: p = 204/404 (dezenas 1 e 2), 200/404 (3 e 4);
     // saíram 2 e 3. Pares: 1 → 1 − 204/404 = 200/404; 2 → 204/404;
     // 3 → 200/404; 4 → 1 − 200/404 = 204/404.

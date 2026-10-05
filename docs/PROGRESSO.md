@@ -33,7 +33,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1c.1 Baseline do acaso + log loss / Brier
 - [x] 1c.2 Top-k vs hipergeométrica
-- [ ] 1c.3 Walk-forward + conjunto final trancado
+- [x] 1c.3 Walk-forward + conjunto final trancado
 - [ ] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
 - [ ] 1c.5 Comando `sync avaliar`
 
@@ -69,6 +69,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Definição do walk-forward em Rust, dobras e uso do trancado — bloqueia 1c.3 → resolvida (ver notas de 2026-10-05)
+- [x] Nível de significância e correção por múltiplas dezenas na 1c.4 → α = 5% por família, Holm (ver nota de 2026-10-05)
 - [x] Conversão do índice em probabilidade e regras do log loss / Brier — bloqueia 1c.1 → resolvidas (ver notas de 2026-10-05)
 - [x] Formato de `perfis.criado_em` e pontos ambíguos do `sync indice` — bloqueia 1b.3 → resolvidos (ver notas de 2026-10-05)
 - [x] Pontos ambíguos da normalização, posição e variação de posição — bloqueia 1b.2 → resolvidos (ver notas de 2026-10-04)
@@ -637,3 +639,70 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - 2026-10-05 — 1c.2, decisão do usuário: registrada no PLANEJAMENTO.md (1c, "Ranking") a condição de
   validade do p-valor (perfil e k escolhidos sem ver o trecho avaliado; senão trancado ou Bonferroni/Holm,
   na 1c.5). Custo do p-valor em laço fica para decidir na 1c.3.
+- 2026-10-05 — 1c.3 não iniciada: o plano diz só "walk-forward (treina até t, testa em t+1…)" e
+  "trancado usado uma única vez", sem definir pontos que mudam o que é calculado. Um perfil `.toml` não
+  é treinado e a calibração da 1c.1 já é acumulada e ponto no tempo, então "walk-forward" em Rust não
+  tem sentido único. Perguntas devolvidas ao usuário, com sugestões: (1) **corte no config**: campo
+  `ultimo_concurso_busca` no `LoteriaConfig` (3416/2759/6421) + função que diz a parte de um concurso
+  (busca/trancado), usada também pelo dataset da 1.5.1; (2) **o que é o walk-forward em Rust**: avaliação
+  em dobras consecutivas do trecho de busca (origem crescente, nunca embaralha), métricas da 1c.1 e
+  top-k da 1c.2 por dobra contra o acaso, para ver estabilidade; a mesma definição de dobras serve à
+  busca de pesos da 1.5.3 (que treina até a dobra e testa nela); (3) **dobras**: 5 dobras de tamanho
+  igual (o resto na última) sobre o trecho do 2º concurso do índice até o corte; (4) **calibração
+  separada da avaliação**: novo limite inferior de avaliação — a calibração sempre começa no 1º
+  concurso do índice e só o trecho da dobra entra nas métricas (resolve a pendência da 1c.1);
+  (5) **trancado**: avaliação só por escolha explícita (`Trecho::Busca` padrão / `Trecho::Trancado`),
+  do corte + 1 até o último sorteado, com calibração usando todo o passado; o "uma única vez" fica
+  registrado na 1c.5 (proposta: tabela derivada `avaliacoes_trancado(perfil, hash_toml, ate_concurso,
+  avaliado_em)` e aviso/recusa se o perfil já foi avaliado — muda o esquema, decidir lá);
+  (6) **custo do p-valor em laço**: calcular por dobra sem poda extra (T menor por dobra, custo total
+  menor que o do trecho inteiro); podar por cima só se medir > 2 s no total; (7) **escopo**: só funções
+  puras em `src/avaliacao/` + campo no `config.rs`; leitura do banco, CLI e teste robusto (bootstrap
+  por blocos) na 1c.5.
+- 2026-10-05 — 1c.3, decisões do usuário: aceitas as 7 sugestões, registradas no PLANEJAMENTO.md (1c,
+  walk-forward). 1c.3 desbloqueada. 1c.4, decisões parciais: runs test por dezena (sequência saiu/não
+  saiu), histórico inteiro; nível de significância e correção ainda em aberto (usuário pediu explicação).
+- 2026-10-05 — 1c.3 concluída. `src/config.rs`: campo `ultimo_concurso_busca` no `LoteriaConfig` (3416 /
+  2759 / 6421), enum `Trecho { Busca (padrão), Trancado }` com `nome()` ("busca"/"trancado") e
+  `LoteriaConfig::trecho_do_concurso(concurso)` (≤ corte → Busca), para o dataset da 1.5.1 reutilizar.
+  `src/avaliacao/walk_forward.rs` (novo, puro): `QTD_DOBRAS = 5`, `FaixaConcursos { primeiro, ultimo }`,
+  `dividir_em_dobras(faixa, qtd)` (⌊T/qtd⌋ por dobra, sobra na última; só depende dos números dos
+  concursos), `faixa_da_busca`/`dobras_da_busca` (do 2º concurso da entrada até `cfg.ultimo_concurso_busca`),
+  `walk_forward(cfg, obs, k) -> WalkForward { corte, dobras: Vec<AvaliacaoFaixa> }` (log loss/Brier da 1c.1 e
+  top-k com p-valor da 1c.2 por dobra) e `avaliar_trancado(cfg, obs, k) -> AvaliacaoFaixa` (corte+1 até o
+  último sorteado, calibração com todo o passado recebido). Nenhuma das duas recebe corte: o modo busca só
+  usa o corte do config. Variantes `_entre(…, inicio, fim)` em `metricas.rs`/`topk.rs`: o limite inferior só
+  filtra os concursos avaliados; a calibração sempre começa no 1º concurso da entrada (resolve a pendência da
+  1c.1). `avaliar`/`avaliar_topk` inalteradas (= `_entre` com início 0). `src/error.rs`: texto fixo de
+  `AvaliacaoSemConcursos` generalizado ("avaliação: nada para avaliar: {0}") com detalhe específico em cada
+  chamada. Dobras reais: Lotofácil 683×5; Mega-Sena 551×4 + 554 (2..552, …, 2206..2759); Quina 1284×5.
+  Custo medido (release, séries do tamanho real, teste `#[ignore]`): walk-forward completo 0,54 s nas três
+  loterias (Lotofácil 164 ms, Mega-Sena 82 ms, Quina 290 ms) — abaixo de 2 s, sem otimização.
+  Decisões do implementador (aceitas pela revisão): `Trecho` em config.rs; dobras a partir da faixa, não da
+  lista; menos de 5 concursos na busca → `AvaliacaoSemConcursos`, `qtd = 0` → `AvaliacaoEntradaInvalida`;
+  trancado vazio → `AvaliacaoSemConcursos`; walk-forward e trancado como funções separadas (a 1c.5 mapeia a
+  opção do trancado para `avaliar_trancado`); `k` é parâmetro; se a entrada começar acima do corte, o
+  trancado calibra só com o que recebeu e o 1º da entrada fica de fora (documentado: a 1c.5 deve passar a
+  série desde o 1º concurso do índice).
+  Testes: `src/avaliacao/walk_forward/tests.rs` (37 + 1 ignorado de medição: dobras e sobra, limites reais,
+  corte padrão do config nas 3 loterias, nada acima do corte lido, calibração não recomeça na dobra — conta à
+  mão e dobra = trecho da série inteira bit a bit —, ponto no tempo por dobra, trancado, erros, determinismo)
+  e 2 em `config.rs`. Revisão: 1ª rodada aprovada com ressalvas (3 BAIXA: texto do erro, derives sem uso em
+  `Trecho`, doc de `avaliar_trancado`), corrigidas numa rodada; 2ª rodada aprovada com ressalvas, só BAIXA.
+  verificador-vazamento: **sem vazamento**. Gate: fmt ok, clippy ok, 494 testes (343 lib + 28 sync +
+  56 features + 57 indice + 10 parser, 4 ignorados), `validar todas` ok.
+  **Para a 1c.5:** a CLI/orquestração deve chamar só `walk_forward` e `avaliar_trancado` (as `_entre`,
+  `avaliar` e `avaliar_topk` são públicas e aceitam `u32::MAX`; alternativa: reduzi-las a `pub(crate)`);
+  montar as observações a partir de `indice` + `features_dezena` desde o 1º concurso do índice (avisar ou
+  recusar se a entrada começar depois); ajustar o texto de `AvaliacaoSemConcursos` se precisar.
+  **Para a 1.5.1:** usar `trecho_do_concurso` (a avaliação repete a comparação `<= corte` em `ate_o_corte`).
+  **Pendências BAIXA (revisão/verificador):** comentário do módulo `walk_forward.rs:19-21` diz que cada
+  dobra não lê nada acima do seu fim "nem para validar", mas a divisão em dobras valida a busca inteira até
+  o corte (dado inválido na dobra 5 derruba a dobra 1; não é vazamento); testes sugeridos e não feitos:
+  trancado com as configs reais (3417/2760/6422), walk-forward completo com config real em Lotofácil e
+  Quina, dobras iguais com `saiu`/posições diferentes, dado inválido em dobra posterior.
+- 2026-10-05 — 1c.3/1c.4, decisões do usuário: aceitas as recomendações. 1c.4: α = 5% por família, Holm
+  nos testes por dezena, qui-quadrado global sem correção, p-valor original e corrigido por dezena
+  (registrado no PLANEJAMENTO.md); 1c.4 desbloqueada. Para a 1c.5: as funções de avaliação que aceitam
+  corte arbitrário (`avaliar`, `avaliar_topk`, variantes `_entre`) passam a `pub(crate)`, e a CLI chama
+  só `walk_forward` e `avaliar_trancado`.

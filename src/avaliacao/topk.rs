@@ -433,16 +433,33 @@ pub struct ResumoTopK {
 /// corte é lido, nem para validar), valida a série até o corte e avalia do
 /// segundo concurso da entrada até o corte, só os já sorteados. `k` fora de
 /// `1..=N−1` é [`SpiderError::AvaliacaoEntradaInvalida`].
+///
+/// É [`acertos_por_concurso_entre`] sem limite inferior.
 pub fn acertos_por_concurso(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     k: u32,
     corte: u32,
 ) -> Result<Vec<AcertosConcurso>> {
+    acertos_por_concurso_entre(cfg, observacoes, k, 0, corte)
+}
+
+/// Acertos das top-`k` por concurso avaliado em `inicio..=fim`, no mesmo
+/// trecho de [`super::metricas_por_concurso_entre`]: nada acima de `fim` é
+/// lido, a série é validada desde o primeiro concurso da entrada e só entram
+/// os concursos sorteados em `inicio..=fim`, nunca o primeiro da entrada.
+/// `inicio > fim` dá série vazia.
+pub fn acertos_por_concurso_entre(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    k: u32,
+    inicio: u32,
+    fim: u32,
+) -> Result<Vec<AcertosConcurso>> {
     validar_k(cfg, k)?;
-    let linhas = ordenar_e_validar(cfg, &ate_o_corte(observacoes, corte))?;
+    let linhas = ordenar_e_validar(cfg, &ate_o_corte(observacoes, fim))?;
     Ok(
-        concursos_avaliados(&linhas, |o| o.concurso, |o| o.saiu.is_some())
+        concursos_avaliados(&linhas, inicio, |o| o.concurso, |o| o.saiu.is_some())
             .map(|grupo| AcertosConcurso {
                 concurso: grupo[0].concurso,
                 // Só a posição e o `saiu` do próprio concurso.
@@ -527,14 +544,33 @@ pub fn avaliar_topk(
     let serie = acertos_por_concurso(cfg, observacoes, k, corte)?;
     if serie.is_empty() {
         return Err(SpiderError::AvaliacaoSemConcursos(format!(
-            "nenhum concurso sorteado entre o segundo concurso do índice e o corte {corte}"
+            "nenhum concurso sorteado do segundo concurso da entrada até o corte {corte} (o primeiro concurso da entrada recebe o acaso por construção e não é avaliado)"
+        )));
+    }
+    resumir_topk(cfg, k, &serie)
+}
+
+/// [`acertos_por_concurso_entre`] seguido de [`resumir_topk`]: avalia
+/// `inicio..=fim`. Sem nenhum concurso sorteado no trecho (descontado o
+/// primeiro da entrada) é [`SpiderError::AvaliacaoSemConcursos`].
+pub fn avaliar_topk_entre(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    k: u32,
+    inicio: u32,
+    fim: u32,
+) -> Result<ResumoTopK> {
+    let serie = acertos_por_concurso_entre(cfg, observacoes, k, inicio, fim)?;
+    if serie.is_empty() {
+        return Err(SpiderError::AvaliacaoSemConcursos(format!(
+            "nenhum concurso sorteado de {inicio} a {fim} (o primeiro concurso da entrada recebe o acaso por construção e não é avaliado)"
         )));
     }
     resumir_topk(cfg, k, &serie)
 }
 
 /// top-k precisa pegar ao menos uma dezena e deixar ao menos uma de fora.
-fn validar_k(cfg: &LoteriaConfig, k: u32) -> Result<()> {
+pub(super) fn validar_k(cfg: &LoteriaConfig, k: u32) -> Result<()> {
     let n = cfg.qtd_dezenas_possiveis();
     if k == 0 || k >= n {
         return Err(invalida(format!(

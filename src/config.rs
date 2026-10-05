@@ -29,6 +29,37 @@ pub struct LoteriaConfig {
     pub coluna_concurso: usize,
     pub coluna_data: usize,
     pub primeira_coluna_dezena: usize,
+    /// Último concurso do trecho de **busca** (busca de pesos, escolha de
+    /// perfil e walk-forward); os concursos acima dele formam o conjunto
+    /// **trancado**, inclusive os sorteados depois. Corte fixo pelo número do
+    /// concurso (10% do histórico em 2026-10-05), não uma porcentagem que se
+    /// move: `docs/PLANEJAMENTO.md`, 1c, "Conjunto final trancado". Use
+    /// [`LoteriaConfig::trecho_do_concurso`] em vez de comparar à mão.
+    pub ultimo_concurso_busca: u32,
+}
+
+/// A qual parte do histórico um concurso pertence, pelo corte fixo
+/// `LoteriaConfig::ultimo_concurso_busca`. O padrão é a busca: o trancado só
+/// é usado quando pedido explicitamente.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Trecho {
+    /// Concurso ≤ corte: entra na busca de pesos, na escolha de perfil e no
+    /// walk-forward.
+    #[default]
+    Busca,
+    /// Concurso > corte: conjunto final trancado, fora da busca.
+    Trancado,
+}
+
+impl Trecho {
+    /// Nome estável, em minúsculas, para datasets e relatórios
+    /// (`"busca"`/`"trancado"`).
+    pub const fn nome(self) -> &'static str {
+        match self {
+            Trecho::Busca => "busca",
+            Trecho::Trancado => "trancado",
+        }
+    }
 }
 
 /// Erro conhecido na planilha oficial da Caixa, corrigido antes de gravar.
@@ -92,6 +123,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_concurso: 0,
         coluna_data: 1,
         primeira_coluna_dezena: 2,
+        ultimo_concurso_busca: 3416,
     },
     LoteriaConfig {
         slug: "megasena",
@@ -110,6 +142,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_concurso: 0,
         coluna_data: 1,
         primeira_coluna_dezena: 2,
+        ultimo_concurso_busca: 2759,
     },
     LoteriaConfig {
         slug: "quina",
@@ -128,6 +161,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_concurso: 0,
         coluna_data: 1,
         primeira_coluna_dezena: 2,
+        ultimo_concurso_busca: 6421,
     },
 ];
 
@@ -157,6 +191,18 @@ impl LoteriaConfig {
         }
         let indice = dezena - self.dezena_min;
         Some((indice / self.volante.colunas, indice % self.volante.colunas))
+    }
+
+    /// Parte do histórico de `concurso`: [`Trecho::Busca`] até
+    /// `ultimo_concurso_busca` (inclusive), [`Trecho::Trancado`] acima. Só
+    /// depende do número do concurso, então serve igual à avaliação e ao
+    /// dataset do Python (1.5.1).
+    pub const fn trecho_do_concurso(&self, concurso: u32) -> Trecho {
+        if concurso <= self.ultimo_concurso_busca {
+            Trecho::Busca
+        } else {
+            Trecho::Trancado
+        }
     }
 }
 
@@ -298,6 +344,40 @@ mod tests {
             assert_eq!((l.dezena_min, l.dezena_max), (min, max), "{slug}");
             assert_eq!(l.volante, Volante { linhas, colunas }, "{slug}");
         }
+    }
+
+    #[test]
+    fn corte_da_busca_por_loteria() {
+        // Decisão de 2026-10-05 (PLANEJAMENTO.md, 1c, tabela do trancado).
+        for (slug, corte) in [("lotofacil", 3416), ("megasena", 2759), ("quina", 6421)] {
+            let l = buscar(slug).expect("loteria configurada");
+            assert_eq!(l.ultimo_concurso_busca, corte, "{slug}");
+        }
+    }
+
+    #[test]
+    fn trecho_do_concurso_separa_no_corte() {
+        for l in LOTERIAS {
+            let corte = l.ultimo_concurso_busca;
+            assert_eq!(l.trecho_do_concurso(1), Trecho::Busca, "{}", l.slug);
+            assert_eq!(l.trecho_do_concurso(corte - 1), Trecho::Busca, "{}", l.slug);
+            assert_eq!(l.trecho_do_concurso(corte), Trecho::Busca, "{}", l.slug);
+            assert_eq!(
+                l.trecho_do_concurso(corte + 1),
+                Trecho::Trancado,
+                "{}",
+                l.slug
+            );
+            assert_eq!(
+                l.trecho_do_concurso(u32::MAX),
+                Trecho::Trancado,
+                "{}",
+                l.slug
+            );
+        }
+        assert_eq!(Trecho::default(), Trecho::Busca);
+        assert_eq!(Trecho::Busca.nome(), "busca");
+        assert_eq!(Trecho::Trancado.nome(), "trancado");
     }
 
     #[test]

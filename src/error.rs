@@ -150,10 +150,12 @@ pub enum SpiderError {
     #[error("avaliação: entrada inválida: {0} — confira a montagem das observações ou regenere as features e o índice (`sync features`/`sync indice`)")]
     AvaliacaoEntradaInvalida(String),
 
-    /// O primeiro concurso do índice recebe o acaso por construção e não é
-    /// avaliado; concursos acima do corte e o snapshot não sorteado também
-    /// ficam de fora.
-    #[error("avaliação: nada para avaliar: {0} — a avaliação vai do segundo concurso do índice até o corte, só com concursos já sorteados")]
+    /// Nenhum concurso no trecho pedido (ou menos do que o necessário, como
+    /// nas dobras do walk-forward). O trecho depende de quem chama — busca até
+    /// o corte, trancado acima dele, faixa explícita, série já calculada —,
+    /// então o detalhe é montado em cada ponto de chamada e diz qual trecho
+    /// ficou vazio e por quê.
+    #[error("avaliação: nada para avaliar: {0}")]
     AvaliacaoSemConcursos(String),
 
     /// Cópia de segurança do banco antes de um `sync atualizar` com salto.

@@ -97,18 +97,46 @@ pub struct ResumoAvaliacao {
 /// concursos do segundo da entrada até `corte`, só os já sorteados. O
 /// primeiro fica de fora porque recebe o acaso por construção; mas entra na
 /// calibração dos seguintes, assim como qualquer concurso anterior.
+///
+/// É [`metricas_por_concurso_entre`] sem limite inferior.
 pub fn metricas_por_concurso(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
     corte: u32,
 ) -> Result<Vec<MetricasConcurso>> {
-    let probabilidades = calibrar(cfg, &ate_o_corte(observacoes, corte))?;
+    metricas_por_concurso_entre(cfg, observacoes, 0, corte)
+}
+
+/// Métricas por concurso avaliado em `inicio..=fim`, em ordem de concurso,
+/// com a **calibração separada da avaliação** (1c.3):
+/// - nada acima de `fim` é lido, nem para validar;
+/// - a calibração começa sempre no primeiro concurso da entrada (o primeiro
+///   do índice) e usa todo o passado até `fim`, inclusive o que fica abaixo
+///   de `inicio`;
+/// - só entram nas métricas os concursos já sorteados em `inicio..=fim`, e
+///   nunca o primeiro da entrada (que recebe o acaso por construção).
+///
+/// Assim, as métricas de um concurso não dependem de `inicio` nem de `fim`:
+/// o resultado é o trecho `inicio..=fim` da série sem limite inferior e com
+/// o maior `fim`. `inicio > fim` dá série vazia.
+pub fn metricas_por_concurso_entre(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    inicio: u32,
+    fim: u32,
+) -> Result<Vec<MetricasConcurso>> {
+    let probabilidades = calibrar(cfg, &ate_o_corte(observacoes, fim))?;
     let acaso = taxa_do_acaso(cfg);
 
-    // Do segundo concurso da entrada em diante, só os sorteados: o snapshot
-    // ainda não sorteado (`saiu` NULL no concurso inteiro, validado em
-    // `calibrar`) fica de fora.
-    let grupos = concursos_avaliados(&probabilidades, |p| p.concurso, |p| p.saiu.is_some());
+    // Do segundo concurso da entrada em diante, a partir de `inicio`, só os
+    // sorteados: o snapshot ainda não sorteado (`saiu` NULL no concurso
+    // inteiro, validado em `calibrar`) fica de fora.
+    let grupos = concursos_avaliados(
+        &probabilidades,
+        inicio,
+        |p| p.concurso,
+        |p| p.saiu.is_some(),
+    );
 
     let mut saida = Vec::new();
     for grupo in grupos {
@@ -181,7 +209,26 @@ pub fn avaliar(
     let serie = metricas_por_concurso(cfg, observacoes, corte)?;
     if serie.is_empty() {
         return Err(SpiderError::AvaliacaoSemConcursos(format!(
-            "nenhum concurso sorteado entre o segundo concurso do índice e o corte {corte}"
+            "nenhum concurso sorteado do segundo concurso da entrada até o corte {corte} (o primeiro concurso da entrada recebe o acaso por construção e não é avaliado)"
+        )));
+    }
+    resumir(&serie)
+}
+
+/// [`metricas_por_concurso_entre`] seguido de [`resumir`]: avalia
+/// `inicio..=fim` com a calibração desde o primeiro concurso da entrada. Sem
+/// nenhum concurso sorteado no trecho (descontado o primeiro da entrada) é
+/// [`SpiderError::AvaliacaoSemConcursos`].
+pub fn avaliar_entre(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    inicio: u32,
+    fim: u32,
+) -> Result<ResumoAvaliacao> {
+    let serie = metricas_por_concurso_entre(cfg, observacoes, inicio, fim)?;
+    if serie.is_empty() {
+        return Err(SpiderError::AvaliacaoSemConcursos(format!(
+            "nenhum concurso sorteado de {inicio} a {fim} (o primeiro concurso da entrada recebe o acaso por construção e não é avaliado)"
         )));
     }
     resumir(&serie)
