@@ -194,16 +194,20 @@ features_dezena(
 )
 
 indice(
-    concurso, dezena, perfil,
-    total, posicao, variacao_posicao,
+    concurso, dezena,
+    perfil,             -- = perfis.nome (sem FK)
+    total,              -- REAL NOT NULL
+    posicao,            -- INTEGER NOT NULL
+    variacao_posicao,   -- INTEGER; NULL só no primeiro concurso
     PRIMARY KEY (concurso, dezena, perfil)
-)
+) WITHOUT ROWID
 
 perfis(
     nome, versao, loteria, janela, normalizacao,
     hash_toml,       -- SHA-256 do .toml com fim de linha em LF
     toml,            -- texto do .toml, para o banco bastar sozinho
-    criado_em,       -- gravado só no primeiro registro
+    criado_em,       -- ISO-8601 UTC com segundos (2026-10-04T18:30:00Z),
+                     -- gravado só no primeiro registro
     PRIMARY KEY (nome)
 )
 
@@ -256,7 +260,22 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 **1b — Índice de força**
 
 - Leitura de perfis `.toml`, normalização, índice, posição e variação de posição.
-- Comando `sync indice <loteria> --perfil X`.
+- Comando `sync indice <loteria> --perfil X` (decisões de 2026-10-05):
+  - `--perfil` obrigatório; um perfil e uma loteria por execução, sem `todas`;
+  - recusa, sem gravar nada, se as features estiverem desatualizadas (o
+    snapshot mais recente não é o último concurso de `resultados` + 1), se
+    foram calculadas com outros resultados (a impressão de `resultados` não
+    bate com a de `motor_estado`, como num resultado antigo corrigido sem
+    rodar `sync features`) ou se forem de outra `feature_version`: pede para
+    rodar `sync features` antes;
+  - a `feature_version` é conferida só nas linhas da janela do perfil, a
+    única que o índice usa;
+  - recusa banco ou `features_dezena` vazios, sem criar tabelas;
+  - usa só as linhas de `features_dezena` da janela do perfil e confere que
+    as dezenas de cada concurso são exatamente as da `LoteriaConfig`;
+  - regenera o índice inteiro do perfil a cada execução (apaga as linhas do
+    perfil e insere de novo), numa única transação junto com o registro em
+    `perfis`.
 
 **1c — Avaliação**
 
