@@ -10,7 +10,7 @@
 //!   independentes (somam exatamente *K* saídas).
 
 use super::calibracao::{calibrar, Observacao};
-use super::taxa_do_acaso;
+use super::{ate_o_corte, concursos_avaliados, taxa_do_acaso};
 use crate::config::LoteriaConfig;
 use crate::error::{Result, SpiderError};
 use serde::{Deserialize, Serialize};
@@ -55,13 +55,17 @@ pub struct Intervalo {
     pub superior: f64,
 }
 
-/// Uma métrica do perfil contra a do acaso. Menor é melhor nas duas
-/// métricas, então `diferenca` negativa = perfil melhor que o acaso.
+/// Uma métrica do perfil contra a do acaso. Em log loss e Brier menor é
+/// melhor (`diferenca` negativa = perfil melhor que o acaso); nos acertos do
+/// top-k ([`super::ResumoTopK`]) maior é melhor (`diferenca` positiva =
+/// perfil acima do acaso).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comparacao {
-    /// Média por par (concurso, dezena) no perfil.
+    /// Média no perfil: por par (concurso, dezena) em log loss e Brier, por
+    /// concurso nos acertos do top-k.
     pub perfil: f64,
-    /// Média por par no acaso (*K/N* em todas as dezenas).
+    /// Mesma média no acaso (*K/N* em todas as dezenas; *k·K/N* acertos no
+    /// top-k).
     pub acaso: f64,
     /// Média de `d_t` = perfil − acaso por concurso (igual a
     /// `perfil − acaso`, a menos de arredondamento).
@@ -98,25 +102,21 @@ pub fn metricas_por_concurso(
     observacoes: &[Observacao],
     corte: u32,
 ) -> Result<Vec<MetricasConcurso>> {
-    let ate_o_corte: Vec<Observacao> = observacoes
-        .iter()
-        .filter(|o| o.concurso <= corte)
-        .copied()
-        .collect();
-    let probabilidades = calibrar(cfg, &ate_o_corte)?;
+    let probabilidades = calibrar(cfg, &ate_o_corte(observacoes, corte))?;
     let acaso = taxa_do_acaso(cfg);
 
-    let mut grupos = probabilidades.chunk_by(|a, b| a.concurso == b.concurso);
-    // O primeiro concurso da entrada não é avaliado.
-    grupos.next();
+    // Do segundo concurso da entrada em diante, só os sorteados: o snapshot
+    // ainda não sorteado (`saiu` NULL no concurso inteiro, validado em
+    // `calibrar`) fica de fora.
+    let grupos = concursos_avaliados(&probabilidades, |p| p.concurso, |p| p.saiu.is_some());
 
     let mut saida = Vec::new();
     for grupo in grupos {
         let mut soma = [0.0_f64; 4];
         let mut pares = 0_u32;
         for p in grupo {
-            // Concurso inteiro com `saiu` NULL (validado em `calibrar`): é o
-            // snapshot ainda não sorteado e fica de fora.
+            // Defesa: inalcançável após `concursos_avaliados` (só grupos
+            // sorteados, com `saiu` todo conhecido pela validação).
             let Some(saiu) = p.saiu else { continue };
             soma[0] += log_loss(p.probabilidade, saiu);
             soma[1] += log_loss(acaso, saiu);
@@ -124,6 +124,8 @@ pub fn metricas_por_concurso(
             soma[3] += brier(acaso, saiu);
             pares += 1;
         }
+        // Defesa: inalcançável após `concursos_avaliados` (grupo não vazio,
+        // todo sorteado).
         if pares == 0 {
             continue;
         }
@@ -187,7 +189,7 @@ pub fn avaliar(
 
 /// `pares` = (média do concurso no perfil, média no acaso), não vazio.
 /// Somas em sequência, na ordem da série: mesma entrada, mesmos bits.
-fn comparar(pares: &[(f64, f64)]) -> Comparacao {
+pub(super) fn comparar(pares: &[(f64, f64)]) -> Comparacao {
     let t = pares.len() as f64;
     let perfil = pares.iter().map(|&(p, _)| p).sum::<f64>() / t;
     let acaso = pares.iter().map(|&(_, a)| a).sum::<f64>() / t;

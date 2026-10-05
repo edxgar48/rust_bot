@@ -3,7 +3,7 @@ use crate::config::{self, Volante};
 use crate::error::SpiderError;
 
 /// Loteria fictícia (2 de 1..=4, acaso = 1/2) para conferir à mão.
-const MINI: LoteriaConfig = LoteriaConfig {
+pub(super) const MINI: LoteriaConfig = LoteriaConfig {
     slug: "mini",
     nome_exibicao: "Mini",
     pagina_url: "",
@@ -22,7 +22,7 @@ const MINI: LoteriaConfig = LoteriaConfig {
     primeira_coluna_dezena: 2,
 };
 
-fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {
+pub(super) fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {
     Observacao {
         concurso,
         dezena,
@@ -33,7 +33,11 @@ fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observac
 
 /// Concurso da MINI a partir de `posicoes[d-1]` e das dezenas que saíram
 /// (`None` = ainda não sorteado).
-fn concurso_mini(concurso: u32, posicoes: [u32; 4], saidas: Option<[u32; 2]>) -> Vec<Observacao> {
+pub(super) fn concurso_mini(
+    concurso: u32,
+    posicoes: [u32; 4],
+    saidas: Option<[u32; 2]>,
+) -> Vec<Observacao> {
     (1..=4)
         .map(|d| {
             obs(
@@ -51,7 +55,7 @@ fn concurso_mini(concurso: u32, posicoes: [u32; 4], saidas: Option<[u32; 2]>) ->
 /// - 2: posições 2,1,3,4; saíram 2 e 3 (posições 1 e 3);
 /// - 3: posições 1,2,3,4; saíram 1 e 4 (posições 1 e 4);
 /// - 4: snapshot ainda não sorteado, posições 4,3,2,1.
-fn serie_mini() -> Vec<Observacao> {
+pub(super) fn serie_mini() -> Vec<Observacao> {
     [
         concurso_mini(1, [1, 2, 3, 4], Some([1, 2])),
         concurso_mini(2, [2, 1, 3, 4], Some([2, 3])),
@@ -81,10 +85,10 @@ macro_rules! assert_perto {
 }
 
 /// Gerador determinístico (xorshift64), sem dependência nova.
-struct Gerador(u64);
+pub(super) struct Gerador(pub(super) u64);
 
 impl Gerador {
-    fn proximo(&mut self) -> u64 {
+    pub(super) fn proximo(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;
@@ -93,7 +97,7 @@ impl Gerador {
         x
     }
 
-    fn embaralhar<T>(&mut self, v: &mut [T]) {
+    pub(super) fn embaralhar<T>(&mut self, v: &mut [T]) {
         for i in (1..v.len()).rev() {
             let j = (self.proximo() % (i as u64 + 1)) as usize;
             v.swap(i, j);
@@ -103,7 +107,7 @@ impl Gerador {
 
 /// Série sintética válida: posições e saídas embaralhadas a cada concurso;
 /// o último fica sem resultado se `com_snapshot`.
-fn serie_aleatoria(
+pub(super) fn serie_aleatoria(
     cfg: &LoteriaConfig,
     concursos: u32,
     semente: u64,

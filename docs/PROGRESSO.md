@@ -32,7 +32,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1c — Avaliação · `engenheiro-avaliacao`
 
 - [x] 1c.1 Baseline do acaso + log loss / Brier
-- [ ] 1c.2 Top-k vs hipergeométrica
+- [x] 1c.2 Top-k vs hipergeométrica
 - [ ] 1c.3 Walk-forward + conjunto final trancado
 - [ ] 1c.4 Testes de aleatoriedade (qui-quadrado, runs)
 - [ ] 1c.5 Comando `sync avaliar`
@@ -572,3 +572,68 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   é pública e não recebe corte — quem a usar fora de `avaliar` precisa filtrar antes (documentar ou
   reduzir visibilidade). **Pendências BAIXA (reforço de teste):** ponto no tempo mudando só o `saiu` de
   t e só t' > t; `nada_acima_do_corte_e_lido` comparar também a série de `metricas_por_concurso`.
+- 2026-10-05 — 1c.2 não iniciada: o plano diz só "acertos das top-k dezenas vs. esperado pela
+  hipergeométrica" e a skill `avaliacao-estatistica` pede também "intervalo e p-valor", sem definir
+  pontos que mudam os valores calculados. Perguntas devolvidas ao usuário, com sugestões: (1) **quais k**:
+  k = K da loteria (15/6/5) como métrica principal; a função pura aceita qualquer k em 1…N−1 (a 1c.5
+  decide se expõe `--k`); (2) top-k = dezenas com `posicao` ≤ k (desempate já resolvido no índice);
+  (3) concursos avaliados: o mesmo trecho da 1c.1 (do 2º concurso do índice até o corte, só sorteados,
+  trancado fora), para as métricas serem comparáveis, embora o top-k não precise de calibração;
+  (4) saída: média de acertos observada vs. k·K/N, diferença, e a distribuição observada (nº de concursos
+  com 0…min(k,K) acertos) ao lado da esperada (T × pmf hipergeométrica); (5) incerteza: EP e IC 95% da
+  diferença por concurso, como na 1c.1 (÷(T−1), normal); (6) p-valor **exato e unilateral** (acertos
+  totais ≥ observado) pela soma de T hipergeométricas independentes, por convolução — válido mesmo com
+  correlação serial do ranking, porque sob o acaso o sorteio de t é independente da posição calculada
+  com t−1; (7) hipergeométrica em inteiros (C(80,40) cabe em u128) com testes contra valores tabelados;
+  (8) escopo: só funções puras em `src/avaliacao/`, reaproveitando `Observacao`; leitura do banco e CLI
+  na 1c.5. Achado à parte: `docs/PLANEJAMENTO.md:397-404` tem uma nota de progresso da 1c.1 colada
+  depois do Backlog (commit 9672d3d); sugestão: mover para cá (pede aprovação para editar o plano).
+- 2026-10-05 — 1c.1, decisões do usuário: confirmadas as 5 escolhas do implementador (EP amostral ÷(T−1),
+  IC normal, Brier sem o limite, buraco e série vazia são erro, corte aplicado antes de validar) e
+  registradas no PLANEJAMENTO.md (1c), junto com a ressalva do intervalo (otimista por correlação serial;
+  1c.5 usa teste robusto). Achado baixo do verificador-vazamento coberto: novo teste
+  `metricas_com_corte_menor_sao_prefixo_das_com_corte_maior` (3 loterias, cortes 2, 3, 40, 79 e 80,
+  inclusive o snapshot); conferido com mutante (métrica dependente do tamanho do trecho até o corte),
+  que ele pega. Pendências para 1c.3/1c.5: passar sempre o corte fixo da loteria (nunca `u32::MAX` em
+  produção); concursos faltando no banco são erro na calibração.
+- 2026-10-05 — Nota anterior (1c.1) movida do fim do PLANEJAMENTO.md, onde tinha sido colada por engano
+  no commit 9672d3d. 1c.2, decisões do usuário: aceitas as 8 sugestões, registradas no PLANEJAMENTO.md
+  (1c, "Ranking"). 1c.2 desbloqueada.
+- 2026-10-05 — 1c.2 concluída. `src/avaliacao/topk.rs` (novo, puro): `binomial` (u128, com mdc no passo;
+  só estoura a partir de C(132,66)), `Hipergeometrica` (`nova`, `da_loteria(cfg, k)` com k em 1..=N−1,
+  `casos`/`pmf`/`media`/`variancia`; sem serde de propósito), `p_valor_soma(h, T, total) -> Cauda
+  { probabilidade, log10 }`, `acertos_por_concurso`, `resumir_topk`, `avaliar_topk(cfg, obs, k, corte) ->
+  ResumoTopK` (média de acertos vs k·K/N em `Comparacao` da 1c.1, distribuição observada × esperada de 0 a
+  min(k,K), p-valor). `src/avaliacao/mod.rs`: funções privadas comuns `ate_o_corte` e `concursos_avaliados`,
+  usadas também por `metricas_por_concurso` (refatoração sem mudança de comportamento, conferida pela
+  revisão); `comparar` virou `pub(super)`; `src/avaliacao/tests.rs` só abriu visibilidade de auxiliares.
+  Nenhuma variante de erro nova. **p-valor**: inclinação exponencial (identidade exata, θ por bissecção com
+  passos fixos, fator em log, cauda somada das menores para as maiores), convolução parcela a parcela com
+  poda; total ≤ média (conferido em inteiros) sem inclinação; total = máximo por fórmula fechada; total ≤
+  T·mínimo dá 1; total impossível é erro. Com underflow, `probabilidade` vira 0 e `log10` segue finito
+  (ex.: Lotofácil T=3415 tudo no máximo → −22240,9). Custo em release: ~0,9–1,2 s na Quina (k=5/40,
+  T=6420), ~0,7–0,9 s Lotofácil k=15, ~0,2 s Mega-Sena; caudas extremas em µs.
+  Testes: `src/avaliacao/topk/tests.rs` (binomiais e pmf contra as tabelas da Caixa, frações exatas N=4/K=2,
+  média/variância da soma, caudas exatas recalculadas com inteiros grandes em Python — conferidas de novo pelo
+  revisor, inclusive no ramo inclinado —, monotonicidade inclusive na troca de caminho com T=1000, resumo à
+  mão, erros, ponto no tempo, corte, prefixo, determinismo); 2 ignorados: medição de custo e monotonicidade
+  com T=2758 (~18 s em debug).
+  Decisões do implementador (fora do plano, aceitas pela revisão): `Cauda` com `log10`; `nova` aceita 0..=N
+  (a restrição 1..=N−1 fica em `da_loteria` e no top-k); `distribuicao_soma` só para testes
+  (`#[cfg(test)]`). Revisão: aprovada com ressalvas, sem ALTA; corrigidos numa rodada só doc e teste (forma
+  condicional e condição de validade do p-valor no doc do módulo, texto do custo, comentários de defesa
+  inalcançável em `metricas.rs`, ressalva do IC em `ResumoTopK.acertos`, teste de monotonicidade com T
+  grande). verificador-vazamento: sem vazamento. Gate: fmt ok, clippy ok, 455 testes (304 lib + 28 sync +
+  56 features + 57 indice + 10 parser, 3 ignorados), `validar todas` ok.
+  **Pendente de decisão do usuário (MÉDIA, revisão + verificador-vazamento):** o p-valor só vale se o
+  perfil e o k foram fixados sem ver os sorteios do trecho avaliado; com busca de pesos no mesmo trecho ou
+  escolhendo o melhor entre vários perfis/k, fica otimista (avaliar no trancado ou corrigir por
+  Bonferroni/Holm, informando quantos foram testados). Já está no doc do módulo; sugerido registrar em
+  PLANEJAMENTO.md (1c, "Ranking", p-valor) e tratar na 1c.5. **Para a 1c.3/1c.5:** ~1 s por chamada do
+  p-valor; se virar laço (por dobra do walk-forward, por perfil ou por k), podar também por cima (massa
+  relevante em alvo ± c·σ√T). **Pendências BAIXA:** `resumir_topk` é pública e não confere concursos
+  repetidos na série (`avaliar_topk` é protegida); testes sugeridos e não feitos: simulação do nulo com
+  ranking adaptativo conferindo p-valores uniformes, sorteio válido alternativo em corte+1.
+- 2026-10-05 — 1c.2, decisão do usuário: registrada no PLANEJAMENTO.md (1c, "Ranking") a condição de
+  validade do p-valor (perfil e k escolhidos sem ver o trecho avaliado; senão trancado ou Bonferroni/Holm,
+  na 1c.5). Custo do p-valor em laço fica para decidir na 1c.3.
