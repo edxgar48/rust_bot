@@ -261,6 +261,23 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 **1b — Índice de força**
 
 - Leitura de perfis `.toml`, normalização, índice, posição e variação de posição.
+- Comando `sync tabela <loteria|todas> --perfil X [--concurso N] [--saida tabelas]`
+  (1b.4, pedido do usuário em 2026-10-05, para comparar a tabela geral ao
+  longo da semana; adianta uma parte da Fase 2 sem substituí-la):
+  - grava um CSV por concurso em
+    `<saida>/<loteria>/tabela_<loteria>_<perfil>_<concurso>.csv`, com uma
+    linha por dezena em ordem de posição: loteria, perfil, concurso, data do
+    sorteio (vazia no próximo, ainda não sorteado), dezena, posição, total,
+    variação de posição, saiu (vazio no próximo), janela do perfil e as
+    9 features dessa janela;
+  - formato para o Excel em português: separador `;`, vírgula decimal,
+    `NULL` como célula vazia; mesmo concurso → mesmo conteúdo (sobrescreve);
+  - padrão: o snapshot do próximo concurso; `--concurso N` exporta um
+    concurso já sorteado (1 … último + 1), com `saiu` preenchido;
+  - mesmas conferências do `sync avaliar` (resultados válidos, perfil
+    registrado com o mesmo hash, features em dia, índice até o último + 1 e
+    igual ao recalculado); só lê o banco; `--db` e `--concurso` não valem
+    com `todas`; a pasta `tabelas/` fica fora do git.
 - Comando `sync indice <loteria> --perfil X` (decisões de 2026-10-05):
   - `--perfil` obrigatório; um perfil e uma loteria por execução, sem `todas`;
   - recusa, sem gravar nada, se as features estiverem desatualizadas (o
