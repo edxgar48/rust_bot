@@ -906,3 +906,26 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   determinística). Gate: fmt, clippy, 660 testes (4 ignorados). Rodado nos bancos reais (só leitura,
   hashes iguais): tabelas dos concursos 3797, 3067 e 7135 gravadas em `tabelas/`. Sem revisão do
   `revisor-arquitetura` (feito direto, a pedido do usuário).
+- 2026-10-06 — 1.5.1 não iniciada (continua [ ]): o plano diz só "`sync dataset <loteria> --formato
+  parquet|csv`" e "o dataset marca a qual parte cada concurso pertence"; faltam pontos que mudam o
+  arquivo gerado, as dependências e a proteção do trancado. Perguntas devolvidas ao usuário, com
+  sugestões: (1) **trancado no arquivo**: por padrão só concursos ≤ corte (`trecho_do_concurso` =
+  Busca), coluna `trecho` sempre presente; `--trancado` inclui o resto (só para a validação final)
+  — ou sempre tudo, só com a coluna?; (2) **formato das linhas**: longo, uma linha por (concurso,
+  dezena, janela), igual a `features_dezena` (o Python pivota), em vez de largo (9×4 colunas);
+  (3) **colunas**: `concurso, data, dezena, janela, trecho`, os 9 componentes, `saiu`,
+  `feature_version`; sem índice/perfil (o Python recalcula o índice a partir dos pesos; os vetores de
+  conformidade da 1.5.4 garantem a paridade); só `saiu IS NOT NULL`; (4) **Parquet**: o crate `parquet`
+  (arrow-rs) é pesado (dezenas de dependências, compilação longa); alternativas: (a) `parquet` sem
+  `arrow`, só a API de baixo nível, com compressão desligada ou zstd; (b) entregar só CSV agora e
+  Parquet depois; (c) Python converte CSV→Parquet (fere "Rust gera o dataset"); sugestão (a);
+  (5) **determinismo**: mesmos dados → mesmos bytes nos dois formatos (ordem concurso, dezena, janela;
+  sem carimbo de tempo dentro do arquivo; metadados do Parquet fixos), testado; (6) **CSV**: padrão
+  de máquina (`,` separador, `.` decimal, cabeçalho, NULL = campo vazio, LF, UTF-8 sem BOM),
+  diferente do `sync tabela` (que é para planilha); (7) **saída e manifesto**: `--saida datasets/`
+  (no `.gitignore`), arquivo `datasets/<loteria>/features_v<feature_version>.<ext>` + `manifesto.json`
+  ao lado (loteria, feature_version, último concurso, corte, trecho incluído, nº de linhas, SHA-256 do
+  arquivo, impressão de `motor_estado`), para o Python conferir o que leu; (8) **pré-condições**: uma
+  loteria por execução (sem `todas`, como `features`/`indice`), recusa se as features estiverem
+  desatualizadas ou de resultados alterados (reusar `ler_features_em_dia`), banco só leitura; SQL em
+  `db.rs`, fluxo em `orquestracao`, montagem do arquivo num módulo puro (ex.: `src/dataset.rs`).
