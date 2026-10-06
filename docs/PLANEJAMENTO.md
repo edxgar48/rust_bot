@@ -466,7 +466,33 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 ### Fase 1.5 — Ponte com o Python
 
-- Comando `sync dataset <loteria> --formato parquet|csv`.
+- Comando `sync dataset <loteria> --formato parquet|csv` (decisões de 2026-10-06, 1.5.1):
+  - **trancado fora por padrão**: só concursos até o corte da busca
+    (`trecho_do_concurso` = Busca); coluna `trecho` sempre presente;
+    `--trancado` inclui o resto, só para a validação final;
+  - **formato longo**: uma linha por (concurso, dezena, janela), igual a
+    `features_dezena`; o Python pivota;
+  - **colunas**: `concurso, data, dezena, janela, trecho`, os 9 componentes,
+    `saiu` e `feature_version`. Sem índice nem perfil (o Python recalcula o
+    índice a partir dos pesos; os vetores de conformidade da 1.5.4 garantem
+    que bate com o Rust). Só concursos já sorteados (`saiu` preenchido);
+  - **Parquet** com o crate `parquet` sem a parte `arrow`, sem compressão ou
+    com zstd;
+  - **determinismo**: mesmos dados → mesmos bytes nos dois formatos (ordem
+    (concurso, dezena, janela), sem carimbo de tempo no arquivo, metadados do
+    Parquet fixos), com teste;
+  - **CSV de máquina**: separador `,`, ponto decimal, cabeçalho, campo vazio
+    para ausente, LF, UTF-8 sem BOM (diferente do CSV de planilha do
+    `sync tabela`);
+  - **saída**: `datasets/<loteria>/features_v<feature_version>.<ext>` (pasta
+    fora do git) e, ao lado, `manifesto.json` com loteria, versão das
+    features, último concurso, corte, trecho incluído, número de linhas,
+    SHA-256 do arquivo e a impressão dos resultados, para o Python conferir
+    o que leu;
+  - **pré-condições**: uma loteria por execução, sem `todas`; recusa features
+    desatualizadas ou resultados alterados (mesma conferência do `sync
+    indice`/`sync avaliar`); banco só para leitura; SQL em `db.rs`, fluxo em
+    `orquestracao`, montagem do arquivo num módulo próprio sem banco.
 - Pasta `ml/`: leitura do dataset, baseline, busca de pesos com walk-forward,
   escrita de novos perfis `.toml`.
 - **Vetores de conformidade** (`testes/conformidade/*.json`): entrada →
@@ -531,3 +557,5 @@ com o planejamento do front-end.
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
   CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
   automatizado.
+- 2026-10-06 — 1.5.1, decisões do usuário: aceitas as 8 sugestões, registradas no PLANEJAMENTO.md
+  (Fase 1.5, item do `sync dataset`). 1.5.1 desbloqueada.
