@@ -1079,6 +1079,40 @@ fn ler_observacoes(
     cfg: &LoteriaConfig,
     carregado: &PerfilCarregado,
 ) -> Result<ObservacoesLidas> {
+    let IndiceConferido {
+        ultimo,
+        indice,
+        features,
+        ..
+    } = ler_indice_conferido(conn, cfg, carregado)?;
+    let observacoes = juntar_indice_e_features(cfg, &carregado.perfil.nome, &indice, &features)?;
+    Ok(ObservacoesLidas {
+        primeiro_indice: observacoes.first().map_or(ultimo + 1, |o| o.concurso),
+        observacoes,
+        ultimo,
+    })
+}
+
+/// Resultados, índice do perfil e features da janela do perfil, lidos depois
+/// de todas as conferências de [`ler_indice_conferido`].
+struct IndiceConferido {
+    resultados: Vec<Resultado>,
+    ultimo: u32,
+    /// Índice do perfil, ordenado por (concurso, dezena), de 1 ao último + 1.
+    indice: Vec<IndiceDezena>,
+    /// Features da janela do perfil, com as mesmas chaves do índice.
+    features: Vec<FeaturesDezena>,
+}
+
+/// Pré-condições comuns ao `sync avaliar` e ao `sync tabela`: resultados sem
+/// erro do `validar`, perfil registrado com o mesmo hash do `.toml`,
+/// features em dia, índice do perfil até o último + 1, com as mesmas chaves
+/// das features e idêntico ao recalculado com elas. Só lê.
+fn ler_indice_conferido(
+    conn: &Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+) -> Result<IndiceConferido> {
     let perfil = &carregado.perfil;
 
     // Resultados: buraco ou qualquer erro do `validar` é recusa.
@@ -1096,7 +1130,6 @@ fn ler_observacoes(
             avisos,
         });
     }
-    drop(resultados);
 
     // Perfil registrado, com o mesmo conteúdo do `.toml` em disco.
     let nao_registrado = || SpiderError::PerfilNaoRegistrado {
@@ -1143,7 +1176,8 @@ fn ler_observacoes(
         return Err(desatualizado(ultimo_indice));
     }
 
-    let observacoes = juntar_indice_e_features(cfg, &perfil.nome, &indice, &features)?;
+    // Mesmas chaves (concurso, dezena) nas duas séries.
+    juntar_indice_e_features(cfg, &perfil.nome, &indice, &features)?;
 
     // O índice gravado tem de ser exatamente o que o `sync indice` gravaria
     // hoje com estas features. Sem isso, um resultado antigo corrigido seguido
@@ -1156,10 +1190,99 @@ fn ler_observacoes(
     conferir_indice_recalculado(cfg, &perfil.nome, &indice, &recalculado)?;
     drop(recalculado);
 
-    Ok(ObservacoesLidas {
-        primeiro_indice: observacoes.first().map_or(proximo, |o| o.concurso),
-        observacoes,
+    Ok(IndiceConferido {
+        resultados,
         ultimo,
+        indice,
+        features,
+    })
+}
+
+/// Uma dezena na tabela geral de um concurso (`sync tabela`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinhaTabela {
+    pub dezena: u32,
+    pub posicao: u32,
+    pub total: f64,
+    pub variacao_posicao: Option<i64>,
+    /// Se a dezena saiu no concurso; `None` no próximo, ainda não sorteado.
+    pub saiu: Option<bool>,
+    /// Features da dezena na janela do perfil, antes do concurso.
+    pub features: FeaturesDezena,
+}
+
+/// Tabela geral de um concurso com um perfil: as *N* dezenas em ordem de
+/// posição (1 = mais forte).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabelaConcurso {
+    pub loteria: String,
+    pub perfil: String,
+    pub janela: u32,
+    pub concurso: u32,
+    /// Último concurso sorteado no banco (o próximo é `ultimo_sorteado + 1`).
+    pub ultimo_sorteado: u32,
+    /// Data do sorteio do concurso; `None` no próximo, ainda não sorteado.
+    pub data_sorteio: Option<String>,
+    pub linhas: Vec<LinhaTabela>,
+}
+
+/// `sync tabela`: a tabela geral do `concurso` (padrão: o próximo, ainda não
+/// sorteado) com o perfil `carregado`, depois das mesmas conferências do
+/// `sync avaliar` ([`ler_indice_conferido`]). Concurso fora de `1 … último
+/// + 1` é [`SpiderError::TabelaConcursoInvalido`]. Só lê.
+pub fn tabela_do_concurso(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    concurso: Option<u32>,
+) -> Result<TabelaConcurso> {
+    let perfil = &carregado.perfil;
+    conferir_loteria_do_perfil(cfg, perfil)?;
+    // Só leitura: a transação nunca recebe `commit` (leitura consistente).
+    let tx = db::iniciar_leitura(conn)?;
+    let conferido = ler_indice_conferido(&tx, cfg, carregado)?;
+    drop(tx);
+
+    let proximo = conferido.ultimo + 1;
+    let concurso = concurso.unwrap_or(proximo);
+    if !(1..=proximo).contains(&concurso) {
+        return Err(SpiderError::TabelaConcursoInvalido {
+            loteria: cfg.slug.to_string(),
+            concurso,
+            maximo: proximo,
+        });
+    }
+    let data_sorteio = conferido
+        .resultados
+        .iter()
+        .find(|r| r.concurso == concurso)
+        .map(|r| r.data_sorteio.clone());
+
+    // Índice e features têm as mesmas chaves, na mesma ordem.
+    let mut linhas: Vec<LinhaTabela> = conferido
+        .indice
+        .iter()
+        .zip(&conferido.features)
+        .filter(|(i, _)| i.concurso == concurso)
+        .map(|(i, f)| LinhaTabela {
+            dezena: i.dezena,
+            posicao: i.posicao,
+            total: i.total,
+            variacao_posicao: i.variacao_posicao,
+            saiu: f.saiu,
+            features: f.clone(),
+        })
+        .collect();
+    linhas.sort_by_key(|l| l.posicao);
+
+    Ok(TabelaConcurso {
+        loteria: cfg.slug.to_string(),
+        perfil: perfil.nome.clone(),
+        janela: perfil.janela,
+        concurso,
+        ultimo_sorteado: conferido.ultimo,
+        data_sorteio,
+        linhas,
     })
 }
 

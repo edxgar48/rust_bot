@@ -194,6 +194,14 @@ pub enum SpiderError {
         detalhe: String,
     },
 
+    /// `sync tabela --concurso N` fora dos concursos com índice.
+    #[error("{loteria}: não há tabela do concurso {concurso} — escolha um concurso de 1 a {maximo} (o {maximo} é o próximo, ainda não sorteado)")]
+    TabelaConcursoInvalido {
+        loteria: String,
+        concurso: u32,
+        maximo: u32,
+    },
+
     /// Combinação de opções do `sync avaliar` que não faz sentido.
     #[error("avaliação: {0}")]
     AvaliacaoOpcaoInvalida(String),

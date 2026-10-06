@@ -131,6 +131,26 @@ corte. **É de uso único por perfil** e fica registrado em
 `aleatoriedade <lot|todas>` testa se o próprio histórico parece aleatório.
 Também só lê o banco.
 
+### Tabela geral em CSV
+
+`tabela <lot|todas> --perfil padrao_v1 [--concurso N] [--saida tabelas]` grava
+a tabela geral de um concurso num CSV para abrir no Excel: uma linha por
+dezena, em ordem de posição, com total, variação de posição, `saiu` e as 9
+features da janela do perfil. Só lê o banco e faz as mesmas conferências do
+`avaliar` (índice e features em dia).
+
+- **Arquivo:** `tabelas/<lot>/tabela_<lot>_<perfil>_<concurso>.csv`. Um
+  arquivo por concurso: rodando depois de cada sorteio, a pasta acumula a
+  tabela de cada semana para comparar.
+- **Padrão:** o próximo concurso, ainda não sorteado (`data_sorteio` e
+  `saiu` vazios). Com `--concurso N`, um concurso já sorteado, com `saiu`
+  preenchido (1 = saiu): dá para ver onde estavam as dezenas sorteadas.
+- **Formato:** separador `;` e vírgula decimal (Excel em português); célula
+  vazia = sem valor (por exemplo, `soma_variacoes` com menos de 3 aparições
+  na janela).
+- **Saída no terminal:** onde gravou e o top 10 (`*` = saiu, quando o
+  concurso já foi sorteado).
+
 ## 3. Como interpretar o `avaliar`
 
 **Cabeçalho.** Mostra o perfil, o hash, o trecho (`concursos 2–2759`) e o
@@ -240,6 +260,7 @@ Rotina depois de cada sorteio, para cada loteria:
 ./target/release/sync validar todas
 ./target/release/sync features <lot>
 ./target/release/sync indice <lot> --perfil padrao_v1
+./target/release/sync tabela todas --perfil padrao_v1        # CSV do próximo concurso
 ./target/release/sync avaliar <lot> --perfil padrao_v1      # opcional
 ```
 
@@ -269,7 +290,9 @@ Rotina depois de cada sorteio, para cada loteria:
    python -c "import sqlite3;c=sqlite3.connect('file:resultados_quina.db?mode=ro',uri=True);[print(r) for r in c.execute('select janela,frequencia,maior_espaco,menor_espaco,espaco_final,repeticao_atual from features_dezena where dezena=25 and concurso=(select max(concurso) from features_dezena) order by janela')]"
    ```
 
-4. **Tabela geral do próximo concurso,** que é o que o app vai mostrar:
+4. **Tabela geral do próximo concurso,** que é o que o app vai mostrar. O
+   jeito mais fácil é `sync tabela todas --perfil padrao_v1` e abrir os CSV de
+   `tabelas/` no Excel. Pelo terminal:
 
    ```bash
    python -c "import sqlite3;c=sqlite3.connect('file:resultados_quina.db?mode=ro',uri=True);[print(r) for r in c.execute(\"select posicao,dezena,round(total,3),variacao_posicao from indice where perfil='padrao_v1' and concurso=(select max(concurso) from indice) order by posicao limit 10\")]"

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
 use rust_spider::{
     backup, config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, registros,
-    tempo, validacao, SpiderError,
+    tabela, tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -202,6 +202,34 @@ enum Comando {
         #[arg(long, hide = true)]
         registros: Option<PathBuf>,
     },
+    /// Grava em CSV a tabela geral de um concurso (todas as dezenas em ordem
+    /// de posição, com total, variação, `saiu` e as features da janela do
+    /// perfil), para abrir no Excel e comparar ao longo do tempo: um arquivo
+    /// por concurso em `<saida>/<loteria>/`. Padrão: o próximo concurso,
+    /// ainda não sorteado. Só lê o banco; recusa se o índice ou as features
+    /// não estiverem em dia.
+    Tabela {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
+        loteria: String,
+        /// Nome do perfil de pesos (já registrado pelo `indice`)
+        #[arg(long)]
+        perfil: String,
+        /// Concurso da tabela (padrão: o próximo, ainda não sorteado); um
+        /// concurso já sorteado sai com a coluna `saiu` preenchida. Não pode
+        /// ser usado com `todas`
+        #[arg(long)]
+        concurso: Option<u32>,
+        /// Pasta onde gravar os CSV (uma subpasta por loteria)
+        #[arg(long, default_value = "tabelas")]
+        saida: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+    },
     /// Testes de aleatoriedade do histórico inteiro (qui-quadrado de
     /// frequência e runs test por dezena, com Holm). Só lê o banco.
     Aleatoriedade {
@@ -381,6 +409,29 @@ async fn main() -> anyhow::Result<()> {
                 &opcoes,
                 &pasta_registros,
             )?;
+        }
+        Comando::Tabela {
+            loteria,
+            perfil,
+            concurso,
+            saida,
+            db,
+            perfis,
+        } => {
+            if concurso.is_some() && config::eh_todas(&loteria) {
+                anyhow::bail!(
+                    "`--concurso` não pode ser usado com `{}`: a numeração dos concursos é de                      cada loteria; informe o slug",
+                    config::TODAS
+                );
+            }
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                let r = gravar_tabela(cfg, &db_caminho, &perfis, &perfil, concurso, &saida);
+                execucao.registrar(cfg, r)?;
+            }
+            execucao.concluir()?;
         }
         Comando::Aleatoriedade { loteria, db } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
@@ -1182,6 +1233,67 @@ fn calcular_indice(
         resumo.proximo_concurso,
         duracao.as_secs_f64()
     );
+    Ok(())
+}
+
+/// `sync tabela`: monta a tabela geral do concurso (conferências e leitura
+/// em `orquestracao`), grava o CSV em `<saida>/<loteria>/` e imprime onde
+/// gravou e as 10 primeiras dezenas. Banco inexistente é erro, sem criar
+/// arquivo; o banco é aberto só para leitura.
+fn gravar_tabela(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+    concurso: Option<u32>,
+    saida: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let t = orquestracao::tabela_do_concurso(&mut conn, cfg, &carregado, concurso)?;
+
+    let pasta = saida.join(cfg.slug);
+    std::fs::create_dir_all(&pasta).map_err(|origem| SpiderError::Io {
+        caminho: pasta.clone(),
+        origem,
+    })?;
+    let arquivo = pasta.join(tabela::nome_arquivo(&t));
+    std::fs::write(&arquivo, tabela::formatar_csv(&t)).map_err(|origem| SpiderError::Io {
+        caminho: arquivo.clone(),
+        origem,
+    })?;
+
+    let quando = match &t.data_sorteio {
+        Some(data) => format!("sorteado em {data}"),
+        None => "próximo, ainda não sorteado".to_string(),
+    };
+    println!(
+        "Tabela de {} do concurso {} ({quando}) com o perfil {} (janela {}): {} dezena(s) em {}",
+        cfg.nome_exibicao,
+        t.concurso,
+        t.perfil,
+        descrever_janela(t.janela),
+        t.linhas.len(),
+        absoluto(&arquivo).display()
+    );
+    let top: Vec<String> = t
+        .linhas
+        .iter()
+        .take(10)
+        .map(|l| match l.saiu {
+            Some(true) => format!("{:02}*", l.dezena),
+            _ => format!("{:02}", l.dezena),
+        })
+        .collect();
+    let legenda = if t.data_sorteio.is_some() {
+        " (* = saiu)"
+    } else {
+        ""
+    };
+    println!("Top 10: {}{legenda}", top.join(" "));
     Ok(())
 }
 

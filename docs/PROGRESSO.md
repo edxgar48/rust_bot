@@ -28,6 +28,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1b.1 Leitura de perfis `.toml` (`perfis/`) + tabela `perfis`
 - [x] 1b.2 Normalização, total, posição e variação de posição
 - [x] 1b.3 Tabela `indice` + comando `sync indice`
+- [x] 1b.4 Comando `sync tabela` (CSV da tabela geral por concurso)
 
 ## Fase 1c — Avaliação · `engenheiro-avaliacao`
 
@@ -894,3 +895,14 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `veredito_do_trancado` `pub(crate)`, ambos fora do reexport público. Item 8 (registro contornável
   por `--db`/`--registros`/apagar o arquivo) segue só com aviso, sem decisão nova. Gate: fmt, clippy e
   645 testes (409 lib + 28 sync + 85 avaliar + 56 features + 57 indice + 10 parser, 4 ignorados).
+- 2026-10-05 — 1b.4 concluída (pedido do usuário, registrada no PLANEJAMENTO.md antes do código):
+  `sync tabela <loteria|todas> --perfil X [--concurso N] [--saida tabelas]`. As conferências do
+  `avaliar` foram extraídas para `ler_indice_conferido` em `src/orquestracao.rs`, usada pelo `avaliar`
+  (sem mudança de comportamento) e pela nova `tabela_do_concurso`; `src/tabela.rs` (novo, puro) monta o
+  CSV (`;`, vírgula decimal, 19 colunas, uma linha por dezena em ordem de posição); erro novo
+  `TabelaConcursoInvalido`; `/tabelas` no `.gitignore`; README e `docs/GUIA.md` atualizados. Testes:
+  5 unitários do CSV e 10 de integração em `tests/tabela.rs` (próximo concurso igual ao índice e às
+  features, concurso sorteado com `saiu` = dezenas sorteadas, recusas, CSV, CLI sem tocar no banco e
+  determinística). Gate: fmt, clippy, 660 testes (4 ignorados). Rodado nos bancos reais (só leitura,
+  hashes iguais): tabelas dos concursos 3797, 3067 e 7135 gravadas em `tabelas/`. Sem revisão do
+  `revisor-arquitetura` (feito direto, a pedido do usuário).

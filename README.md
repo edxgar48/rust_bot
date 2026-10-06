@@ -99,12 +99,17 @@ cargo run --bin sync -- avaliar quina --perfil padrao_v1 --trancado            #
 # testes de aleatoriedade do histórico inteiro (qui-quadrado e runs por dezena)
 cargo run --bin sync -- aleatoriedade todas
 
+# tabela geral em CSV (Excel: `;` e vírgula decimal), um arquivo por concurso
+# em tabelas/<loteria>/tabela_<loteria>_<perfil>_<concurso>.csv
+cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
+cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concurso já sorteado (com `saiu`)
+
 # `todas` no lugar do slug percorre todas as loterias configuradas
 cargo run --bin sync -- validar todas
 cargo run --bin sync -- atualizar todas
 ```
 
-`todas` vale em `baixar`, `atualizar`, `validar`, `buracos` e `aleatoriedade`, na ordem de
+`todas` vale em `baixar`, `atualizar`, `validar`, `buracos`, `aleatoriedade` e `tabela`, na ordem de
 `LOTERIAS` em `config.rs`. Os bancos não são juntados: o comando roda em cada
 banco padrão, um por vez (por isso `--db` e `--seletor` não podem ser
 combinados com `todas`). Uma loteria que falha não interrompe as demais: no
