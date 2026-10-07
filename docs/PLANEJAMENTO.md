@@ -485,10 +485,17 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
     para ausente, LF, UTF-8 sem BOM (diferente do CSV de planilha do
     `sync tabela`);
   - **saída**: `datasets/<loteria>/features_v<feature_version>.<ext>` (pasta
-    fora do git) e, ao lado, `manifesto.json` com loteria, versão das
-    features, último concurso, corte, trecho incluído, número de linhas,
-    SHA-256 do arquivo e a impressão dos resultados, para o Python conferir
-    o que leu;
+    fora do git); com `--trancado`, nome próprio,
+    `features_v<feature_version>_trancado.<ext>`, para a busca de pesos
+    nunca ler o trancado por engano. Ao lado de cada arquivo, um manifesto
+    **por formato** (`manifesto_<ext>.json`, e `manifesto_trancado_<ext>.json`
+    com `--trancado`) com loteria, versão das features, último concurso,
+    corte, trecho incluído, número de linhas, SHA-256 do arquivo, a
+    impressão dos resultados **do banco** (rotulada assim; muda a cada
+    sorteio) e a impressão **só dos concursos incluídos**, para o Python
+    conferir o que leu (decisões de 2026-10-06);
+  - **`--formato`** padrão `parquet`; sem coluna `loteria` (a loteria fica no
+    manifesto, nos metadados do Parquet e no nome da pasta);
   - **pré-condições**: uma loteria por execução, sem `todas`; recusa features
     desatualizadas ou resultados alterados (mesma conferência do `sync
     indice`/`sync avaliar`); banco só para leitura; SQL em `db.rs`, fluxo em
