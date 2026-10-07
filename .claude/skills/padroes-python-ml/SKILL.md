@@ -10,7 +10,7 @@ paths: ["ml/**", "testes/conformidade/**", "perfis/**"]
 ## Fronteira com o Rust
 - Entrada: **somente** datasets exportados por `sync dataset` ou leitura
   read-only dos `.db`. Nunca recalcular features em Python para produção.
-- Saída: perfis `perfis/<nome>.toml` no formato do plano. É o único artefato
+- Saída: perfis `perfis/<loteria>/<nome>.toml` no formato do plano. É o único artefato
   que volta para o Rust.
 - Se o experimento precisar de uma feature nova, ela é especificada no
   plano e implementada no Rust primeiro.

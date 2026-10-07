@@ -501,7 +501,35 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
     indice`/`sync avaliar`); banco só para leitura; SQL em `db.rs`, fluxo em
     `orquestracao`, montagem do arquivo num módulo próprio sem banco.
 - Pasta `ml/`: leitura do dataset, baseline, busca de pesos com walk-forward,
-  escrita de novos perfis `.toml`.
+  escrita de novos perfis `.toml`. Regras da 1.5.2 (decisões de 2026-10-06):
+  - **ambiente**: venv em `ml/.venv` (fora do git), Python 3.12, versões
+    fixadas em `ml/pyproject.toml`; o gate roda
+    `ml/.venv/Scripts/python -m pytest ml/`;
+  - **dependências**: só `pyarrow`, `numpy` e `pytest` (sem pandas, polars
+    ou scikit-learn);
+  - **leitura sempre pelo manifesto**: confere SHA-256, número de linhas,
+    `feature_version` e último concurso ≤ corte; recusa linha com
+    `trecho != busca` e qualquer arquivo `_trancado`; lê Parquet e CSV para
+    a mesma estrutura; leitura do trancado fora desta tarefa;
+  - **baseline** = (a) o acaso *K/N* (log loss, Brier e top-k esperado) nas
+    mesmas 5 dobras do Rust + (b) a avaliação de um perfil `.toml` refeita em
+    Python (índice, calibração pela posição com m = 100 e métricas),
+    conferida com `sync avaliar --perfil padrao_v1` com tolerância ~1e-12 —
+    é a métrica que a 1.5.3 otimiza. Nenhum modelo de ML agora;
+  - **K e N** tirados do próprio dataset (N dezenas por concurso, K = soma de
+    `saiu`), recusando concurso que não bata; sem tabela fixa no Python;
+  - **dobras** as mesmas da 1c.3, refeitas em Python e testadas contra os
+    limites reais do Rust;
+  - **experimento** `ml/experimentos/001_baseline.py`, saída em texto,
+    resultado anotado em `docs/PROGRESSO.md`;
+  - **testes**: pytest com dados sintéticos pequenos e uma fixture pequena
+    (CSV e Parquet) gerada pelo `sync dataset` num banco sintético, em
+    `ml/tests/fixtures/`, versionada no git.
+  Para o começo da 1.5.3 (decisões de 2026-10-06): o Python ganha uma tabela
+  com o corte da busca de cada loteria (3416, 2759, 6421), conferida contra o
+  `ultimo_concurso_busca` do manifesto (reforço: o corte fica no código também
+  do lado Python); e o formato do manifesto do dataset é documentado como
+  contrato em `docs/contrato-v1.md`, porque o Python depende dele.
 - **Vetores de conformidade** (`testes/conformidade/*.json`): entrada →
   features/índice esperados, verificados por `cargo test` **e** `pytest`.
 
@@ -564,5 +592,3 @@ com o planejamento do front-end.
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
   CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
   automatizado.
-- 2026-10-06 — 1.5.1, decisões do usuário: aceitas as 8 sugestões, registradas no PLANEJAMENTO.md
-  (Fase 1.5, item do `sync dataset`). 1.5.1 desbloqueada.

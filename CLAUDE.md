@@ -20,7 +20,7 @@ cargo test
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo run --bin sync -- <comando> <loteria>   # ver README.md
-python -m pytest ml/                           # a partir da Fase 1.5
+ml/.venv/Scripts/python -m pytest ml/          # a partir da Fase 1.5 (venv em ml/.venv, Python 3.12)
 ```
 
 ## Regras que valem sempre
