@@ -410,6 +410,27 @@ pub fn ler_features_da_janela(conn: &Connection, janela: u32) -> Result<Vec<Linh
     ler_features_onde(conn, "janela = ?1", [janela])
 }
 
+/// Lê as linhas de `features_dezena` dos concursos até `ate` (inclusive) nas
+/// `janelas`, ordenadas por (concurso, dezena, janela): o conteúdo do
+/// `sync dataset`. Linha de janela fora da lista não entra.
+pub fn ler_features_ate(
+    conn: &Connection,
+    ate: u32,
+    janelas: &[u32],
+) -> Result<Vec<LinhaFeatures>> {
+    // Inteiros formatados por nós, não texto vindo de fora: sem risco de injeção.
+    let lista = janelas
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    ler_features_onde(
+        conn,
+        &format!("concurso <= ?1 AND janela IN ({lista})"),
+        [ate],
+    )
+}
+
 /// Indica se a tabela (ou view) `nome` existe no banco. Serve para consultar
 /// uma tabela derivada sem criá-la (e sem cair em "no such table").
 pub fn tabela_existe(conn: &Connection, nome: &str) -> Result<bool> {

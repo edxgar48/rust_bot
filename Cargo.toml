@@ -16,8 +16,12 @@ calamine = "0.36.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 toml = "1.1.6"
 sha2 = "0.11.0"
+parquet = { version = "60.0.0", default-features = false }
 
 [dev-dependencies]
 # Só para gerar as planilhas de `tests/fixtures/` (ver `tests/comum/mod.rs`).
 # É o mesmo crate (e versão) que o calamine já usa: nenhum download novo.
 zip = { version = "8.6", default-features = false }
+# Só para ler de volta, nos testes, o Parquet montado em memória (o leitor do
+# crate `parquet` aceita `bytes::Bytes`). Já vem no Cargo.lock via tokio.
+bytes = "1"

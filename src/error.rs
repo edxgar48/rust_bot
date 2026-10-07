@@ -233,6 +233,27 @@ pub enum SpiderError {
     #[error("backup do banco em `{}`: {motivo}", caminho.display())]
     Backup { caminho: PathBuf, motivo: String },
 
+    /// Dados do `sync dataset` que não respeitam o que a montagem dos
+    /// arquivos pressupõe (ordem, só concursos sorteados, trancado só com
+    /// `--trancado`). Só acontece por erro de programação ou tabela mexida por
+    /// fora: as features já foram conferidas antes.
+    #[error("dataset incoerente: {0} — regenere com `sync features --completo`; nada foi gravado")]
+    DatasetIncoerente(String),
+
+    /// Valor do dataset acima de `i32::MAX`, o limite das colunas INT32 do
+    /// Parquet. Regenerar as features não resolve: o valor é legítimo e o
+    /// esquema é que não comporta.
+    #[error("dataset: o valor {0} não cabe numa coluna INT32 do Parquet (máximo 2147483647) — o esquema do Parquet precisa de colunas maiores (`ESQUEMA_PARQUET` em src/dataset.rs); enquanto isso, use `--formato csv`; nada foi gravado")]
+    ValorForaDoInt32(u32),
+
+    /// Falha do serde_json ao serializar o manifesto do `sync dataset`. Só
+    /// acontece por erro de programação na struct do manifesto.
+    #[error("dataset: falha ao serializar o manifesto em JSON: {0} — erro de programação em `Manifesto` (src/dataset.rs), não nos dados; nada foi gravado")]
+    ManifestoJson(#[source] serde_json::Error),
+
+    #[error("erro ao montar o Parquet: {0}")]
+    Parquet(#[from] parquet::errors::ParquetError),
+
     #[error("erro de banco de dados: {0}")]
     Db(#[from] rusqlite::Error),
 }

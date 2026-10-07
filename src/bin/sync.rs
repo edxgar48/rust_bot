@@ -1,8 +1,8 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
 use rust_spider::{
-    backup, config, correcoes, db, downloader, manuais, orquestracao, parser, perfil, registros,
-    tabela, tempo, validacao, SpiderError,
+    backup, config, correcoes, dataset, db, downloader, manuais, orquestracao, parser, perfil,
+    registros, tabela, tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -230,6 +230,33 @@ enum Comando {
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
     },
+    /// Grava o dataset de ML para o Python: as features de `features_dezena`
+    /// (uma linha por concurso, dezena e janela, com data, trecho e `saiu`)
+    /// dos concursos já sorteados, em `<saida>/<loteria>/features_v<versão>.<ext>`,
+    /// com `manifesto_<ext>.json` ao lado (corte, linhas, SHA-256, impressões
+    /// dos resultados do banco e dos incluídos). Por padrão só o trecho de
+    /// busca (até o corte); o trancado fica fora. Com `--trancado`, grava em
+    /// `features_v<versão>_trancado.<ext>` + `manifesto_trancado_<ext>.json`,
+    /// sem tocar nos arquivos da busca. Só lê o banco; recusa se as features
+    /// não estiverem em dia.
+    Dataset {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Formato do arquivo de dados
+        #[arg(long, value_enum, default_value_t = FormatoDataset::Parquet)]
+        formato: FormatoDataset,
+        /// Inclui o conjunto TRANCADO (concursos acima do corte da busca).
+        /// Só para a validação final do perfil campeão: nada acima do corte
+        /// pode entrar na busca de pesos
+        #[arg(long)]
+        trancado: bool,
+        /// Pasta onde gravar (uma subpasta por loteria)
+        #[arg(long, default_value = "datasets")]
+        saida: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
     /// Testes de aleatoriedade do histórico inteiro (qui-quadrado de
     /// frequência e runs test por dezena, com Holm). Só lê o banco.
     Aleatoriedade {
@@ -241,6 +268,26 @@ enum Comando {
         db: Option<PathBuf>,
     },
 }
+
+/// Formato do `sync dataset` na linha de comando.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FormatoDataset {
+    Parquet,
+    Csv,
+}
+
+impl From<FormatoDataset> for dataset::Formato {
+    fn from(f: FormatoDataset) -> Self {
+        match f {
+            FormatoDataset::Parquet => dataset::Formato::Parquet,
+            FormatoDataset::Csv => dataset::Formato::Csv,
+        }
+    }
+}
+
+/// Por que `dataset` não aceita `todas`.
+const MOTIVO_DATASET_UMA_LOTERIA: &str =
+    "gere o dataset de uma loteria por vez (cada uma tem seu banco, suas features e seu corte)";
 
 /// Quantos problemas imprimir antes de resumir o restante numa contagem.
 const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
@@ -420,7 +467,8 @@ async fn main() -> anyhow::Result<()> {
         } => {
             if concurso.is_some() && config::eh_todas(&loteria) {
                 anyhow::bail!(
-                    "`--concurso` não pode ser usado com `{}`: a numeração dos concursos é de                      cada loteria; informe o slug",
+                    "`--concurso` não pode ser usado com `{}`: a numeração dos concursos é de \
+                     cada loteria; informe o slug",
                     config::TODAS
                 );
             }
@@ -432,6 +480,17 @@ async fn main() -> anyhow::Result<()> {
                 execucao.registrar(cfg, r)?;
             }
             execucao.concluir()?;
+        }
+        Comando::Dataset {
+            loteria,
+            formato,
+            trancado,
+            saida,
+            db,
+        } => {
+            let cfg = buscar_config_unica(&loteria, "dataset", MOTIVO_DATASET_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            gravar_dataset(cfg, &db_caminho, formato.into(), trancado, &saida)?;
         }
         Comando::Aleatoriedade { loteria, db } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
@@ -1232,6 +1291,82 @@ fn calcular_indice(
         resumo.ultimo_concurso,
         resumo.proximo_concurso,
         duracao.as_secs_f64()
+    );
+    Ok(())
+}
+
+/// `sync dataset`: lê e confere as features (em `orquestracao`), monta o
+/// arquivo e o manifesto (em `dataset`) e grava os dois em
+/// `<saida>/<loteria>/`. Banco inexistente é erro, sem criar arquivo; o banco
+/// é aberto só para leitura.
+fn gravar_dataset(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    formato: dataset::Formato,
+    com_trancado: bool,
+    saida: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let inicio = std::time::Instant::now();
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let ds = orquestracao::dataset_de_features(&mut conn, cfg, com_trancado)?;
+    drop(conn);
+    let bytes = dataset::montar(&ds, formato)?;
+    let manifesto = dataset::manifesto(&ds, formato, &bytes);
+    let texto_manifesto = dataset::formatar_manifesto(&manifesto)?;
+
+    let pasta = saida.join(cfg.slug);
+    let io = |caminho: &std::path::Path| {
+        let caminho = caminho.to_path_buf();
+        move |origem| SpiderError::Io { caminho, origem }
+    };
+    std::fs::create_dir_all(&pasta).map_err(io(&pasta))?;
+    // Nomes por modo e formato: com `--trancado`, `features_v<fv>_trancado.<ext>`
+    // e `manifesto_trancado_<ext>.json`, então o par da busca nunca é tocado.
+    let arquivo = pasta.join(dataset::nome_arquivo(&ds, formato));
+    let arquivo_manifesto = pasta.join(dataset::nome_manifesto(&ds, formato));
+    // O manifesto antigo do mesmo modo e formato sai antes de o arquivo de
+    // dados ser regravado: se a gravação falhar no meio, não sobra manifesto
+    // descrevendo outro arquivo. O par do outro modo fica como está.
+    match std::fs::remove_file(&arquivo_manifesto) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io(&arquivo_manifesto)(e).into()),
+    }
+    std::fs::write(&arquivo, &bytes).map_err(io(&arquivo))?;
+    std::fs::write(&arquivo_manifesto, &texto_manifesto).map_err(io(&arquivo_manifesto))?;
+
+    if com_trancado {
+        eprintln!(
+            "Aviso: o dataset inclui o conjunto TRANCADO (concursos acima de {}). Use só na \
+             validação final do perfil campeão, nunca na busca de pesos.",
+            cfg.ultimo_concurso_busca
+        );
+    }
+    println!(
+        "Dataset de {} ({}): concursos {} a {} ({} concurso(s); corte da busca {}), {} linha(s), \
+         feature_version {}.",
+        cfg.nome_exibicao,
+        manifesto.trecho,
+        manifesto.primeiro_concurso,
+        manifesto.ultimo_concurso,
+        manifesto.concursos,
+        manifesto.ultimo_concurso_busca,
+        manifesto.linhas,
+        manifesto.feature_version
+    );
+    println!(
+        "Arquivo: {} ({} bytes, SHA-256 {})",
+        absoluto(&arquivo).display(),
+        bytes.len(),
+        manifesto.sha256
+    );
+    println!(
+        "Manifesto: {}. Tempo: {:.2} s.",
+        absoluto(&arquivo_manifesto).display(),
+        inicio.elapsed().as_secs_f64()
     );
     Ok(())
 }
@@ -2178,6 +2313,46 @@ mod tests {
             }
             _ => panic!("esperava o comando indice"),
         }
+    }
+
+    #[test]
+    fn dataset_usa_parquet_sem_trancado_em_datasets_por_padrao() {
+        let cli = Cli::try_parse_from(["sync", "dataset", "quina"]).expect("só a loteria");
+        match cli.comando {
+            Comando::Dataset {
+                loteria,
+                formato,
+                trancado,
+                saida,
+                db,
+            } => {
+                assert_eq!(loteria, "quina");
+                assert_eq!(formato, FormatoDataset::Parquet);
+                assert!(!trancado);
+                assert_eq!(saida, PathBuf::from("datasets"));
+                assert_eq!(db, None);
+            }
+            _ => panic!("esperava o comando dataset"),
+        }
+        let cli = Cli::try_parse_from(["sync", "dataset", "quina", "--formato", "csv"])
+            .expect("com --formato csv");
+        assert!(matches!(
+            cli.comando,
+            Comando::Dataset {
+                formato: FormatoDataset::Csv,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn dataset_recusa_todas() {
+        let erro = buscar_config_unica("todas", "dataset", MOTIVO_DATASET_UMA_LOTERIA)
+            .expect_err("todas é recusado");
+        assert!(
+            erro.to_string().contains("`dataset` não aceita `todas`"),
+            "{erro}"
+        );
     }
 
     #[test]

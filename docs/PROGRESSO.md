@@ -40,7 +40,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1.5 — Ponte com Python · `cientista-ml`
 
-- [ ] 1.5.1 Comando `sync dataset --formato parquet|csv`
+- [x] 1.5.1 Comando `sync dataset --formato parquet|csv`
 - [ ] 1.5.2 `ml/`: leitura do dataset + baseline
 - [ ] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
 - [ ] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
@@ -929,3 +929,48 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   loteria por execução (sem `todas`, como `features`/`indice`), recusa se as features estiverem
   desatualizadas ou de resultados alterados (reusar `ler_features_em_dia`), banco só leitura; SQL em
   `db.rs`, fluxo em `orquestracao`, montagem do arquivo num módulo puro (ex.: `src/dataset.rs`).
+- 2026-10-06 — 1.5.1 implementada pelo `cientista-ml` (continua [~], aguardando decisões de plano):
+  `sync dataset <loteria> [--formato parquet|csv] [--trancado] [--saida datasets]`. Novos
+  `src/dataset.rs` (montagem de CSV, Parquet e manifesto, sem banco) e `tests/dataset.rs`; fluxo
+  `dataset_de_features` em `src/orquestracao.rs` (reusa `ler_features_em_dia` por janela, numa
+  transação de leitura); SQL `ler_features_ate` em `db.rs`; erros `DatasetIncoerente` e `Parquet`;
+  `parquet = 60.0.0` sem arrow (MSRV 1.88, sem compressão, `created_by` fixo); chrono 0.4.39 → 0.4.45
+  no Cargo.lock (exigido pelo parquet); `/datasets` no `.gitignore`; README e GUIA atualizados.
+  Gate: fmt ok, clippy ok, 697 testes (4 ignorados, já existentes), `validar todas` ok. Nas cópias
+  dos bancos: duas execuções com bytes iguais nos dois formatos (Quina 2.054.720 linhas até 6421),
+  bancos intactos; lido de volta com pyarrow/pandas numa venv fora de `ml/`, valores iguais ao SQLite.
+  `revisor-arquitetura`: aprovado com ressalvas, sem achado alto; `verificador-vazamento`
+  (independente): sem vazamento. Desvios do plano a confirmar: (1) `manifesto_<ext>.json` (um por
+  formato) em vez de `manifesto.json`; (2) `--formato` com padrão `parquet`; (3) sem coluna `loteria`
+  (fica no manifesto, nos metadados do Parquet e na pasta). Perguntas ao usuário: (A) `--trancado`
+  grava no mesmo nome `features_v<fv>.<ext>` do dataset de busca, então uma validação final pode deixar
+  o trancado onde a busca de pesos vai ler; sugestão: nome próprio (`features_v<fv>_trancado.<ext>` +
+  manifesto próprio), em vez de depender do Python recusar `trecho != busca`; (B) a impressão no
+  manifesto é a do banco inteiro (a de `motor_estado`, inclui o trancado): sugestão: manter e rotular
+  como impressão do banco, e acrescentar uma impressão só dos concursos incluídos. Ajustes baixos para a
+  próxima rodada: `Dataset::novo` recusar concurso > corte sem `--trancado` (hoje confia no rótulo);
+  variante de erro própria para "valor não cabe em INT32"/falha ao serializar o manifesto (a mensagem
+  atual manda regenerar as features); teste de CLI com concurso de fato trancado, se viável.
+- 2026-10-06 — 1.5.1, decisões do usuário após a 1ª rodada: aprovados os desvios (manifesto por formato,
+  `--formato` padrão `parquet`, sem coluna `loteria`); (A) `--trancado` grava com nome próprio
+  (`features_v<fv>_trancado.<ext>` e manifesto próprio); (B) manifesto com a impressão do banco
+  rotulada como tal e mais a impressão só dos concursos incluídos. Registrado no PLANEJAMENTO.md.
+  Corrigida a mensagem de `sync tabela --concurso` com `todas` (espaços no meio da frase, erro de
+  edição da 1b.4).
+- 2026-10-06 — 1.5.1 concluída ([x]), rodada 2 (`cientista-ml`), com as decisões aprovadas pelo usuário
+  (plano atualizado: desvios 1–3 da rodada 1, (A) e (B)): `--trancado` grava
+  `features_v<fv>_trancado.<ext>` + `manifesto_trancado_<ext>.json` e nunca toca no par da busca
+  (teste de CLI compara os bytes da busca antes e depois); manifesto com `impressao_resultados_banco`
+  (a de `motor_estado`) e `impressao_resultados_incluidos` (mesma função, só até o último concurso
+  incluído; teste: não muda com concurso novo acima do corte); `Dataset::novo` recusa concurso acima do
+  corte sem `--trancado` também pelo número; erros próprios `ValorForaDoInt32` e `ManifestoJson`; teste
+  de CLI com concursos de fato trancados (banco sintético da Mega-Sena com 2762 concursos, ~15 s em
+  debug; o gerador de datas do teste passou a avançar o ano a cada 336 concursos). README e GUIA
+  atualizados. Gate: fmt ok, clippy ok, 703 testes (4 ignorados, já existentes), `validar todas` ok.
+  Ponta a ponta na cópia da Mega-Sena: busca 1–2759 (662.160 linhas) e trancado 1–3066 (735.840) na
+  mesma pasta, arquivos da busca com SHA igual antes e depois; segunda rodada com `diff -r` vazio.
+  `revisor-arquitetura`: aprovado com ressalvas, só baixas, não corrigidas: (1) a mensagem de
+  `DatasetIncoerente` manda regenerar as features mesmo quando a causa é erro de programação; (2) com
+  `--trancado` sem nenhum concurso acima do corte, o manifesto diz `busca+trancado` (o campo descreve o
+  modo, não o conteúdo). Em aberto para o usuário: documentar o manifesto do dataset num contrato
+  (ex.: `docs/contrato-v1.md` ou doc próprio), hoje só no README/GUIA.

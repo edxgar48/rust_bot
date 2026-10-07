@@ -47,7 +47,9 @@ src/
 ├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap) e testes de aleatoriedade, puro
 ├── registros.rs   # registro de uso do conjunto trancado (`registros/trancado_<loteria>.json`, versionado)
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
-├── orquestracao.rs # `sync features`, `indice`, `avaliar` e `aleatoriedade`: validação + motor/avaliação + banco
+├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `tabela` e `dataset`: validação + motor/avaliação + banco
+├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
+├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
@@ -104,6 +106,13 @@ cargo run --bin sync -- aleatoriedade todas
 cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
 cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concurso já sorteado (com `saiu`)
 
+# dataset de ML para o Python (`ml/`): features por (concurso, dezena, janela) dos
+# concursos sorteados, em datasets/<loteria>/features_v<versão>.<parquet|csv>
+cargo run --bin sync -- dataset quina                     # Parquet, só o trecho de busca
+cargo run --bin sync -- dataset quina --formato csv       # CSV de máquina
+cargo run --bin sync -- dataset quina --trancado          # inclui o TRANCADO: só na validação final;
+                                                          # grava features_v<versão>_trancado.<ext> à parte
+
 # `todas` no lugar do slug percorre todas as loterias configuradas
 cargo run --bin sync -- validar todas
 cargo run --bin sync -- atualizar todas
@@ -116,9 +125,10 @@ combinados com `todas`). Uma loteria que falha não interrompe as demais: no
 fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
 alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
 padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
-`inserir`, `listar`, `features`, `indice` e `avaliar` aceitam só uma loteria.
-`listar`, `validar`, `buracos`, `features`, `indice`, `avaliar` e
-`aleatoriedade` falham com "banco não encontrado" em vez de criar um banco
+`inserir`, `listar`, `features`, `indice`, `avaliar` e `dataset` aceitam só
+uma loteria.
+`listar`, `validar`, `buracos`, `features`, `indice`, `avaliar`,
+`aleatoriedade`, `tabela` e `dataset` falham com "banco não encontrado" em vez de criar um banco
 vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
@@ -278,6 +288,55 @@ Cuidados com o registro do trancado:
   gravado). Ainda assim sobra uma janela mínima entre a última recarga e a
   gravação: **não rode `--trancado` em paralelo**.
 
+`dataset <loteria> [--formato parquet|csv] [--trancado] [--saida datasets]`
+grava o dataset que o Python (`ml/`) lê: as linhas de `features_dezena` —
+uma por (concurso, dezena, janela), o snapshot de antes do concurso, nada
+recalculado — dos concursos já sorteados (o snapshot do próximo concurso não
+entra). Colunas, nesta ordem: `concurso, data, dezena, janela, trecho`, os 9
+componentes com os nomes de `features_dezena`, `saiu` (0/1, o rótulo do
+próprio concurso) e `feature_version`. `trecho` é `busca` (até o corte fixo
+da loteria) ou `trancado` (acima dele). **Por padrão o trancado fica fora**:
+só entram concursos até o corte; `--trancado` inclui o resto e avisa na saída
+de erro — é só para a validação final do perfil campeão, nunca para a busca
+de pesos.
+
+- **Arquivos:** `<saida>/<loteria>/features_v<feature_version>.<parquet|csv>`
+  e, ao lado, `manifesto_<parquet|csv>.json` (um por formato, para os dois
+  conviverem na pasta). Com `--trancado`, nomes próprios:
+  `features_v<feature_version>_trancado.<parquet|csv>` e
+  `manifesto_trancado_<parquet|csv>.json`; uma execução com `--trancado`
+  nunca sobrescreve nem apaga os arquivos da busca, e a busca de pesos não lê
+  o trancado por engano. `datasets/` fica fora do git.
+- **Manifesto** (JSON indentado, chaves nesta ordem): `loteria`,
+  `feature_version`, `formato`, `arquivo` (nome do arquivo de dados ao lado),
+  `colunas`, `primeiro_concurso` e `ultimo_concurso` (incluídos), corte
+  `ultimo_concurso_busca`, `trecho` (`busca` ou `busca+trancado`),
+  `concursos` e `linhas` (contagens), `sha256` do arquivo de dados,
+  `impressao_resultados_banco` (impressão de `resultados` do banco inteiro, a
+  mesma de `motor_estado`; muda a cada sorteio, mesmo fora do arquivo) e
+  `impressao_resultados_incluidos` (a mesma função só sobre os concursos 1 …
+  `ultimo_concurso`; no dataset da busca não muda quando entra um concurso
+  acima do corte), para o Python conferir o que leu.
+- **Parquet:** crate `parquet` sem arrow, sem compressão, um row group a cada
+  1 048 576 linhas; inteiros `INT32` com sinal, `data` e `trecho` em texto
+  UTF-8, `NULL` nos componentes sem valor; metadados `loteria`,
+  `feature_version` e `trecho`; `created_by` fixo (`rust_spider sync
+  dataset`).
+- **CSV de máquina** (diferente do CSV de planilha do `tabela`): separador
+  `,`, cabeçalho, campo vazio = `NULL`, fim de linha LF, UTF-8 sem BOM. Só há
+  inteiros e textos sem vírgula, então não há aspas nem casas decimais.
+- **Determinismo:** mesmos dados → mesmos bytes no arquivo e no manifesto
+  (ordem (concurso, dezena, janela), sem data de geração). Os bytes do
+  Parquet dependem da versão do crate travada no `Cargo.lock`.
+- **Pré-condições:** uma loteria por vez, sem `todas`; banco aberto só para
+  leitura; recusa, sem gravar nada, as mesmas situações do `indice`: banco
+  sem resultados ou sem features, features desatualizadas (snapshot diferente
+  do último + 1), resultados alterados desde o último `features`, outra
+  `feature_version` ou série incompleta em alguma janela. O manifesto antigo
+  do mesmo modo e formato é apagado antes de regravar o arquivo de dados: se
+  faltar o manifesto, o arquivo não é confiável. O par do outro modo (busca
+  ou trancado) não é tocado.
+
 `aleatoriedade <loteria|todas>` testa o histórico inteiro de `resultados`
 (inclusive o trancado; não depende de perfil nem de features): qui-quadrado
 de frequência (corrigido para sorteio sem reposição) e runs test por dezena
@@ -290,7 +349,8 @@ Por padrão cada loteria grava em um banco SQLite separado —
 no mesmo arquivo. Os downloads vão para `downloads/` e os backups do
 `atualizar` com salto para `backups/`. Configuráveis via `--db`, `--dir` e
 `--backups`; os três ficam fora do git (`*.db` e `/downloads` no
-`.gitignore`).
+`.gitignore`). As saídas de `tabela` e `dataset` (`tabelas/`, `datasets/`)
+também ficam fora do git.
 
 ## Estado atual / o que falta confirmar
 

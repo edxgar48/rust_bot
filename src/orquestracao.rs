@@ -21,11 +21,15 @@
 //! com a regra de imutabilidade do plano, e grava o índice de força de um
 //! perfil na tabela `indice` ([`sincronizar_indice`], comando `sync indice`).
 //!
+//! Lê e confere as features para o dataset de ML do `sync dataset`
+//! ([`dataset_de_features`]); a montagem dos arquivos fica em `dataset`.
+//!
 //! E decide o que o `sync atualizar` faz com o concurso lido na página
 //! ([`classificar_atualizacao`], tarefa 0.8).
 
 use crate::avaliacao::{self, Cauda, Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward};
 use crate::config::LoteriaConfig;
+use crate::dataset::{ConcursoDataset, Dataset, ImpressoesResultados};
 use crate::db::{self, MotorEstadoSalvo, PerfilRegistrado};
 use crate::error::{Result, SpiderError};
 use crate::model::Resultado;
@@ -679,6 +683,80 @@ fn conferir_serie(
         )));
     }
     Ok((features[0].concurso, concursos))
+}
+
+// ---------------------------------------------------------------------------
+// Dataset de ML para o Python (`sync dataset`, 1.5.1).
+// ---------------------------------------------------------------------------
+
+/// `sync dataset`: as linhas de `features_dezena` (todas as janelas de
+/// [`JANELAS`]) dos concursos já sorteados, com a data e o trecho de cada
+/// concurso, prontas para [`dataset`](crate::dataset) montar o arquivo.
+///
+/// Sem `com_trancado`, só entram concursos até o corte da busca
+/// (`trecho_do_concurso` = Busca); com ele, até o último sorteado. O
+/// snapshot do próximo concurso (`saiu` = `NULL`) nunca entra. Antes, as
+/// mesmas recusas do `sync indice` ([`ler_features_em_dia`]) em cada janela:
+/// sem resultados, sem features, features desatualizadas, resultados
+/// alterados desde o último `sync features`, outra `feature_version` ou série
+/// incoerente. Nada é recalculado: os componentes são os gravados. Só lê.
+pub fn dataset_de_features(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    com_trancado: bool,
+) -> Result<Dataset> {
+    // Só leitura: a transação nunca recebe `commit` (leitura consistente
+    // entre as conferências e as linhas lidas).
+    let tx = db::iniciar_leitura(conn)?;
+    let mut ultimo = 0;
+    for &janela in &JANELAS {
+        // Uma janela por vez: a série conferida é descartada antes da próxima.
+        ultimo = ler_features_em_dia(&tx, cfg, janela)?.ultimo;
+    }
+    let ate = if com_trancado {
+        ultimo
+    } else {
+        ultimo.min(cfg.ultimo_concurso_busca)
+    };
+    let resultados = db::listar_crescente(&tx, cfg.slug)?;
+    let linhas = db::ler_features_ate(&tx, ate, &JANELAS)?;
+    drop(tx);
+
+    if let Some(l) = linhas.iter().find(|l| l.feature_version != FEATURE_VERSION) {
+        return Err(SpiderError::FeaturesDeOutraVersao {
+            loteria: cfg.slug.to_string(),
+            encontrada: l.feature_version,
+            atual: FEATURE_VERSION,
+        });
+    }
+    // Do banco: a mesma impressão gravada em `motor_estado` (já conferida
+    // acima). Dos incluídos: a mesma função sobre o prefixo 1 … último
+    // concurso do arquivo (`resultados` vem em ordem crescente de concurso,
+    // e os concursos do arquivo são exatamente os até `ate`).
+    let n_incluidos = resultados.partition_point(|r| r.concurso <= ate);
+    let impressoes = ImpressoesResultados {
+        banco: impressao_resultados(&resultados),
+        incluidos: impressao_resultados(&resultados[..n_incluidos]),
+    };
+    let concursos = resultados
+        .into_iter()
+        .take(n_incluidos)
+        .map(|r| ConcursoDataset {
+            concurso: r.concurso,
+            trecho: cfg.trecho_do_concurso(r.concurso),
+            data: r.data_sorteio,
+        })
+        .collect();
+    let linhas = linhas.into_iter().map(|l| l.features).collect();
+    Dataset::novo(
+        cfg.slug.to_string(),
+        FEATURE_VERSION,
+        cfg.ultimo_concurso_busca,
+        com_trancado,
+        impressoes,
+        concursos,
+        linhas,
+    )
 }
 
 // ---------------------------------------------------------------------------

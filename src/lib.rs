@@ -2,6 +2,7 @@ pub mod avaliacao;
 pub mod backup;
 pub mod config;
 pub mod correcoes;
+pub mod dataset;
 pub mod db;
 pub mod downloader;
 pub mod error;

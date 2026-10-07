@@ -151,6 +151,26 @@ features da janela do perfil. Só lê o banco e faz as mesmas conferências do
 - **Saída no terminal:** onde gravou e o top 10 (`*` = saiu, quando o
   concurso já foi sorteado).
 
+### Dataset para o Python
+
+`dataset <lot> [--formato parquet|csv] [--trancado] [--saida datasets]` grava
+as features de todos os concursos já sorteados (uma linha por concurso,
+dezena e janela, com `data`, `trecho` e `saiu`) para a pasta `ml/` ler. Só lê
+o banco e recusa se as features não estiverem em dia (rode `features` antes).
+
+- **Arquivos:** `datasets/<lot>/features_v1.parquet` (padrão) ou
+  `features_v1.csv`, com `manifesto_parquet.json` / `manifesto_csv.json` ao
+  lado (corte, linhas, SHA-256 do arquivo e duas impressões dos resultados:
+  `impressao_resultados_banco`, do banco inteiro, que muda a cada sorteio, e
+  `impressao_resultados_incluidos`, só dos concursos que estão no arquivo).
+- **Trancado fora por padrão:** só entram concursos até o corte (3416 na
+  Lotofácil, 2759 na Mega-Sena, 6421 na Quina). `--trancado` inclui o resto e
+  só deve ser usado na validação final do perfil campeão. Ele grava em
+  arquivos próprios, `features_v1_trancado.<ext>` e
+  `manifesto_trancado_<ext>.json`, sem tocar nos arquivos da busca. A coluna
+  `trecho` e o campo `trecho` do manifesto dizem o que entrou.
+- **Mesmos dados, mesmos bytes:** rodar duas vezes dá o mesmo SHA-256.
+
 ## 3. Como interpretar o `avaliar`
 
 **Cabeçalho.** Mostra o perfil, o hash, o trecho (`concursos 2–2759`) e o
@@ -262,6 +282,7 @@ Rotina depois de cada sorteio, para cada loteria:
 ./target/release/sync indice <lot> --perfil padrao_v1
 ./target/release/sync tabela todas --perfil padrao_v1        # CSV do próximo concurso
 ./target/release/sync avaliar <lot> --perfil padrao_v1      # opcional
+./target/release/sync dataset <lot>                          # opcional: dataset do Python
 ```
 
 | Sintoma | Causa provável | Solução |
