@@ -1,0 +1,33 @@
+{
+  "loteria": "lotofacil",
+  "feature_version": 1,
+  "formato": "csv",
+  "arquivo": "features_v1.csv",
+  "colunas": [
+    "concurso",
+    "data",
+    "dezena",
+    "janela",
+    "trecho",
+    "frequencia",
+    "maior_espaco",
+    "maior_espaco_ocorrencias",
+    "menor_espaco",
+    "menor_espaco_ocorrencias",
+    "soma_variacoes",
+    "espaco_final",
+    "repeticoes_total",
+    "repeticao_atual",
+    "saiu",
+    "feature_version"
+  ],
+  "primeiro_concurso": 1,
+  "ultimo_concurso": 40,
+  "ultimo_concurso_busca": 3416,
+  "trecho": "busca",
+  "concursos": 40,
+  "linhas": 4000,
+  "sha256": "18b645403cfae13f235d861a2e62d4aa5fd0671d8a7e540b740e1082e480e6d1",
+  "impressao_resultados_banco": "fnv1a64:40:7c353eaf6ed79bd2",
+  "impressao_resultados_incluidos": "fnv1a64:40:7c353eaf6ed79bd2"
+}

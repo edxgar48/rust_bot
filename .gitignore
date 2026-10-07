@@ -4,3 +4,6 @@
 /backups
 /tabelas
 /datasets
+/ml/.venv
+__pycache__/
+.pytest_cache/

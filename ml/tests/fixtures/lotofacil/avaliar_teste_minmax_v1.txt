@@ -1,0 +1,59 @@
+Avaliação de Lotofácil (lotofacil) com o perfil teste_minmax_v1 (versão 1, janela 10, minmax).
+  Hash do perfil: 3540457ce1d3780dd9f18b2d239dc1054fb3f5dbf37af584734b6a44da1801db
+  Trecho: busca, walk-forward em 5 dobras consecutivas; concursos 2–40 (39 avaliados).
+  Corte da busca: concurso 3416 (o trancado, do 3417 em diante, fica fora desta avaliação).
+  Índice: concursos 1–41 (último sorteado 40 e o snapshot do próximo); a calibração começa no 1 com m = 100 concursos fictícios, e esse primeiro concurso não é avaliado.
+  Top-k: k = 15 (padrão: K da loteria).
+
+Log loss (menor é melhor; diferença < 0 = perfil melhor que o acaso):
+     dobra    concursos      T      perfil       acaso    diferença          EP  IC 95% (normal)
+         1          2–8      7    0.674301    0.673012    +1.290e-3    9.806e-4  [-6.323e-4, +3.212e-3]
+         2         9–15      7    0.674656    0.673012    +1.645e-3    2.114e-3  [-2.499e-3, +5.788e-3]
+         3        16–22      7    0.673120    0.673012    +1.083e-4    2.086e-3  [-3.980e-3, +4.196e-3]
+         4        23–29      7    0.671879    0.673012    -1.133e-3    2.570e-3  [-6.171e-3, +3.905e-3]
+         5        30–40     11    0.673612    0.673012    +6.005e-4    3.378e-3  [-6.020e-3, +7.221e-3]
+     total         2–40     39    0.673524    0.673012    +5.121e-4    1.155e-3  [-1.752e-3, +2.776e-3]
+
+Brier (menor é melhor; diferença < 0 = perfil melhor que o acaso):
+     dobra    concursos      T      perfil       acaso    diferença          EP  IC 95% (normal)
+         1          2–8      7    0.240621    0.240000    +6.213e-4    4.725e-4  [-3.047e-4, +1.547e-3]
+         2         9–15      7    0.240782    0.240000    +7.821e-4    1.016e-3  [-1.209e-3, +2.773e-3]
+         3        16–22      7    0.240057    0.240000    +5.743e-5    1.001e-3  [-1.905e-3, +2.019e-3]
+         4        23–29      7    0.239444    0.240000    -5.558e-4    1.244e-3  [-2.994e-3, +1.883e-3]
+         5        30–40     11    0.240301    0.240000    +3.011e-4    1.619e-3  [-2.872e-3, +3.474e-3]
+     total         2–40     39    0.240247    0.240000    +2.474e-4    5.546e-4  [-8.396e-4, +1.334e-3]
+
+Top-15 (acertos por concurso; maior é melhor; ao acaso k·K/N = 9.0000):
+     dobra    concursos      T   perfil    acaso  diferença       EP      IC 95% (normal)  p exato
+         1          2–8      7   9.1429   9.0000    +0.1429   0.5533   [-0.9416, +1.2273]  0.4377
+         2         9–15      7   9.4286   9.0000    +0.4286   0.2974   [-0.1543, +1.0114]  0.2194
+         3        16–22      7   9.0000   9.0000    +0.0000   0.3780   [-0.7408, +0.7408]  0.5606
+         4        23–29      7   8.7143   9.0000    -0.2857   0.1844   [-0.6472, +0.0758]  0.7801
+         5        30–40     11   8.4545   9.0000    -0.5455   0.5110   [-1.5471, +0.4562]  0.9460
+     total         2–40     39   8.8974   9.0000    -0.1026   0.1971   [-0.4889, +0.2838]  0.7217
+
+Distribuição de acertos do top-15 no trecho inteiro (concursos; observado × acaso):
+   0 acerto(s):      0 ×       0.0
+   1 acerto(s):      0 ×       0.0
+   2 acerto(s):      0 ×       0.0
+   3 acerto(s):      0 ×       0.0
+   4 acerto(s):      0 ×       0.0
+   5 acerto(s):      0 ×       0.0
+   6 acerto(s):      1 ×       0.6
+   7 acerto(s):      4 ×       3.5
+   8 acerto(s):      7 ×       9.2
+   9 acerto(s):     19 ×      12.5
+  10 acerto(s):      2 ×       9.0
+  11 acerto(s):      6 ×       3.4
+  12 acerto(s):      0 ×       0.7
+  13 acerto(s):      0 ×       0.1
+  14 acerto(s):      0 ×       0.0
+  15 acerto(s):      0 ×       0.0
+
+Veredito no trecho inteiro (concursos 2–40, 39 avaliados):
+  Sem bootstrap: o trecho tem 39 concursos, menos que os 100 (dois blocos de 50) que o bootstrap por blocos exige.
+  Top-15 (p exato unilateral, trecho inteiro): 347 acertos em 39 concursos (ao acaso, 351.0 em média), p = 0.7217.
+=> SEM VEREDITO: trecho curto demais para o bootstrap.
+
+Aviso: os p-valores só valem se o perfil e o k foram escolhidos sem ver os sorteios deste trecho. Se a busca de pesos usou estes concursos, ou se este é o melhor entre vários perfis ou k, eles saem otimistas: informe quantos foram testados com --testados N (Bonferroni) ou avalie o campeão no conjunto trancado (--trancado, uso único).
+Aviso: o IC normal e o EP das tabelas ignoram a correlação serial da calibração acumulada (tendem a sair estreitos); o veredito usa o bootstrap por blocos.

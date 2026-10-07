@@ -352,6 +352,36 @@ no mesmo arquivo. Os downloads vão para `downloads/` e os backups do
 `.gitignore`). As saídas de `tabela` e `dataset` (`tabelas/`, `datasets/`)
 também ficam fora do git.
 
+## Experimentos em Python (`ml/`)
+
+Python só experimenta e propõe perfis; nada da produção depende dele. Lê o
+dataset do `sync dataset` **sempre pelo manifesto** (confere SHA-256, linhas,
+`feature_version`, corte e a impressão dos resultados; recusa o trancado) e
+refaz o índice, a calibração e as métricas do `sync avaliar`.
+
+```bash
+# ambiente (Python 3.12; versões fixadas em ml/pyproject.toml; ml/.venv fica fora do git)
+py -3.12 -m venv ml/.venv
+ml/.venv/Scripts/python -m pip install --group ml/pyproject.toml:ambiente
+
+# testes (a partir da raiz)
+ml/.venv/Scripts/python -m pytest ml/
+
+# experimento 001: acaso K/N e perfil padrao_v1 nas 5 dobras do walk-forward
+cargo run --release --bin sync -- dataset lotofacil          # gera datasets/lotofacil/
+ml/.venv/Scripts/python ml/experimentos/001_baseline.py datasets/lotofacil/manifesto_parquet.json
+
+# opcional: conferir com o Rust em precisão total (o `sync avaliar` imprime só 6 casas)
+cargo run --release --example referencia_avaliacao -- lotofacil padrao_v1 resultados_lotofacil.db > ref_lotofacil.json
+ml/.venv/Scripts/python ml/experimentos/001_baseline.py datasets/lotofacil/manifesto_parquet.json --referencia ref_lotofacil.json
+```
+
+As fixtures de `ml/tests/fixtures/` (dataset CSV/Parquet de um banco sintético
+de 40 concursos, saídas do `sync avaliar` e referências do Rust) são geradas
+pelo próprio Rust com `ml/.venv/Scripts/python ml/ferramentas/gerar_fixture.py`
+(`--bancos PASTA` com **cópias** dos bancos reais regenera também
+`dobras_rust.json`, os limites reais das dobras).
+
 ## Estado atual / o que falta confirmar
 
 - **Lotofácil, Mega-Sena e Quina**: seletor de download (`#btnResultados`),

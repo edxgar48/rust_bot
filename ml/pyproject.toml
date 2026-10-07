@@ -1,0 +1,25 @@
+# Experimentos de ML do rust_spider (Fase 1.5). Python só experimenta e propõe
+# perfis; a produção é Rust. Não é instalado como pacote: os testes acham o
+# pacote pelo `pythonpath` abaixo e os experimentos pelo próprio caminho.
+#
+# Ambiente (a partir da raiz do repositório):
+#   py -3.12 -m venv ml/.venv
+#   ml/.venv/Scripts/python -m pip install --group ml/pyproject.toml:ambiente
+[project]
+name = "rust_spider_ml"
+version = "0.1.0"
+description = "Leitura dos datasets do sync dataset, baseline e (1.5.3) busca de pesos"
+requires-python = "==3.12.*"
+
+[dependency-groups]
+# Só estas três (decisão de 2026-10-06): sem pandas, polars ou scikit-learn.
+ambiente = [
+    "numpy==2.5.3",
+    "pyarrow==25.0.1",
+    "pytest==9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"

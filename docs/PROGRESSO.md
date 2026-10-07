@@ -41,7 +41,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1.5 — Ponte com Python · `cientista-ml`
 
 - [x] 1.5.1 Comando `sync dataset --formato parquet|csv`
-- [ ] 1.5.2 `ml/`: leitura do dataset + baseline
+- [x] 1.5.2 `ml/`: leitura do dataset + baseline
 - [ ] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
 - [ ] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
 
@@ -70,6 +70,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Ambiente Python, dependências e definição do "baseline" da `ml/` → resolvidos (ver notas de 2026-10-06)
 - [x] Definição do walk-forward em Rust, dobras e uso do trancado — bloqueia 1c.3 → resolvida (ver notas de 2026-10-05)
 - [x] Nível de significância e correção por múltiplas dezenas na 1c.4 → α = 5% por família, Holm (ver nota de 2026-10-05)
 - [x] Conversão do índice em probabilidade e regras do log loss / Brier — bloqueia 1c.1 → resolvidas (ver notas de 2026-10-05)
@@ -974,3 +975,75 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `--trancado` sem nenhum concurso acima do corte, o manifesto diz `busca+trancado` (o campo descreve o
   modo, não o conteúdo). Em aberto para o usuário: documentar o manifesto do dataset num contrato
   (ex.: `docs/contrato-v1.md` ou doc próprio), hoje só no README/GUIA.
+- 2026-10-06 — 1.5.2 não iniciada (continua [ ]): o plano diz só "Pasta `ml/`: leitura do dataset,
+  baseline", sem definir ambiente, dependências, o que é o "baseline" nem como o gate roda o pytest.
+  Situação da máquina: Python 3.14 (padrão) e 3.12 instalados; o Python global não tem pytest, numpy,
+  pandas nem pyarrow, então `python -m pytest ml/` da skill `verificar` falharia assim que `ml/`
+  existir. Perguntas devolvidas ao usuário, com sugestões: (1) **ambiente**: venv em `ml/.venv` (fora
+  do git), Python 3.12, `ml/pyproject.toml` com versões fixadas (`==`); o gate passa a chamar
+  `ml/.venv/Scripts/python -m pytest ml/` (muda a skill `verificar` e o CLAUDE.md, pede aprovação);
+  (2) **dependências**: `pyarrow` (Parquet) + `numpy` + `pytest`, sem pandas/polars/scikit-learn;
+  (3) **leitura**: só via manifesto — confere SHA-256, nº de linhas, `feature_version`, último concurso
+  ≤ corte e recusa qualquer linha com `trecho != busca`; a leitura de busca recusa arquivo/manifesto
+  `_trancado` (o trancado só por uma função separada, que a 1.5.2 não implementa); lê Parquet e CSV
+  e devolve a mesma estrutura (numpy, pivotada por janela); (4) **o que é o "baseline"**: (a) o acaso
+  K/N com log loss, Brier e top-k esperado nas mesmas 5 dobras do Rust, e (b) a avaliação de um perfil
+  `.toml` em Python (índice zscore/minmax + calibração pela posição m = 100 + log loss/Brier/top-k),
+  conferida com a saída de `sync avaliar <loteria> --perfil padrao_v1` (tolerância ~1e-12); é a métrica
+  que a 1.5.3 vai otimizar. Sem modelo de ML "de verdade" (ex.: regressão logística) nesta tarefa;
+  (5) **K e N**: derivados do próprio dataset (N dezenas por concurso, K = soma de `saiu`), com recusa
+  se algum concurso não bater, sem tabela fixa no Python; (6) **dobras**: as da 1c.3 (5 iguais, do 2º
+  concurso até o corte, sobra na última), reimplementadas e testadas contra os limites reais da 1c.3;
+  (7) **experimento**: `ml/experimentos/001_baseline.py`, saída só em texto, resultado registrado aqui;
+  (8) **testes**: pytest com dados sintéticos pequenos + fixture pequena gerada pelo `sync dataset` em
+  banco sintético (CSV e Parquet) em `ml/tests/fixtures/`, versionada.
+  Achados à parte: `docs/PLANEJAMENTO.md:567-568` tem de novo uma nota de progresso (1.5.1) colada no
+  fim do Backlog — sugestão: apagar de lá (já está aqui); a skill `padroes-python-ml` diz
+  `perfis/<nome>.toml`, mas o plano manda `perfis/<loteria>/<nome>.toml` (corrigir a skill antes da 1.5.3).
+- 2026-10-06 — 1.5.1, decisões do usuário: aceitas as 8 sugestões, registradas no PLANEJAMENTO.md
+  (Fase 1.5, item do `sync dataset`). 1.5.1 desbloqueada.
+- 2026-10-06 — Nota acima (1.5.1) movida do fim do PLANEJAMENTO.md, onde tinha sido colada por engano
+  no commit a9b64cd. 1.5.2, decisões do usuário: aceitas as 8 sugestões, registradas no PLANEJAMENTO.md
+  (Fase 1.5, item da pasta `ml/`); skill `verificar` e CLAUDE.md passam a rodar o pytest pela venv
+  `ml/.venv`; skill `padroes-python-ml` corrigida para `perfis/<loteria>/<nome>.toml`. 1.5.2 desbloqueada.
+- 2026-10-06 — 1.5.2 concluída ([x]) pelo `cientista-ml`. Nova pasta `ml/`: `pyproject.toml` (Python
+  `==3.12.*`; `numpy==2.5.3`, `pyarrow==25.0.1`, `pytest==9.1.1`, grupo `ambiente`; instalar com
+  `ml/.venv/Scripts/python -m pip install --group ml/pyproject.toml:ambiente`, pip ≥ 25.1), pacote
+  `ml/rust_spider_ml/` (`dataset.py` leitura pelo manifesto, `perfil.py`, `indice.py`, `avaliacao.py`
+  calibração/métricas/dobras/top-k, `conferencia.py` comparação com o Rust a 1e-12),
+  `ml/experimentos/001_baseline.py`, `ml/ferramentas/gerar_fixture.py` (regenera as fixtures pelo
+  próprio Rust: banco sintético de 40 concursos da Lotofácil, semente fixa, bytes iguais em duas
+  gerações), 64 testes pytest e fixtures em `ml/tests/fixtures/` (CSV, Parquet, manifestos, saídas do
+  `sync avaliar`, referências JSON, perfil `teste_minmax_v1`, `dobras_rust.json` com os limites reais
+  das 5 dobras das três loterias). `.gitignore` (`/ml/.venv`, `__pycache__/`, `.pytest_cache/`),
+  `.gitattributes` (`ml/tests/fixtures/** -text`, para o autocrlf não quebrar o SHA-256 do manifesto),
+  README com seção sobre `ml/`. Nada em `src/`. Desvios aceitos pelo revisor (a confirmar pelo
+  usuário): (1) `examples/referencia_avaliacao.rs`, ferramenta Rust fora de `src/` que roda
+  `orquestracao::avaliar_perfil` só no trecho de busca e grava JSON em precisão total (o `sync avaliar`
+  imprime 6 casas); (2) `dobras_rust.json` gerado por ele a partir de cópias dos bancos reais; (3) a
+  impressão dos resultados é recalculada em Python (FNV-1a) e conferida com
+  `impressao_resultados_incluidos`, por isso o dataset tem de começar no concurso 1; (4) p-valor exato
+  e bootstrap do top-k ficam só no Rust; (5) pacote não instalado (pytest via `pythonpath`).
+  Gate: fmt ok, clippy ok, `cargo test` verde (4 ignorados, já existentes), pytest 64 ok, `validar
+  todas` ok. `revisor-arquitetura`: aprovado com ressalvas, só baixas; `verificador-vazamento`
+  (acionado direto pelo orquestrador, porque os pareceres aninhados não voltaram): sem vazamento, só
+  baixas. **Conferência Python × Rust** (cópias dos bancos, trecho de busca, `padrao_v1`, CSV e
+  Parquet): diferença máxima 0,0 em todas as métricas, dobras, T, acertos e distribuição, nas três
+  loterias. **Resultado do baseline (experimento 001)**, log loss perfil − acaso no total da busca:
+  Lotofácil +3,51e-4 (0,673363 × 0,673012), Mega-Sena +4,2e-4 (0,325506 × 0,325083), Quina +2,5e-4
+  (0,234045 × 0,233792) — o perfil fica **pior que o acaso em todas as 15 dobras**; Brier idem. Top-k
+  por concurso: Lotofácil 9,0630 × 9,0000 (p exato 0,0014 no Rust), Mega-Sena 0,5986 × 0,6000 (p 0,55),
+  Quina 0,3279 × 0,3125 (p 0,0104); ganhos pequenos, instáveis entre dobras, a 1ª dobra sempre acima
+  do acaso (coerente com os desvios de frequência da 1c.4) — tratar como suspeita, não como sinal.
+  Esse é o ponto de partida que a 1.5.3 tenta superar. Achados baixos não corrigidos: (a)
+  `001_baseline.py:44-46,76-81` formata EP/IC `None` (dataset com < 10 concursos) com `TypeError`;
+  (b) `001_baseline.py:113` deixa `DivergenciaRust` sair como traceback com referência de outro
+  perfil; (c) o corte no Python vem do manifesto, não de uma constante por loteria — só um manifesto
+  e um CSV forjados à mão com SHA refeito passam (decisão do plano: sem tabela fixa no Python;
+  pergunta ao usuário se quer o reforço); (d) com manifesto adulterado, o arquivo trancado é
+  decodificado antes de ser recusado; (e) `test_avaliacao_sintetica_e_vazamento` só compara as dobras
+  1–3 (o vazamento é coberto por `test_calibracao_so_usa_o_passado`). Corrigir (a), (b) e (d) no
+  começo da 1.5.3.
+- 2026-10-06 — 1.5.2, decisões do usuário: aprovados os 5 desvios; para o começo da 1.5.3, tabela de cortes
+  no Python (reforço contra o manifesto) e contrato do manifesto em `docs/contrato-v1.md`, registrados no
+  PLANEJAMENTO.md, junto com as 3 correções baixas do experimento e da leitura do dataset.

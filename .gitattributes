@@ -6,3 +6,5 @@ tests/fixtures/*.xlsx binary
 perfis/**/*.toml text eol=lf
 # Registro de uso do conjunto trancado (sync avaliar --trancado): gerado com LF, versionado.
 registros/*.json text eol=lf
+# Fixtures da ml/ (geradas por ml/ferramentas/gerar_fixture.py): o manifesto confere o SHA-256 dos bytes; nunca converter fim de linha.
+ml/tests/fixtures/** -text

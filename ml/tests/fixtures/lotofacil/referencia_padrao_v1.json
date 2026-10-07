@@ -1,0 +1,823 @@
+{
+  "corte": 3416,
+  "hash_toml": "02106f8563c2ee47364ecc6b0ec49803a53d127d8ecfdba41bdd1f725b2a5b94",
+  "janela": 50,
+  "k": 15,
+  "loteria": "lotofacil",
+  "normalizacao": "zscore",
+  "perfil": "padrao_v1",
+  "primeiro_indice": 1,
+  "veredito": {
+    "avaliacao": {
+      "faixa": {
+        "primeiro": 2,
+        "ultimo": 40
+      },
+      "metricas": {
+        "brier": {
+          "acaso": 0.24000000000000016,
+          "diferenca": 0.00027569416472909944,
+          "erro_padrao": 0.0005978940807630732,
+          "ic95": {
+            "inferior": -0.0008961782335665241,
+            "superior": 0.001447566563024723
+          },
+          "perfil": 0.24027569416472921
+        },
+        "concursos_avaliados": 39,
+        "log_loss": {
+          "acaso": 0.6730116670092559,
+          "diferenca": 0.0005793407885938392,
+          "erro_padrao": 0.0012453002940740856,
+          "ic95": {
+            "inferior": -0.0018614477877913682,
+            "superior": 0.003020129364979047
+          },
+          "perfil": 0.6735910077978501
+        },
+        "primeiro_concurso": 2,
+        "ultimo_concurso": 40
+      },
+      "topk": {
+        "acertos": {
+          "acaso": 9.0,
+          "diferenca": 0.38461538461538464,
+          "erro_padrao": 0.18226119315664374,
+          "ic95": {
+            "inferior": 0.0273834460283629,
+            "superior": 0.7418473232024063
+          },
+          "perfil": 9.384615384615385
+        },
+        "concursos_avaliados": 39,
+        "distribuicao": [
+          {
+            "acertos": 0,
+            "esperados": 0.0,
+            "observados": 0
+          },
+          {
+            "acertos": 1,
+            "esperados": 0.0,
+            "observados": 0
+          },
+          {
+            "acertos": 2,
+            "esperados": 0.0,
+            "observados": 0
+          },
+          {
+            "acertos": 3,
+            "esperados": 0.0,
+            "observados": 0
+          },
+          {
+            "acertos": 4,
+            "esperados": 0.0,
+            "observados": 0
+          },
+          {
+            "acertos": 5,
+            "esperados": 0.03582918293175394,
+            "observados": 0
+          },
+          {
+            "acertos": 6,
+            "esperados": 0.5971530488625656,
+            "observados": 0
+          },
+          {
+            "acertos": 7,
+            "esperados": 3.4549569255619867,
+            "observados": 0
+          },
+          {
+            "acertos": 8,
+            "esperados": 9.213218468165298,
+            "observados": 10
+          },
+          {
+            "acertos": 9,
+            "esperados": 12.540214026113878,
+            "observados": 13
+          },
+          {
+            "acertos": 10,
+            "esperados": 9.028954098801993,
+            "observados": 8
+          },
+          {
+            "acertos": 11,
+            "esperados": 3.4200583707583303,
+            "observados": 7
+          },
+          {
+            "acertos": 12,
+            "esperados": 0.6514396896682534,
+            "observados": 1
+          },
+          {
+            "acertos": 13,
+            "esperados": 0.05637458852898347,
+            "observados": 0
+          },
+          {
+            "acertos": 14,
+            "esperados": 0.0017896694771105863,
+            "observados": 0
+          },
+          {
+            "acertos": 15,
+            "esperados": 0.000011931129847403908,
+            "observados": 0
+          }
+        ],
+        "k": 15,
+        "p_valor": {
+          "log10": -1.53672499206672,
+          "probabilidade": 0.02905862148661924
+        },
+        "primeiro_concurso": 2,
+        "total_acertos": 366,
+        "ultimo_concurso": 40
+      }
+    },
+    "bootstrap": null,
+    "concursos_minimos": 100
+  },
+  "walk_forward": {
+    "corte": 3416,
+    "dobras": [
+      {
+        "faixa": {
+          "primeiro": 2,
+          "ultimo": 8
+        },
+        "metricas": {
+          "brier": {
+            "acaso": 0.24000000000000005,
+            "diferenca": -0.0002333604192449482,
+            "erro_padrao": 0.0005185744615148275,
+            "ic95": {
+              "inferior": -0.00124976636381401,
+              "superior": 0.0007830455253241136
+            },
+            "perfil": 0.23976663958075514
+          },
+          "concursos_avaliados": 7,
+          "log_loss": {
+            "acaso": 0.6730116670092564,
+            "diferenca": -0.0004833028492972545,
+            "erro_padrao": 0.0010796240900728439,
+            "ic95": {
+              "inferior": -0.0025993660658400284,
+              "superior": 0.0016327603672455192
+            },
+            "perfil": 0.672528364159959
+          },
+          "primeiro_concurso": 2,
+          "ultimo_concurso": 8
+        },
+        "topk": {
+          "acertos": {
+            "acaso": 9.0,
+            "diferenca": 0.42857142857142855,
+            "erro_padrao": 0.5281207860194961,
+            "ic95": {
+              "inferior": -0.6065453120267836,
+              "superior": 1.4636881691696408
+            },
+            "perfil": 9.428571428571429
+          },
+          "concursos_avaliados": 7,
+          "distribuicao": [
+            {
+              "acertos": 0,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 1,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 2,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 3,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 4,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 5,
+              "esperados": 0.006430878987750707,
+              "observados": 0
+            },
+            {
+              "acertos": 6,
+              "esperados": 0.10718131646251178,
+              "observados": 0
+            },
+            {
+              "acertos": 7,
+              "esperados": 0.6201204738188182,
+              "observados": 0
+            },
+            {
+              "acertos": 8,
+              "esperados": 1.6536545968501817,
+              "observados": 2
+            },
+            {
+              "acertos": 9,
+              "esperados": 2.2508076457127473,
+              "observados": 2
+            },
+            {
+              "acertos": 10,
+              "esperados": 1.6205815049131782,
+              "observados": 2
+            },
+            {
+              "acertos": 11,
+              "esperados": 0.613856630648931,
+              "observados": 0
+            },
+            {
+              "acertos": 12,
+              "esperados": 0.1169250725045583,
+              "observados": 1
+            },
+            {
+              "acertos": 13,
+              "esperados": 0.010118515889817546,
+              "observados": 0
+            },
+            {
+              "acertos": 14,
+              "esperados": 0.0003212227266608745,
+              "observados": 0
+            },
+            {
+              "acertos": 15,
+              "esperados": 2.14148484440583e-6,
+              "observados": 0
+            }
+          ],
+          "k": 15,
+          "p_valor": {
+            "log10": -0.6588274042760314,
+            "probabilidade": 0.2193676565053127
+          },
+          "primeiro_concurso": 2,
+          "total_acertos": 66,
+          "ultimo_concurso": 8
+        }
+      },
+      {
+        "faixa": {
+          "primeiro": 9,
+          "ultimo": 15
+        },
+        "metricas": {
+          "brier": {
+            "acaso": 0.24000000000000013,
+            "diferenca": -0.002775668648493534,
+            "erro_padrao": 0.0013706481075541682,
+            "ic95": {
+              "inferior": -0.005462138939299704,
+              "superior": -0.00008919835768736407
+            },
+            "perfil": 0.23722433135150656
+          },
+          "concursos_avaliados": 7,
+          "log_loss": {
+            "acaso": 0.6730116670092563,
+            "diferenca": -0.0057639485818539804,
+            "erro_padrao": 0.0028514260935977222,
+            "ic95": {
+              "inferior": -0.011352743725305516,
+              "superior": -0.00017515343840244536
+            },
+            "perfil": 0.667247718427402
+          },
+          "primeiro_concurso": 9,
+          "ultimo_concurso": 15
+        },
+        "topk": {
+          "acertos": {
+            "acaso": 9.0,
+            "diferenca": 0.5714285714285714,
+            "erro_padrao": 0.42857142857142855,
+            "ic95": {
+              "inferior": -0.26857142857142857,
+              "superior": 1.4114285714285715
+            },
+            "perfil": 9.571428571428571
+          },
+          "concursos_avaliados": 7,
+          "distribuicao": [
+            {
+              "acertos": 0,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 1,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 2,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 3,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 4,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 5,
+              "esperados": 0.006430878987750707,
+              "observados": 0
+            },
+            {
+              "acertos": 6,
+              "esperados": 0.10718131646251178,
+              "observados": 0
+            },
+            {
+              "acertos": 7,
+              "esperados": 0.6201204738188182,
+              "observados": 0
+            },
+            {
+              "acertos": 8,
+              "esperados": 1.6536545968501817,
+              "observados": 1
+            },
+            {
+              "acertos": 9,
+              "esperados": 2.2508076457127473,
+              "observados": 3
+            },
+            {
+              "acertos": 10,
+              "esperados": 1.6205815049131782,
+              "observados": 1
+            },
+            {
+              "acertos": 11,
+              "esperados": 0.613856630648931,
+              "observados": 2
+            },
+            {
+              "acertos": 12,
+              "esperados": 0.1169250725045583,
+              "observados": 0
+            },
+            {
+              "acertos": 13,
+              "esperados": 0.010118515889817546,
+              "observados": 0
+            },
+            {
+              "acertos": 14,
+              "esperados": 0.0003212227266608745,
+              "observados": 0
+            },
+            {
+              "acertos": 15,
+              "esperados": 2.14148484440583e-6,
+              "observados": 0
+            }
+          ],
+          "k": 15,
+          "p_valor": {
+            "log10": -0.8555968998394565,
+            "probabilidade": 0.13944504929582577
+          },
+          "primeiro_concurso": 9,
+          "total_acertos": 67,
+          "ultimo_concurso": 15
+        }
+      },
+      {
+        "faixa": {
+          "primeiro": 16,
+          "ultimo": 22
+        },
+        "metricas": {
+          "brier": {
+            "acaso": 0.24000000000000005,
+            "diferenca": 0.0014435174163904155,
+            "erro_padrao": 0.001028918886149782,
+            "ic95": {
+              "inferior": -0.0005731636004631571,
+              "superior": 0.003460198433243988
+            },
+            "perfil": 0.24144351741639053
+          },
+          "concursos_avaliados": 7,
+          "log_loss": {
+            "acaso": 0.6730116670092563,
+            "diferenca": 0.0030288456346762188,
+            "erro_padrao": 0.0021562109410534873,
+            "ic95": {
+              "inferior": -0.0011973278097886166,
+              "superior": 0.0072550190791410545
+            },
+            "perfil": 0.6760405126439323
+          },
+          "primeiro_concurso": 16,
+          "ultimo_concurso": 22
+        },
+        "topk": {
+          "acertos": {
+            "acaso": 9.0,
+            "diferenca": 0.0,
+            "erro_padrao": 0.3086066999241838,
+            "ic95": {
+              "inferior": -0.6048691318514002,
+              "superior": 0.6048691318514002
+            },
+            "perfil": 9.0
+          },
+          "concursos_avaliados": 7,
+          "distribuicao": [
+            {
+              "acertos": 0,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 1,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 2,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 3,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 4,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 5,
+              "esperados": 0.006430878987750707,
+              "observados": 0
+            },
+            {
+              "acertos": 6,
+              "esperados": 0.10718131646251178,
+              "observados": 0
+            },
+            {
+              "acertos": 7,
+              "esperados": 0.6201204738188182,
+              "observados": 0
+            },
+            {
+              "acertos": 8,
+              "esperados": 1.6536545968501817,
+              "observados": 2
+            },
+            {
+              "acertos": 9,
+              "esperados": 2.2508076457127473,
+              "observados": 3
+            },
+            {
+              "acertos": 10,
+              "esperados": 1.6205815049131782,
+              "observados": 2
+            },
+            {
+              "acertos": 11,
+              "esperados": 0.613856630648931,
+              "observados": 0
+            },
+            {
+              "acertos": 12,
+              "esperados": 0.1169250725045583,
+              "observados": 0
+            },
+            {
+              "acertos": 13,
+              "esperados": 0.010118515889817546,
+              "observados": 0
+            },
+            {
+              "acertos": 14,
+              "esperados": 0.0003212227266608745,
+              "observados": 0
+            },
+            {
+              "acertos": 15,
+              "esperados": 2.14148484440583e-6,
+              "observados": 0
+            }
+          ],
+          "k": 15,
+          "p_valor": {
+            "log10": -0.2513614351785979,
+            "probabilidade": 0.5605812463688284
+          },
+          "primeiro_concurso": 16,
+          "total_acertos": 63,
+          "ultimo_concurso": 22
+        }
+      },
+      {
+        "faixa": {
+          "primeiro": 23,
+          "ultimo": 29
+        },
+        "metricas": {
+          "brier": {
+            "acaso": 0.24000000000000005,
+            "diferenca": 0.0006797995428904437,
+            "erro_padrao": 0.0015067097878427142,
+            "ic95": {
+              "inferior": -0.002273351641281276,
+              "superior": 0.0036329507270621633
+            },
+            "perfil": 0.24067979954289057
+          },
+          "concursos_avaliados": 7,
+          "log_loss": {
+            "acaso": 0.6730116670092563,
+            "diferenca": 0.0014227674583801983,
+            "erro_padrao": 0.0031381064315557923,
+            "ic95": {
+              "inferior": -0.0047279211474691545,
+              "superior": 0.0075734560642295515
+            },
+            "perfil": 0.6744344344676364
+          },
+          "primeiro_concurso": 23,
+          "ultimo_concurso": 29
+        },
+        "topk": {
+          "acertos": {
+            "acaso": 9.0,
+            "diferenca": 1.0,
+            "erro_padrao": 0.4364357804719847,
+            "ic95": {
+              "inferior": 0.14458587027491,
+              "superior": 1.85541412972509
+            },
+            "perfil": 10.0
+          },
+          "concursos_avaliados": 7,
+          "distribuicao": [
+            {
+              "acertos": 0,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 1,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 2,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 3,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 4,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 5,
+              "esperados": 0.006430878987750707,
+              "observados": 0
+            },
+            {
+              "acertos": 6,
+              "esperados": 0.10718131646251178,
+              "observados": 0
+            },
+            {
+              "acertos": 7,
+              "esperados": 0.6201204738188182,
+              "observados": 0
+            },
+            {
+              "acertos": 8,
+              "esperados": 1.6536545968501817,
+              "observados": 1
+            },
+            {
+              "acertos": 9,
+              "esperados": 2.2508076457127473,
+              "observados": 1
+            },
+            {
+              "acertos": 10,
+              "esperados": 1.6205815049131782,
+              "observados": 2
+            },
+            {
+              "acertos": 11,
+              "esperados": 0.613856630648931,
+              "observados": 3
+            },
+            {
+              "acertos": 12,
+              "esperados": 0.1169250725045583,
+              "observados": 0
+            },
+            {
+              "acertos": 13,
+              "esperados": 0.010118515889817546,
+              "observados": 0
+            },
+            {
+              "acertos": 14,
+              "esperados": 0.0003212227266608745,
+              "observados": 0
+            },
+            {
+              "acertos": 15,
+              "esperados": 2.14148484440583e-6,
+              "observados": 0
+            }
+          ],
+          "k": 15,
+          "p_valor": {
+            "log10": -1.651724760011063,
+            "probabilidade": 0.022298478977469685
+          },
+          "primeiro_concurso": 23,
+          "total_acertos": 70,
+          "ultimo_concurso": 29
+        }
+      },
+      {
+        "faixa": {
+          "primeiro": 30,
+          "ultimo": 40
+        },
+        "metricas": {
+          "brier": {
+            "acaso": 0.2400000000000001,
+            "diferenca": 0.001541096107603476,
+            "erro_padrao": 0.0013634102987128045,
+            "ic95": {
+              "inferior": -0.0011311880778736207,
+              "superior": 0.004213380293080573
+            },
+            "perfil": 0.24154109610760352
+          },
+          "concursos_avaliados": 11,
+          "log_loss": {
+            "acaso": 0.6730116670092564,
+            "diferenca": 0.003196705374711223,
+            "erro_padrao": 0.0028397015182734025,
+            "ic95": {
+              "inferior": -0.0023691096011046455,
+              "superior": 0.008762520350527093
+            },
+            "perfil": 0.6762083723839675
+          },
+          "primeiro_concurso": 30,
+          "ultimo_concurso": 40
+        },
+        "topk": {
+          "acertos": {
+            "acaso": 9.0,
+            "diferenca": 0.09090909090909091,
+            "erro_padrao": 0.3425717032984867,
+            "ic95": {
+              "inferior": -0.580531447555943,
+              "superior": 0.7623496293741249
+            },
+            "perfil": 9.090909090909092
+          },
+          "concursos_avaliados": 11,
+          "distribuicao": [
+            {
+              "acertos": 0,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 1,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 2,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 3,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 4,
+              "esperados": 0.0,
+              "observados": 0
+            },
+            {
+              "acertos": 5,
+              "esperados": 0.01010566698075111,
+              "observados": 0
+            },
+            {
+              "acertos": 6,
+              "esperados": 0.1684277830125185,
+              "observados": 0
+            },
+            {
+              "acertos": 7,
+              "esperados": 0.9744750302867142,
+              "observados": 0
+            },
+            {
+              "acertos": 8,
+              "esperados": 2.5986000807645713,
+              "observados": 4
+            },
+            {
+              "acertos": 9,
+              "esperados": 3.536983443262889,
+              "observados": 4
+            },
+            {
+              "acertos": 10,
+              "esperados": 2.54662807914928,
+              "observados": 1
+            },
+            {
+              "acertos": 11,
+              "esperados": 0.9646318481626059,
+              "observados": 2
+            },
+            {
+              "acertos": 12,
+              "esperados": 0.18373939965002017,
+              "observados": 0
+            },
+            {
+              "acertos": 13,
+              "esperados": 0.015900524969713288,
+              "observados": 0
+            },
+            {
+              "acertos": 14,
+              "esperados": 0.0005047785704670885,
+              "observados": 0
+            },
+            {
+              "acertos": 15,
+              "esperados": 3.3651904697805896e-6,
+              "observados": 0
+            }
+          ],
+          "k": 15,
+          "p_valor": {
+            "log10": -0.34653948176436306,
+            "probabilidade": 0.45025704650436466
+          },
+          "primeiro_concurso": 30,
+          "total_acertos": 100,
+          "ultimo_concurso": 40
+        }
+      }
+    ]
+  }
+}
