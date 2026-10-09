@@ -2,7 +2,7 @@
 name: engenheiro-motor
 description: Implementa o motor estatístico (Fases 1a e 1b) — features por dezena e janela como série temporal, estado incremental, índice de força, perfis de pesos .toml, normalização e posição. Use para tarefas 1a.x e 1b.x ou qualquer mudança em src/motor/.
 tools: Agent(escritor-testes, verificador-vazamento), Read, Edit, Write, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 color: green
 effort: high
 skills:

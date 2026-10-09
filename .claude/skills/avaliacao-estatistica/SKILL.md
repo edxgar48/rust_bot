@@ -29,7 +29,7 @@ Derivar sempre de `LoteriaConfig` (`qtd_dezenas`, faixa), nunca hardcode.
 1. **Walk-forward**: ajusta até *t*, avalia em *t+1…t+h*, avança. Nunca embaralha o tempo.
 2. **Conjunto trancado**: últimos ~10% dos concursos, com corte **fixo pelo
    número do concurso** (decisão de 2026-10-05; cortes por loteria em
-   `docs/PLANEJAMENTO.md`, 1c). Concursos sorteados depois também ficam
+   `docs/PLANEJAMENTO.md`, resumo das Fases 1 e 1.5). Concursos sorteados depois também ficam
    trancados. Nada acima do corte entra na busca de pesos nem na escolha de
    perfil. Usado **uma única vez**, só para o
    perfil campeão. Registrar a data do uso em `docs/PROGRESSO.md` → Notas.

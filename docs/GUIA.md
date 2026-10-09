@@ -5,7 +5,8 @@ o que o projeto produz. As saídas de exemplo são reais (Mega-Sena, perfil
 `padrao_v1`); os números da seção de resultados refletem o estado de
 2026-10-05 e mudam a cada sorteio.
 
-Definições completas (features, índice, avaliação): `docs/PLANEJAMENTO.md`.
+Definições completas (features, índice, avaliação): `docs/PLANEJAMENTO.md`
+e, para as Fases 1 e 1.5, `docs/decisoes/fases-1-e-1.5.md`.
 
 ## 1. O caminho dos dados
 

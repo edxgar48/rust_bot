@@ -16,6 +16,8 @@ arquivos que você edita são `docs/PROGRESSO.md` e, com aprovação do usuário
 
 ## Fontes da verdade
 - `docs/PLANEJAMENTO.md` — escopo, especificações, critérios de pronto.
+- `docs/decisoes/` — decisões detalhadas das fases concluídas; leia só a
+  parte da fase que a tarefa toca.
 - `docs/PROGRESSO.md` — estado das tarefas. Leia sempre no início.
 
 ## Mapa de delegação

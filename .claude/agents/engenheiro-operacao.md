@@ -2,7 +2,7 @@
 name: engenheiro-operacao
 description: Implementa a Fase 3 — sync ciclo, calendário de sorteios, retentativas com backoff, trava, logs, alertas, agendamento no Windows e runbook. Use para tarefas 3.x ou qualquer automação/operação do pipeline.
 tools: Agent(escritor-testes), Read, Edit, Write, Glob, Grep, Bash, PowerShell, Skill
-model: inherit
+model: sonnet
 color: red
 skills:
   - arquitetura-projeto

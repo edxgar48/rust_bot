@@ -2,7 +2,7 @@
 name: engenheiro-dados
 description: Implementa a Fase 0 do plano — LoteriaConfig, validação de integridade dos resultados, parser da planilha, db.rs e ajustes da CLI de coleta. Use para tarefas 0.x ou qualquer mudança em config.rs, parser.rs, db.rs, downloader.rs e validação.
 tools: Agent(escritor-testes), Read, Edit, Write, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 color: blue
 skills:
   - arquitetura-projeto

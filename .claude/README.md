@@ -34,6 +34,10 @@ orquestrador (opus) ─ coordena, não programa; único que edita docs/PROGRESSO
 └── revisor-arquitetura (opus, só leitura) ─ gate final ─ └─ verificador-vazamento
 ```
 
+Modelos (2026-10-09, para economizar uso): `orquestrador` e
+`revisor-arquitetura` em **opus**; todos os outros em **sonnet**. Para uma
+tarefa de desenho difícil, troque o `model:` do agente só durante ela.
+
 Cada agente só pode chamar os sub-agentes listados em `tools: Agent(...)`.
 Os sub-agentes de verificação e auditoria são **somente leitura**, e o
 `escritor-testes` só mexe em testes. Profundidade máxima: 3 níveis abaixo da

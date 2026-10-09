@@ -2,7 +2,7 @@
 name: engenheiro-publicacao
 description: Implementa a Fase 2 — sync exportar (index.json, ultimo.json, tabela_geral.json, historico.json), geração determinística com hashes, docs/contrato-v1.md e sync publicar. Use para tarefas 2.x ou mudanças no formato consumido pelo app.
 tools: Agent(auditor-contrato, escritor-testes), Read, Edit, Write, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 color: orange
 skills:
   - arquitetura-projeto

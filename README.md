@@ -230,7 +230,7 @@ de `features_dezena` e dos `.toml`. `perfis` também é recriada pelo próprio
 registro passa a valer como o primeiro).
 
 `avaliar <loteria> --perfil <nome>` mede o índice gravado do perfil contra o
-acaso (regras em `docs/PLANEJAMENTO.md`, 1c). A posição de cada dezena vira
+acaso (regras em `docs/decisoes/fases-1-e-1.5.md`, 1c). A posição de cada dezena vira
 probabilidade pela calibração acumulada (só o passado), e o comando imprime
 log loss, Brier e acertos do top-k (k = K da loteria, ou `--k`) do perfil e do
 acaso, com diferença, erro padrão, IC 95% normal e o p-valor exato do top-k,
@@ -381,7 +381,7 @@ do manifesto e o que muda entre versões) está em `docs/contrato-v1.md`.
 
 ### Busca de pesos (experimento 002)
 
-Regras completas em `docs/PLANEJAMENTO.md`, Fase 1.5, "Regras da 1.5.3". Em
+Regras completas em `docs/decisoes/fases-1-e-1.5.md`, Fase 1.5, "Regras da 1.5.3". Em
 resumo:
 
 - **o que varia**: os 9 pesos (sinal livre, soma dos `|w|` = 1, arredondados

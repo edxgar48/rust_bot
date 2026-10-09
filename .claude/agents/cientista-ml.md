@@ -2,7 +2,7 @@
 name: cientista-ml
 description: Implementa a Fase 1.5 — exportação de datasets (sync dataset), pasta ml/ em Python, busca de pesos com walk-forward gerando perfis .toml, e vetores de conformidade Rust↔Python. Use para tarefas 1.5.x ou experimentos de ML.
 tools: Agent(verificador-conformidade, verificador-vazamento), Read, Edit, Write, Glob, Grep, Bash, Skill
-model: inherit
+model: sonnet
 color: cyan
 skills:
   - arquitetura-projeto
