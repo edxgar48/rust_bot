@@ -562,6 +562,73 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 - **Vetores de conformidade** (`testes/conformidade/*.json`): entrada →
   features/índice esperados, verificados por `cargo test` **e** `pytest`.
 
+### Fase 1d — Índice de evidência bayesiano
+
+Motivo (decisão de 2026-10-08): a 1.5.3 mostrou que nenhum perfil de pesos
+supera o acaso, mas a 1c.4 rejeitou a uniformidade nas três loterias. Em vez
+de "prever", o app passa a mostrar **quanta evidência os dados dão** — de
+viés em cada dezena e de que o índice de força prevê — em cinco graus.
+
+- **Fator de Bayes (FB)**: quantas vezes os dados são mais prováveis sob uma
+  hipótese do que sob a outra. Sempre guardado como `log10_fb`.
+- **Escala (Jeffreys, adaptada aos cinco graus)**, aplicada a
+  `F = max(FB, 1/FB)`: **muito fraca** F < 3; **fraca** 3 ≤ F < 10;
+  **moderada** 10 ≤ F < 30; **forte** 30 ≤ F < 100; **muito forte** F ≥ 100.
+  Limites fechados à esquerda, comparados em `log10` (0,477…, 1, 1,477…, 2).
+- **Direção**: "a favor de viés" (FB > 1), "a favor do acaso" (FB < 1),
+  sempre junto do grau; FB = 1 exato fica "a favor do acaso". Nada é
+  escondido: a evidência contra o modelo aparece com o mesmo destaque.
+- **A) Evidência por dezena** — H0: a chance de a dezena sair é exatamente
+  K/N; H1: chance desconhecida com priori Beta centrada em K/N.
+  - Cada dezena, sozinha, é Bernoulli(K/N) por concurso, independente entre
+    concursos, mesmo com sorteio sem reposição → x saídas em n concursos
+    seguem binomial exata; FB de fórmula fechada (beta-binomial ÷ binomial),
+    calculada com `ln_gamma`, sem simulação.
+  - **Priori**: desvio padrão da chance sob H1 = **5 % de K/N** (viés físico
+    plausível é pequeno), o que fixa a concentração da Beta por loteria. O
+    relatório traz a sensibilidade com 2,5 % e 10 %, porque o FB depende da
+    largura da priori.
+  - **Janelas**: histórico inteiro (principal) e os **últimos 500
+    concursos** (secundária, cobre viés que muda com o equipamento). FB exato
+    nas duas; sem pesos de esquecimento.
+  - **Ponto no tempo**: a evidência do concurso t usa só concursos até t−1;
+    o snapshot vale para o próximo concurso, como as features.
+  - **Muitas dezenas**: com 25, 60 ou 80 dezenas, algumas saem "moderada" por
+    acaso. O relatório mostra, ao lado da contagem de dezenas em cada grau, a
+    contagem **esperada sob o acaso**, por simulação com semente fixa
+    (20261008), e o app leva o mesmo aviso.
+- **B) Evidência do índice de força** — FB prequencial: soma, concurso a
+  concurso, de log(probabilidade do modelo) − log(probabilidade do acaso),
+  com as probabilidades calibradas pela posição (m = 100) já usadas na 1c,
+  **só nas dobras de teste** do walk-forward (2 a 5). É a mesma diferença de
+  log loss da 1c, traduzida em graus. Ressalva registrada: as dezenas do
+  concurso são tratadas como Bernoullis independentes (pseudo-verossimilhança),
+  igual para o modelo e para o acaso. Perfil ativo por padrão; `--perfil`
+  aceito. Não toca o trancado.
+- **Sem tabela nova**: tudo de fórmula fechada e barato; calculado sob
+  demanda a partir de `resultados` (A) e da avaliação já existente (B).
+- **Onde aparece**: comando `sync evidencia <loteria>` (relatório em texto,
+  uma loteria por vez, sem `todas`), colunas novas no CSV do `sync tabela`
+  (grau e direção de A, janela principal) e, na Fase 2, no contrato do app.
+
+Tarefas:
+- **1d.1** — Conferir os desvios de frequência da 1c.4 contra uma fonte
+  independente e levantar mudanças de regra/equipamento nos trechos
+  apontados (sai do Backlog): uniformidade rejeitada na Lotofácil,
+  p ≈ 1,5e-4, concentrada nos concursos 1899–3796; Mega-Sena, p ≈ 6,4e-3;
+  Quina, p ≈ 0,042; runs da dezena 25 da Quina. Se o desvio for erro de dado, corrigir a base
+  antes da 1d.2. **Pronto quando:** cada trecho apontado tem conclusão
+  escrita em `PROGRESSO.md`.
+- **1d.2** — Evidência por dezena (A): módulo `src/avaliacao/evidencia.rs`
+  (função pura, sem banco), comando `sync evidencia`, testes (FB contra
+  valores calculados à mão, simetria, graus nos limites, ponto no tempo,
+  esperado sob o acaso). **Pronto quando:** roda nas três loterias com a
+  sensibilidade da priori no relatório.
+- **1d.3** — Evidência do índice (B) no mesmo comando, conferida contra a
+  diferença de log loss do `sync avaliar` (mesmo número, outra escala).
+- **1d.4** — Grau e direção no CSV do `sync tabela`; `docs/GUIA.md`
+  atualizado com a leitura dos graus.
+
 ### Fase 2 — Exportação para o app
 
 - Comando `sync exportar [loteria|todas] --saida publico/`:
@@ -599,7 +666,7 @@ novo publicado no mesmo dia, e uma falha simulada dispara o alerta.
 
 ## Ordem e dependências
 
-0 → 1a → 1b → 1c → 1.5 → 2 → 3. O contrato da Fase 2 é o ponto de encontro
+0 → 1a → 1b → 1c → 1.5 → 1d → 2 → 3. O contrato da Fase 2 é o ponto de encontro
 com o planejamento do front-end.
 
 ## Decisões em aberto
@@ -609,12 +676,11 @@ com o planejamento do front-end.
 
 ## Backlog
 
-- Investigar os desvios de frequência apontados pela 1c.4 nos bancos reais
-  (uniformidade rejeitada na Lotofácil, p ≈ 1,5e-4, concentrada nos concursos
-  1899–3796; Mega-Sena, p ≈ 6,4e-3; Quina, p ≈ 0,042; runs da dezena 25 da
-  Quina): conferir esses trechos contra uma fonte independente antes de
-  qualquer conclusão sobre o sorteio. Depois da 1c.5.
-- Premiação (ganhadores, rateio, arrecadação, cidades/UF).
+- Premiação (ganhadores, rateio, arrecadação, cidades/UF). Base para uma
+  fase futura de **popularidade e rateio** (decisão de 2026-10-08): estimar
+  quais dezenas e combinações o público mais joga, a partir dos ganhadores
+  por faixa, para indicar jogos que dividem menos o prêmio — não muda a
+  chance de acertar, muda quanto se recebe. Vem depois da 1d.
 - Outras loterias (Dupla Sena, Timemania, Dia de Sorte, +Milionária, Lotomania).
 - API própria (axum), se o front-end precisar de algo dinâmico.
 - Modelos de ML rodando em Rust (`burn`, `candle` ou ONNX).

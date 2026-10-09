@@ -45,6 +45,13 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
 - [ ] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
 
+## Fase 1d — Índice de evidência bayesiano · `engenheiro-avaliacao`
+
+- [ ] 1d.1 Conferir os desvios de frequência da 1c.4 contra fonte independente
+- [ ] 1d.2 Evidência por dezena (fator de Bayes, cinco graus) + `sync evidencia`
+- [ ] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
+- [ ] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
+
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
 - [ ] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)

@@ -1,6 +1,6 @@
 ---
 name: engenheiro-avaliacao
-description: Implementa a Fase 1c — avaliação do índice de força contra o acaso (baseline, log loss, Brier, top-k vs hipergeométrica, walk-forward, conjunto trancado) e testes de aleatoriedade do histórico. Use para tarefas 1c.x ou mudanças em src/avaliacao/.
+description: Implementa a Fase 1c — avaliação do índice de força contra o acaso (baseline, log loss, Brier, top-k vs hipergeométrica, walk-forward, conjunto trancado) e testes de aleatoriedade do histórico — e a Fase 1d, índice de evidência bayesiano (fator de Bayes por dezena e do índice, cinco graus). Use para tarefas 1c.x, 1d.x ou mudanças em src/avaliacao/.
 tools: Agent(escritor-testes, verificador-vazamento), Read, Edit, Write, Glob, Grep, Bash, Skill
 model: inherit
 color: yellow
