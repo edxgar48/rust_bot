@@ -1,0 +1,30 @@
+# perfis/quina/busca_v1.toml
+# Gerado por ml/experimentos/002_busca_pesos.py (busca de pesos, 1.5.3). Proposta para revisão:
+# não é o perfil ativo; validar no trancado (uso único) antes de adotar.
+# Semente 20261006; 2000 candidatos por combinação janela × normalização × 8 combinações = 16000 candidatos testados.
+# Dataset: features_v1.parquet (parquet, sha256 f9b0ec0210a7008d446e519ec223be5e80b44f33fade8766515864bbb9bcaa1c), feature_version 1, concursos 1–6421 (corte da busca 6421), impressão dos incluídos fnv1a64:6421:927a71575464e839.
+# Métrica: log loss médio por concurso, calibração pela posição (m = 100); pesos já arredondados.
+# Walk-forward (escolhido nas dobras 1…i−1, medido na dobra i):
+#   dobra 2 (1286–2569): janela 10, zscore, log loss 0.234135330497 × acaso 0.233791658706 (dif +3.437e-04)
+#   dobra 3 (2570–3853): janela 100, minmax, log loss 0.234116884222 × acaso 0.233791658706 (dif +3.252e-04)
+#   dobra 4 (3854–5137): janela 10, zscore, log loss 0.233941635334 × acaso 0.233791658706 (dif +1.500e-04)
+#   dobra 5 (5138–6421): janela 100, zscore, log loss 0.233996771354 × acaso 0.233791658706 (dif +2.051e-04)
+# Fora da amostra (dobras 2–5, 5136 concursos): log loss 0.234047655352 × acaso 0.233791658706 (dif +2.560e-04, EP 3.313e-05) — estimativa do MÉTODO (um escolhido por dobra), não deste perfil.
+# Este perfil (melhor nas dobras 1–5), no trecho inteiro 2–6421: log loss 0.233991682777 × acaso 0.233791658706 (dif +2.000e-04) — dentro da amostra, otimista.
+# p-valor do `sync avaliar` neste trecho sai otimista (melhor de 16000); use --testados 16000. Rodar de novo com outra semente e ficar com a melhor execução também é otimista.
+nome = "busca_v1"
+versao = 1
+loteria = "quina"
+janela = 0
+normalizacao = "minmax"
+
+[pesos]
+frequencia               = 0.066755
+maior_espaco             = 0.301433
+maior_espaco_ocorrencias = 0.034814
+menor_espaco             = 0.106789
+menor_espaco_ocorrencias = -0.092572
+soma_variacoes           = 0.052140
+espaco_final             = -0.141556
+repeticoes_total         = -0.070168
+repeticao_atual          = -0.133773

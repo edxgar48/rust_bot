@@ -24,6 +24,13 @@ from rust_spider_ml.dataset import COLUNAS, impressao_resultados
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 RAIZ_REPO = Path(__file__).resolve().parents[2]
 
+#: Tabela de cortes dos datasets sintéticos (loteria fictícia `teste`, corte
+#: padrão de :func:`escrever_dataset`). Passada explicitamente a
+#: ``ler_dataset(..., cortes=CORTES_TESTE)``: o padrão de produção
+#: (``CORTES_BUSCA``) continua recusando a loteria `teste`. A fixture do
+#: ``sync dataset`` (Lotofácil, corte 3416) é lida sempre com o padrão.
+CORTES_TESTE = {"teste": 100}
+
 
 def linhas_sinteticas(
     t: int = 8, n: int = 6, k: int = 2, janelas=(0, 10), semente: int = 1

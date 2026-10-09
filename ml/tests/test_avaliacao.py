@@ -7,7 +7,7 @@ import math
 
 import numpy as np
 import pytest
-from conftest import FIXTURES, escrever_dataset, linhas_sinteticas
+from conftest import CORTES_TESTE, FIXTURES, escrever_dataset, linhas_sinteticas
 
 from rust_spider_ml.avaliacao import (
     ErroAvaliacao,
@@ -165,7 +165,7 @@ repeticao_atual = 0.4
 
 def test_avaliacao_sintetica_e_vazamento(tmp_path):
     linhas = linhas_sinteticas(t=12)
-    ds = ler_dataset(escrever_dataset(tmp_path / "a", linhas))
+    ds = ler_dataset(escrever_dataset(tmp_path / "a", linhas), cortes=CORTES_TESTE)
     perfil = interpretar_perfil(PERFIL_TESTE)
     av = avaliar_perfil(ds, perfil)
     assert [(d.primeiro, d.ultimo) for d in av.dobras] == [(2, 3), (4, 5), (6, 7), (8, 9), (10, 12)]
@@ -177,13 +177,13 @@ def test_avaliacao_sintetica_e_vazamento(tmp_path):
     # as dobras que terminam antes dele.
     futuro = linhas_sinteticas(t=12, semente=99)
     misturado = [l if l["concurso"] < 9 else f for l, f in zip(linhas, futuro)]
-    ds2 = ler_dataset(escrever_dataset(tmp_path / "b", misturado))
+    ds2 = ler_dataset(escrever_dataset(tmp_path / "b", misturado), cortes=CORTES_TESTE)
     av2 = avaliar_perfil(ds2, perfil)
     assert av2.dobras[:3] == av.dobras[:3]
 
 
 def test_recusa_perfil_de_outra_loteria_e_k_invalido(tmp_path):
-    ds = ler_dataset(escrever_dataset(tmp_path, linhas_sinteticas()))
+    ds = ler_dataset(escrever_dataset(tmp_path, linhas_sinteticas()), cortes=CORTES_TESTE)
     outro = interpretar_perfil(PERFIL_TESTE.replace('"teste"', '"quina"'))
     with pytest.raises(ErroAvaliacao, match="loteria"):
         avaliar_perfil(ds, outro)

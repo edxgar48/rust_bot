@@ -376,6 +376,67 @@ cargo run --release --example referencia_avaliacao -- lotofacil padrao_v1 result
 ml/.venv/Scripts/python ml/experimentos/001_baseline.py datasets/lotofacil/manifesto_parquet.json --referencia ref_lotofacil.json
 ```
 
+O contrato do dataset e do manifesto que o Python lê (colunas, tipos, chaves
+do manifesto e o que muda entre versões) está em `docs/contrato-v1.md`.
+
+### Busca de pesos (experimento 002)
+
+Regras completas em `docs/PLANEJAMENTO.md`, Fase 1.5, "Regras da 1.5.3". Em
+resumo:
+
+- **o que varia**: os 9 pesos (sinal livre, soma dos `|w|` = 1, arredondados
+  a 6 casas antes de avaliar), a janela (0, 10, 50, 100) e a normalização
+  (zscore, minmax);
+- **método**: busca aleatória com semente fixa (padrão 20261006), o mesmo
+  número de candidatos em cada uma das 8 combinações janela × normalização
+  (padrão 2.000 → 16.000 candidatos por loteria);
+- **métrica**: log loss médio por concurso, com a calibração pela posição do
+  `sync avaliar` (m = 100); Brier e top-k só informativos;
+- **walk-forward aninhado** nas 5 dobras do trecho de busca: o melhor nas
+  dobras 1…i−1 é medido na dobra i (estimativa honesta do método contra o
+  acaso K/N); o perfil gravado é o melhor nas 5 dobras (dentro da amostra,
+  otimista);
+- **só o trecho de busca**: o Python recusa o manifesto do trancado.
+
+```bash
+# 1) datasets da busca numa CÓPIA do banco e numa pasta própria (sem --trancado)
+mkdir -p C:/tmp/busca && cp resultados_lotofacil.db C:/tmp/busca/
+cargo run --release --bin sync -- dataset lotofacil --db C:/tmp/busca/resultados_lotofacil.db --saida C:/tmp/busca/datasets
+# (o mesmo para megasena e quina)
+
+# 2) busca (uma ou mais loterias; --processos só muda o tempo, não o resultado)
+ml/.venv/Scripts/python ml/experimentos/002_busca_pesos.py \
+    C:/tmp/busca/datasets/lotofacil/manifesto_parquet.json \
+    C:/tmp/busca/datasets/megasena/manifesto_parquet.json \
+    C:/tmp/busca/datasets/quina/manifesto_parquet.json \
+    --processos 4                      # opcionais: --semente 20261006 --orcamento 2000 --perfis perfis
+```
+
+- **Saída:** um perfil por loteria em `perfis/<loteria>/busca_v<N>.toml` (N =
+  a versão seguinte à maior que já existe na pasta; **nunca sobrescreve**),
+  com o experimento no cabeçalho (semente, orçamento, dataset com SHA-256,
+  walk-forward), e o relatório no stdout. Tudo ou nada: todos os manifestos
+  são validados e todas as buscas rodam antes de gravar o primeiro `.toml`.
+  A versão só olha os arquivos da pasta: o nome não pode já estar registrado
+  na tabela `perfis` de um banco com outro conteúdo (o `sync indice` recusa;
+  perfis são imutáveis).
+- **O que não faz:** não grava em banco, não lê nem roda o trancado e não
+  troca o perfil ativo. O `.toml` é uma proposta para revisão.
+- **Tempo:** ~19 min as 3 loterias com `--processos 4` (busca completa).
+
+Para conferir um perfil gerado com o Rust (na cópia do banco):
+
+```bash
+cargo run --release --bin sync -- indice lotofacil --perfil busca_v1 --db C:/tmp/busca/resultados_lotofacil.db
+cargo run --release --bin sync -- avaliar lotofacil --perfil busca_v1 --db C:/tmp/busca/resultados_lotofacil.db --testados 16000
+```
+
+`--testados 16000` (o número de candidatos testados, impresso pelo 002)
+aplica Bonferroni; mesmo assim o p-valor no trecho de busca sai otimista
+para o vencedor, escolhido nesses mesmos sorteios. Resultado esperado:
+empatar com o acaso. A validação que vale é a do trancado (`sync avaliar
+--trancado`), uma única vez e por decisão do usuário.
+
 As fixtures de `ml/tests/fixtures/` (dataset CSV/Parquet de um banco sintético
 de 40 concursos, saídas do `sync avaliar` e referências do Rust) são geradas
 pelo próprio Rust com `ml/.venv/Scripts/python ml/ferramentas/gerar_fixture.py`

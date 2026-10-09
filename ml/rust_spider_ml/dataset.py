@@ -4,11 +4,20 @@ Regras (``docs/PLANEJAMENTO.md``, 1.5.2, decisões de 2026-10-06):
 
 - o ponto de entrada é o manifesto ``manifesto_<ext>.json``; o arquivo de
   dados é o que ele aponta, na mesma pasta;
+- o corte da busca fica também no código: :data:`CORTES_BUSCA` (igual a
+  ``LoteriaConfig::ultimo_concurso_busca`` do Rust). Loteria fora da tabela
+  ou ``ultimo_concurso_busca`` do manifesto diferente dela é recusado
+  (decisão de 2026-10-06, começo da 1.5.3);
 - confere SHA-256, número de linhas, ``feature_version``, último concurso
-  ≤ corte e a impressão dos resultados incluídos (recalculada a partir das
-  dezenas com ``saiu`` = 1);
+  ≤ corte da tabela e a impressão dos resultados incluídos (recalculada a
+  partir das dezenas com ``saiu`` = 1);
 - recusa qualquer manifesto ou arquivo ``_trancado`` e qualquer linha com
-  ``trecho != busca``. A leitura do trancado não existe neste pacote;
+  ``trecho != busca``, **antes** de decodificar o arquivo de dados: as
+  marcas do manifesto antes de abrir o arquivo; no Parquet, os metadados e
+  as estatísticas das colunas ``trecho`` e ``concurso`` (rodapé); no CSV, a
+  busca do campo ``trancado`` nos bytes (recusa precoce; a conferência
+  linha a linha depois da decodificação continua). A leitura do trancado
+  não existe neste pacote;
 - Parquet e CSV produzem a mesma estrutura (:class:`Dataset`);
 - K (dezenas sorteadas) e N (dezenas possíveis) saem do próprio dataset,
   sem tabela de loterias no Python.
@@ -21,8 +30,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 
 import numpy as np
 import pyarrow as pa
@@ -67,6 +78,15 @@ OPCIONAIS: frozenset[str] = frozenset(
 FORMATOS: tuple[str, ...] = ("csv", "parquet")
 
 TRECHO_BUSCA = "busca"
+
+#: Último concurso do trecho de busca de cada loteria: o mesmo
+#: ``LoteriaConfig::ultimo_concurso_busca`` de ``src/config.rs`` (corte fixo
+#: pelo número do concurso, ``docs/PLANEJAMENTO.md``, 1c). Acima dele é o
+#: conjunto trancado. Reforço do lado Python: o manifesto tem de declarar
+#: exatamente este corte. Mudou no Rust → muda aqui (o pytest confere).
+CORTES_BUSCA: Mapping[str, int] = MappingProxyType(
+    {"lotofacil": 3416, "megasena": 2759, "quina": 6421}
+)
 
 _CAMPOS_MANIFESTO: dict[str, type] = {
     "loteria": str,
@@ -161,8 +181,35 @@ def _eh_trancado(nome: str) -> bool:
     return "trancado" in nome.lower()
 
 
-def ler_manifesto(caminho: Path) -> dict:
-    """Lê e confere a forma do manifesto (sem abrir o arquivo de dados)."""
+def corte_da_tabela(loteria: str, cortes: Mapping[str, int] = CORTES_BUSCA) -> int:
+    """Corte da busca de ``loteria`` na tabela ``cortes`` (padrão:
+    :data:`CORTES_BUSCA`); loteria desconhecida é recusada. Uma tabela
+    injetada (testes) não pode trocar o corte de uma loteria real: só
+    acrescenta loterias fictícias."""
+    for real, corte_real in CORTES_BUSCA.items():
+        if real in cortes and cortes[real] != corte_real:
+            raise ErroDataset(
+                f"tabela de cortes injetada muda o corte de `{real}` ({cortes[real]}; o real é "
+                f"{corte_real}); só loterias fictícias podem ser acrescentadas"
+            )
+    try:
+        return cortes[loteria]
+    except KeyError:
+        raise ErroDataset(
+            f"loteria `{loteria}` desconhecida: sem corte da busca na tabela do Python "
+            f"(conhecidas: {', '.join(sorted(cortes))})"
+        ) from None
+
+
+def ler_manifesto(caminho: Path, cortes: Mapping[str, int] = CORTES_BUSCA) -> dict:
+    """Lê e confere o manifesto sem abrir o arquivo de dados.
+
+    Todas as recusas que o manifesto permite (trancado no nome, no arquivo ou
+    no trecho; loteria fora da tabela; corte diferente da tabela ``cortes``;
+    último concurso acima do corte) acontecem aqui, antes de qualquer
+    leitura do arquivo de dados. ``cortes`` só muda nos testes com loterias
+    sintéticas; em produção é sempre :data:`CORTES_BUSCA`.
+    """
     caminho = Path(caminho)
     if _eh_trancado(caminho.name):
         raise ErroDataset(
@@ -211,32 +258,95 @@ def ler_manifesto(caminho: Path) -> dict:
         raise ErroDataset(
             f"{caminho.name}: colunas {manifesto['colunas']} diferentes das esperadas {list(COLUNAS)}"
         )
-    if manifesto["ultimo_concurso"] > manifesto["ultimo_concurso_busca"]:
+    corte = corte_da_tabela(manifesto["loteria"], cortes)
+    if manifesto["ultimo_concurso_busca"] != corte:
+        raise ErroDataset(
+            f"{caminho.name}: corte da busca {manifesto['ultimo_concurso_busca']} no manifesto, "
+            f"mas o corte de `{manifesto['loteria']}` é {corte} (tabela do Python, igual ao "
+            "`ultimo_concurso_busca` do Rust); regenere o dataset ou confira o corte"
+        )
+    if manifesto["ultimo_concurso"] > corte:
         raise ErroDataset(
             f"{caminho.name}: último concurso {manifesto['ultimo_concurso']} acima do corte da "
-            f"busca {manifesto['ultimo_concurso_busca']}"
+            f"busca {corte}"
         )
     return manifesto
 
 
-def _ler_tabela(bytes_: bytes, formato: str, manifesto: dict) -> pa.Table:
-    if formato == "parquet":
-        arquivo = pq.ParquetFile(pa.BufferReader(bytes_))
-        kv = {
-            k.decode("utf-8"): v.decode("utf-8")
-            for k, v in (arquivo.metadata.metadata or {}).items()
-        }
-        esperado = {
-            "loteria": manifesto["loteria"],
-            "feature_version": str(manifesto["feature_version"]),
-            "trecho": manifesto["trecho"],
-        }
-        for chave, valor in esperado.items():
-            if kv.get(chave) != valor:
+def _recusar_trancado_sem_decodificar(
+    bytes_: bytes, formato: str, manifesto: dict, corte: int
+) -> None:
+    """Recusa o trancado (e o que passa do corte) antes de decodificar os dados.
+
+    Parquet: só o rodapé (metadados chave-valor, nomes das colunas e
+    estatísticas de cada row group); exige estatísticas de ``trecho`` e
+    ``concurso``, que o ``sync dataset`` sempre grava. CSV: o único texto
+    livre é ``trecho`` (entre ``janela`` e ``frequencia``, só inteiros ao
+    redor), então ``,trancado,`` nos bytes é uma linha do trancado do Rust.
+    No CSV isso é recusa precoce, não garantia: um arquivo forjado com outra
+    grafia (aspas, maiúsculas) só cai na conferência linha a linha depois da
+    decodificação, que continua valendo para os dois formatos (e para um
+    Parquet com estatísticas forjadas). Nada recusado chega ao
+    :class:`Dataset`.
+    """
+    arquivo = manifesto["arquivo"]
+    if formato == "csv":
+        if b",trancado," in bytes_:
+            raise ErroDataset(
+                f"{arquivo}: há linha(s) do trecho `trancado` no CSV, embora o manifesto diga "
+                "`busca`; o TRANCADO não é lido (recusado antes de decodificar)"
+            )
+        return
+    try:
+        meta = pq.ParquetFile(pa.BufferReader(bytes_)).metadata
+    except (pa.ArrowInvalid, OSError) as e:
+        raise ErroDataset(f"{arquivo}: Parquet inválido ({e})") from e
+    kv = {k.decode("utf-8"): v.decode("utf-8") for k, v in (meta.metadata or {}).items()}
+    esperado = {
+        "loteria": manifesto["loteria"],
+        "feature_version": str(manifesto["feature_version"]),
+        "trecho": manifesto["trecho"],
+    }
+    for chave, valor in esperado.items():
+        if kv.get(chave) != valor:
+            raise ErroDataset(
+                f"metadado `{chave}` do Parquet = {kv.get(chave)!r}, manifesto diz {valor!r}"
+            )
+    nomes = tuple(meta.schema.column(i).name for i in range(meta.num_columns))
+    if nomes != COLUNAS:
+        raise ErroDataset(f"colunas do arquivo {list(nomes)} diferentes de {list(COLUNAS)}")
+    for g in range(meta.num_row_groups):
+        rg = meta.row_group(g)
+        if rg.num_rows == 0:
+            continue
+        est = {}
+        for nome in ("trecho", "concurso"):
+            e = rg.column(COLUNAS.index(nome)).statistics
+            if e is None or not e.has_min_max:
                 raise ErroDataset(
-                    f"metadado `{chave}` do Parquet = {kv.get(chave)!r}, manifesto diz {valor!r}"
+                    f"{arquivo}: row group {g} sem estatísticas da coluna `{nome}`; "
+                    "regenere com `sync dataset`"
                 )
-        return arquivo.read()
+            est[nome] = e
+        trecho = est["trecho"]
+        if (trecho.min, trecho.max) != (TRECHO_BUSCA, TRECHO_BUSCA):
+            raise ErroDataset(
+                f"{arquivo}: row group {g} com trecho entre `{trecho.min}` e `{trecho.max}`, "
+                "embora o manifesto diga `busca`; o TRANCADO não é lido (recusado antes de "
+                "decodificar)"
+            )
+        if est["concurso"].max > corte:
+            raise ErroDataset(
+                f"{arquivo}: concurso {est['concurso'].max} acima do corte da busca {corte} "
+                "(recusado antes de decodificar)"
+            )
+
+
+def _ler_tabela(bytes_: bytes, formato: str) -> pa.Table:
+    """Decodifica o arquivo. Só depois de
+    :func:`_recusar_trancado_sem_decodificar`."""
+    if formato == "parquet":
+        return pq.ParquetFile(pa.BufferReader(bytes_)).read()
     tipos = {
         c: (pa.string() if c in ("data", "trecho") else pa.int32()) for c in COLUNAS
     }
@@ -267,13 +377,22 @@ def _opcional(tabela: pa.Table, coluna: str) -> np.ndarray:
     return col.to_numpy(zero_copy_only=False)  # NULL vira NaN
 
 
-def ler_dataset(caminho_manifesto: Path | str, feature_version: int | None = None) -> Dataset:
+def ler_dataset(
+    caminho_manifesto: Path | str,
+    feature_version: int | None = None,
+    *,
+    cortes: Mapping[str, int] = CORTES_BUSCA,
+) -> Dataset:
     """Lê o dataset descrito pelo manifesto, conferindo tudo antes de usar.
 
     ``feature_version``, se informada, tem de bater com a do manifesto.
+    ``cortes`` é a tabela do corte da busca por loteria; o padrão
+    (:data:`CORTES_BUSCA`) é o de produção. Só os testes com loterias
+    sintéticas passam outra tabela.
     """
     caminho_manifesto = Path(caminho_manifesto)
-    manifesto = ler_manifesto(caminho_manifesto)
+    manifesto = ler_manifesto(caminho_manifesto, cortes)
+    corte = corte_da_tabela(manifesto["loteria"], cortes)
     nome = caminho_manifesto.name
     versao = manifesto["feature_version"]
     if feature_version is not None and versao != feature_version:
@@ -292,7 +411,8 @@ def ler_dataset(caminho_manifesto: Path | str, feature_version: int | None = Non
             f"{manifesto['arquivo']}: SHA-256 {sha} não bate com o manifesto ({manifesto['sha256']})"
         )
 
-    tabela = _ler_tabela(bytes_, manifesto["formato"], manifesto)
+    _recusar_trancado_sem_decodificar(bytes_, manifesto["formato"], manifesto, corte)
+    tabela = _ler_tabela(bytes_, manifesto["formato"])
     if tuple(tabela.column_names) != COLUNAS:
         raise ErroDataset(f"colunas do arquivo {tabela.column_names} diferentes de {list(COLUNAS)}")
     if tabela.num_rows != manifesto["linhas"]:
@@ -358,8 +478,8 @@ def ler_dataset(caminho_manifesto: Path | str, feature_version: int | None = Non
             f"{manifesto['primeiro_concurso']}..={manifesto['ultimo_concurso']} "
             f"({manifesto['concursos']})"
         )
-    if int(concursos[-1]) > manifesto["ultimo_concurso_busca"]:
-        raise ErroDataset("concurso acima do corte da busca")
+    if int(concursos[-1]) > corte:
+        raise ErroDataset(f"concurso {concursos[-1]} acima do corte da busca {corte}")
 
     forma = (t, n, j)
     saiu_tnj = saiu.reshape(forma)
@@ -412,7 +532,7 @@ def ler_dataset(caminho_manifesto: Path | str, feature_version: int | None = Non
         loteria=manifesto["loteria"],
         feature_version=versao,
         formato=manifesto["formato"],
-        corte=manifesto["ultimo_concurso_busca"],
+        corte=corte,
         concursos=concursos.astype(np.int64),
         datas=datas,
         dezenas=dezenas.astype(np.int64),

@@ -530,6 +530,35 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
   `ultimo_concurso_busca` do manifesto (reforço: o corte fica no código também
   do lado Python); e o formato do manifesto do dataset é documentado como
   contrato em `docs/contrato-v1.md`, porque o Python depende dele.
+  Regras da 1.5.3, busca de pesos (decisões de 2026-10-06):
+  - **o que varia**: os 9 pesos com sinal livre, a janela (0, 10, 50, 100) e a
+    normalização (zscore, minmax); pesos normalizados (soma dos valores
+    absolutos = 1), perfil com todos os pesos zero proibido;
+  - **método**: busca aleatória com semente fixa e número fixo de candidatos
+    por loteria (ex.: 2.000 em cada uma das 8 combinações de janela ×
+    normalização), só com numpy; refinamento peso a peso opcional;
+  - **walk-forward**: para cada dobra i de 2 a 5, o melhor candidato nas
+    dobras 1 … i−1 é medido na dobra i; a estimativa honesta é o log loss
+    nessas dobras de teste contra o acaso. O perfil final é o melhor no
+    trecho de busca inteiro (dobras 1 a 5);
+  - **métrica otimizada**: log loss médio por concurso, com a calibração da
+    1.5.2; Brier e top-k só como informação;
+  - **saída**: grava sempre o melhor em `perfis/<loteria>/busca_v1.toml` (ou
+    a versão seguinte, se já existir), com cabeçalho em comentário (semente,
+    candidatos, dados usados, resultado contra o acaso); pesos arredondados a
+    6 casas e reavaliados já arredondados. A busca não grava no banco, não
+    roda o trancado e não troca o perfil ativo (decisão do usuário);
+  - **vários candidatos**: o relatório informa quantos foram testados e avisa
+    que o p-valor do `sync avaliar` na busca sai otimista para o vencedor; a
+    validação que vale é a do trancado;
+  - **entregas**: `ml/rust_spider_ml/busca.py`,
+    `ml/experimentos/002_busca_pesos.py` (saída em texto), pytest (mesma
+    semente → mesmo resultado, a dobra de teste não influencia a escolha,
+    multiplicar os pesos não muda o resultado, `.toml` gerado relido sem
+    erro) e conferência numa cópia do banco (`sync indice` + `sync avaliar`
+    com o perfil gerado batem com o Python dentro de 1e-12);
+  - **ordem**: primeiro a tabela de cortes, o contrato do manifesto e as
+    correções baixas da 1.5.2; depois a busca.
 - **Vetores de conformidade** (`testes/conformidade/*.json`): entrada →
   features/índice esperados, verificados por `cargo test` **e** `pytest`.
 

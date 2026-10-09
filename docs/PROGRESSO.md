@@ -42,7 +42,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1.5.1 Comando `sync dataset --formato parquet|csv`
 - [x] 1.5.2 `ml/`: leitura do dataset + baseline
-- [ ] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
+- [x] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
 - [ ] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
@@ -1047,3 +1047,70 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - 2026-10-06 — 1.5.2, decisões do usuário: aprovados os 5 desvios; para o começo da 1.5.3, tabela de cortes
   no Python (reforço contra o manifesto) e contrato do manifesto em `docs/contrato-v1.md`, registrados no
   PLANEJAMENTO.md, junto com as 3 correções baixas do experimento e da leitura do dataset.
+- 2026-10-06 — 1.5.3 não iniciada (continua [ ]): o plano diz só "busca de pesos com walk-forward →
+  perfis `.toml`" e "ajusta até uma dobra, testa nela"; faltam pontos que mudam o perfil gerado e a
+  validade estatística. Perguntas devolvidas ao usuário, com sugestões: (1) **espaço de busca**: 9 pesos
+  com sinal livre + janela {0,10,50,100} + normalização {zscore,minmax}; como a posição só depende da
+  ordem, pesos normalizados (soma dos |w| = 1) e o vetor todo zero proibido; (2) **método**: busca
+  aleatória com semente fixa e orçamento fixo por loteria (ex.: 2 000 candidatos em cada uma das 8
+  combinações janela × normalização), sem crate nova (só numpy), opcionalmente seguida de refinamento
+  por coordenadas; (3) **protocolo walk-forward** ("ajusta até uma dobra, testa nela"), aninhado: para
+  i = 2…5, escolhe o melhor candidato nas dobras 1…i−1 e mede na dobra i; a estimativa honesta da busca
+  é o log loss fora da amostra nas dobras 2…5 contra o acaso; o perfil final é o melhor nas dobras 1…5
+  (trecho de busca inteiro); (4) **objetivo**: log loss médio por concurso (mesma calibração m = 100 da
+  1.5.2); Brier e top-k só informativos; (5) **quando gravar**: grava sempre o campeão como
+  `perfis/<loteria>/busca_v1.toml` (versão seguinte se existir), com cabeçalho em comentário (experimento,
+  semente, orçamento, nº de candidatos, dataset: feature_version, último concurso, impressão dos
+  incluídos, log loss fora da amostra × acaso), pesos arredondados a 6 casas e reavaliados já
+  arredondados; **não** registra no banco, não roda o trancado e não vira perfil ativo — isso fica para o
+  usuário (o trancado é uso único); alternativa: só gravar se o fora da amostra superar o acaso;
+  (6) **múltiplas comparações**: o relatório informa o nº de candidatos e avisa que o p-valor do `sync
+  avaliar` na busca é otimista para o campeão; a validação que vale é o trancado; (7) **entrega**: módulo
+  `ml/rust_spider_ml/busca.py`, experimento `ml/experimentos/002_busca_pesos.py` (saída em texto,
+  resultado anotado aqui), testes pytest (determinismo pela semente, dobra de teste não influencia a
+  escolha, invariância de escala, `.toml` gerado relido pelo `perfil.py`), e conferência ponta a ponta numa
+  cópia do banco: `sync indice` + `sync avaliar` com o perfil gerado batendo com o Python a 1e-12;
+  (8) **ordem**: primeira rodada só com o que já está decidido para o começo da 1.5.3 (tabela de cortes no
+  Python, contrato do manifesto em `docs/contrato-v1.md`, correções baixas (a), (b) e (d) da 1.5.2), que
+  não depende das perguntas acima.
+- 2026-10-06 — 1.5.3, decisões do usuário: aceitas as 8 sugestões (inclusive gravar sempre o melhor perfil e
+  a ordem do item 8), registradas no PLANEJAMENTO.md (Fase 1.5, "Regras da 1.5.3"). 1.5.3 desbloqueada.
+- 2026-10-07 — 1.5.3 concluída ([x]) pelo `cientista-ml`, em 3 rodadas. **Começo da 1.5.3**: tabela
+  `CORTES_BUSCA` (3416, 2759, 6421) em `ml/rust_spider_ml/dataset.py`, imutável, conferida contra o
+  `ultimo_concurso_busca` do manifesto e contra cada concurso lido (loteria desconhecida, corte divergente
+  ou concurso acima do corte são recusados; testes sintéticos injetam `cortes=` por argumento nomeado, que
+  não consegue trocar o corte das loterias reais); `docs/contrato-v1.md` criado com a seção do dataset
+  (arquivos, 14 campos do manifesto, 16 colunas, CSV/Parquet, determinismo, o que o Python confere,
+  compatibilidade; a Fase 2 completa o resto); correções (a) EP/IC `None` → `n/d`, (b) `DivergenciaRust`
+  → mensagem e código 1 (entrada recusada → código 2), (d) trancado recusado antes de decodificar
+  (manifesto, nome, rodapé do Parquet; busca de `,trancado,` nos bytes do CSV como recusa precoce; a
+  conferência linha a linha continua). **Busca**: `ml/rust_spider_ml/busca.py`,
+  `ml/experimentos/002_busca_pesos.py`, `ml/tests/test_busca.py` (34 testes), README com a seção da busca;
+  perfis gerados `perfis/{lotofacil,megasena,quina}/busca_v1.toml` (não rastreados, para revisão do
+  usuário). Semente 20261006, 2.000 × 8 = 16.000 candidatos por loteria (orçamento completo, sem desvio de
+  tempo: 19 min 14 s as três, 4 processos), sem refinamento peso a peso (opcional). Gate: fmt ok, clippy
+  ok, `cargo test` 703 passados / 4 ignorados (já existentes), pytest 125, `validar todas` ok.
+  `revisor-arquitetura`: aprovado com ressalvas, só baixas; 4 corrigidas (002 tudo ou nada: valida todos os
+  manifestos antes de gravar e recusa loteria repetida; `gravar_perfil` recusa semente/orçamento `None`;
+  aviso de nome já registrado no banco; ressalva da correlação serial no IC normal). `verificador-vazamento`:
+  sem vazamento (teste de mutação "olhar uma dobra a mais" detectado). `verificador-conformidade`: Python ×
+  Rust com diferença 0 (bit a bit) em log loss, Brier e top-k, por dobra e total, nas 3 loterias, com `sync
+  indice` + `sync avaliar --testados 16000` numa cópia dos bancos (parser Rust aceitou os 3 perfis).
+  **Resultado** (log loss perfil − acaso; walk-forward, fora da amostra nas dobras 2–5, IC 95% normal):
+  Lotofácil +4,98e-4 [+2,21e-4; +7,74e-4] (0,6735093 × 0,6730117, T = 2732); Mega-Sena +5,66e-4
+  [+3,90e-4; +7,42e-4] (0,3256488 × 0,3250830, T = 2207); Quina +2,56e-4 [+1,91e-4; +3,21e-4] (0,2340477 ×
+  0,2337917, T = 5136) — **pior que o acaso nas três e em todas as dobras de teste**; os escolhidos mudam de
+  janela/normalização a cada passo (instáveis). Perfil final (dentro da amostra, trecho inteiro): Lotofácil
+  janela 0 minmax, log loss +1,26e-4 sobre o acaso, top-15 9,0712 × 9,0 (p 0,83; 1,0 corrigido); Mega-Sena
+  janela 0 zscore, +2,79e-4, top-6 0,5852 × 0,6; Quina janela 0 minmax, +2,00e-4, top-5 0,3101 × 0,3125;
+  `sync avaliar` com 16.000 testados: "NÃO supera o acaso" nas três. Leitura: nem o melhor de 16.000 ganha
+  da constante K/N dentro da amostra — provável custo da calibração pela posição (N taxas com m = 100
+  somam ruído que a constante não tem; o mesmo aparece no `padrao_v1`), ou seja, "empatar com o acaso"
+  aparece como pequeno excesso positivo nessa métrica. Desvios aceitos pelo revisor: (1) pesos arredondados
+  a 6 casas **antes** de avaliar (soma dos |w| = 1 ± 5e-6; o avaliado é exatamente o gravado); (2) pesos
+  de cada passo do walk-forward só na saída do 002, não no cabeçalho do `.toml`; (3) Parquet sem
+  estatísticas de `trecho`/`concurso` passa a ser recusado (documentado no contrato); (4) códigos de saída
+  1/2 no 001. Pendências: achado baixo para tarefa Rust futura — fixar `set_statistics_enabled` em
+  `src/dataset.rs:352-366` com teste (o Python agora depende dessas estatísticas); achado (e) da 1.5.2
+  continua aberto; decisão do usuário: levar algum `busca_v1` ao trancado (uso único) ou não, e se os
+  perfis gerados entram no git.
