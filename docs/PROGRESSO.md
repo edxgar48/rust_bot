@@ -43,7 +43,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1.5.1 Comando `sync dataset --formato parquet|csv`
 - [x] 1.5.2 `ml/`: leitura do dataset + baseline
 - [x] 1.5.3 Busca de pesos com walk-forward → perfis `.toml`
-- [ ] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
+- [x] 1.5.4 Vetores de conformidade (`testes/conformidade/`) em `cargo test` e `pytest`
 
 ## Fase 1d — Índice de evidência bayesiano · `engenheiro-avaliacao`
 
@@ -1121,3 +1121,61 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `src/dataset.rs:352-366` com teste (o Python agora depende dessas estatísticas); achado (e) da 1.5.2
   continua aberto; decisão do usuário: levar algum `busca_v1` ao trancado (uso único) ou não, e se os
   perfis gerados entram no git.
+- 2026-10-09 — 1.5.4 não iniciada (continua [ ]): o plano diz só "`testes/conformidade/*.json`: entrada →
+  features/índice esperados, verificados por `cargo test` e `pytest`". Hoje o Python **não calcula
+  features** (lê do dataset) nem `variacao_posicao` (`ml/rust_spider_ml/indice.py` só faz total e
+  posição), e já existe uma conferência Python × Rust por fixture (`ml/tests/test_conformidade_rust.py`).
+  Perguntas devolvidas ao usuário, com sugestões: (1) **alcance no Python**: (a) o pytest confere só o
+  trecho features → índice (total, posição e, novo, `variacao_posicao`), e o trecho resultados →
+  features é conferido só pelo `cargo test`; ou (b) o Python ganha uma implementação de referência das
+  features (só para conformidade, fora do caminho de produção), conferida pelo pytest; sugestão (b),
+  coerente com "migração futura para 100% Rust" e com a paridade nos dois sentidos; (2) **formato do
+  vetor**: um JSON por caso, `{versao_formato, descricao, loteria (K, N, faixa), feature_version,
+  entrada: {resultados | features}, perfil: {janela, normalizacao, pesos}, esperado: {features, indice}}`,
+  `NULL` como `null`, floats em JSON com 17 dígitos significativos (ida e volta exata do `f64`);
+  (3) **quem gera o esperado**: casos feitos à mão (golden do plano, bordas de NULL, janela 10/50/100 e
+  fronteiras, componente constante, todo NULL, empate exato e quase empate a 1e-9, zscore e minmax,
+  variação no primeiro concurso) com o esperado **gerado pelo Rust** por uma ferramenta
+  (`examples/gerar_conformidade.rs`, como a `referencia_avaliacao.rs`) e conferido à mão nos casos
+  pequenos; o `cargo test` falha se o JSON versionado divergir do que o Rust calcula hoje (vetor nunca é
+  regerado em silêncio); (4) **comparação**: inteiros e posição exatos; `total` igual bit a bit (já é
+  arredondado a 1e-9 e o Python reproduz operação por operação) — ou tolerância 1e-12?; sugestão: exato;
+  (5) **local**: `testes/conformidade/` na raiz, como diz o plano (ao lado de `tests/`, que é do Rust),
+  com `testes/conformidade/** -text` no `.gitattributes`; (6) **tamanho**: vetores pequenos (≤ ~150
+  concursos sintéticos, para cobrir a janela de 100), dezenas de KB no total; sem dados reais;
+  (7) **fora de escopo**: calibração/log loss/top-k (já conferidos pela fixture da 1.5.2); de carona, o
+  achado baixo da 1.5.3 (`set_statistics_enabled` fixo em `src/dataset.rs` com teste) entra ou fica
+  para outra tarefa?
+- 2026-10-09 — Respostas do usuário: todas as sugestões aceitas (1b, formato, esperado pelo Rust,
+  `total` bit a bit, `testes/conformidade/`, vetores pequenos); o `set_statistics_enabled` entra na
+  1.5.4. Regras registradas no plano. Pendências da 1.5.3 já resolvidas em 2026-10-08: os
+  `busca_v1.toml` entraram no git (cf0cbec) e nenhum vai ao trancado.
+- 2026-10-09 — 1.5.4 concluída (cientista-ml). 11 vetores sintéticos em `testes/conformidade/` (~94 KB):
+  golden, bordas de NULL, janelas 10/50/100 e fronteiras (140 concursos), componente constante, todo
+  NULL, empate exato, quase empate a 1e-9, zscore janela 10, minmax janela 50, variação no primeiro
+  concurso, formato Lotofácil com `padrao_v1`. Casos definidos em `src/conformidade.rs` (módulo de
+  biblioteca, só ferramenta; testes à mão em `src/conformidade/tests.rs`), gerados por
+  `examples/gerar_conformidade.rs`; `tests/conformidade.rs` compara bytes gerados × versionados, pega
+  arquivo sobrando/faltando, determinismo e tamanho < 100 KB. Python: `referencia_features.py`
+  (referência não incremental), `conformidade.py` (total bit a bit, inteiros exatos com tipo),
+  `variacao_posicao` em `indice.py`; bate bit a bit nos 11 casos. `src/dataset.rs`:
+  `set_statistics_enabled(EnabledStatistics::Page)` explícito (padrão atual do crate, bytes iguais),
+  com teste de estatísticas por row group. Gate: fmt/clippy ok, cargo test verde (principal 444
+  passed), pytest 171 passed, validar todas ok (em cópias). Revisor: aprovado, só achados baixos.
+  Desvios aceitos: formato com `colunas_features`/`colunas_indice`, linhas como arrays posicionais e
+  `esperado.concursos_conferidos` (filtra as linhas escritas; o índice é calculado sobre a série
+  inteira nos dois lados), para caber em dezenas de KB; maior caso com 140 concursos. Achados baixos em
+  aberto: (a) `flutuante` em `src/conformidade.rs:174` normaliza −0.0 para 0.0 ao escrever, então um
+  −0.0 do motor não seria pego pelos vetores (só por `tests.rs:235` e testes do motor); (b) `pub mod
+  conformidade` na API pública (sugestão: `#[doc(hidden)]`); (c) limite de 100 KB a ~5% do atual;
+  (d) `feature_version == 1` literal em `ml/tests/test_vetores_conformidade.py:104`. Parecer do
+  verificador-vazamento não chegou a tempo; o revisor conferiu o ponto no tempo à mão sem achados.
+- 2026-10-09 — 1.5.4, achados baixos do revisor corrigidos (todas as sugestões aceitas pelo usuário):
+  o gravador dos vetores não troca mais −0.0 por 0.0 (um zero negativo do motor passa a mudar o
+  arquivo; nenhum vetor tinha −0.0, os 11 antigos não mudaram); limite de tamanho dos vetores subiu
+  para 150 KB (hoje ~99 KB); `FEATURE_VERSION` única no Python (`referencia_features.py`), usada pelo
+  teste; `conformidade` com `#[doc(hidden)]` em `src/lib.rs`. Dois casos novos, das lacunas apontadas
+  pelo verificador-conformidade: `12_meio_exato_arredondamento` (total·1e9 = ±2,5 e 0,5 exatos, onde
+  meio para longe do zero e meio para o par divergem) e `13_empate_exato_zscore` (empate exato e
+  empate que só existe depois do arredondamento a 1e-9, em z-score). Gate: fmt e clippy ok, Rust
+  721 passaram, pytest 175 passaram.

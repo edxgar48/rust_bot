@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from rust_spider_ml.dataset import COMPONENTES
-from rust_spider_ml.indice import ErroIndice, arredondar, calcular_indice, normalizar
+from rust_spider_ml.indice import (
+    ErroIndice,
+    arredondar,
+    calcular_indice,
+    normalizar,
+    variacao_posicao,
+)
 
 N = np.nan
 # Mesmos pesos diádicos do golden do Rust (`PESOS_GOLDEN`).
@@ -137,3 +143,14 @@ def test_recusa_pesos_nao_finitos_e_forma_errada():
         calcular_indice(golden(), "zscore", PESOS_GOLDEN[:8])
     with pytest.raises(ErroIndice, match="desconhecida"):
         calcular_indice(golden(), "rank", PESOS_GOLDEN)
+
+
+def test_variacao_posicao_e_anterior_menos_atual():
+    # Três concursos, quatro dezenas; positivo = subiu.
+    posicoes = np.array([[1, 2, 3, 4], [3, 4, 1, 2], [1, 2, 3, 4]])
+    esperado = np.array([[-2, -2, 2, 2], [2, 2, -2, -2]])
+    assert np.array_equal(variacao_posicao(posicoes), esperado)
+    # Um só concurso: nenhuma variação (o primeiro não tem anterior).
+    assert variacao_posicao(posicoes[:1]).shape == (0, 4)
+    with pytest.raises(ErroIndice):
+        variacao_posicao(posicoes[0])

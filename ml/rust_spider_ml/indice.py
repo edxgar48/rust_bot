@@ -11,7 +11,9 @@ força", decisões de 2026-10-04), operação por operação, para dar os mesmos
   z-score, 0,5 no minmax); componente sem variação → todas no neutro;
 - total = Σ pesoₖ × normalizadoₖ na ordem fixa dos 9 componentes;
 - total arredondado a 1e-9 (meio para longe do zero, como ``f64::round``),
-  sem ``-0.0``; posição pelo total decrescente, empate → menor dezena.
+  sem ``-0.0``; posição pelo total decrescente, empate → menor dezena;
+- variação de posição = posição no concurso anterior − posição atual
+  (positivo = subiu); o primeiro concurso não tem.
 
 Ponto no tempo: o índice de *t* usa só as features de *t* (que olham até
 *t−1*); ``saiu`` não é lido.
@@ -93,6 +95,17 @@ def posicoes(totais: np.ndarray) -> np.ndarray:
     linhas = np.arange(totais.shape[0])[:, None]
     pos[linhas, ordem] = np.arange(1, totais.shape[1] + 1)[None, :]
     return pos
+
+
+def variacao_posicao(posicoes: np.ndarray) -> np.ndarray:
+    """Variação de posição de ``posicoes`` ``int64[T, N]``: posição no concurso
+    anterior − posição atual (positivo = subiu), ``int64[T-1, N]``.
+
+    A linha ``i`` é a variação do concurso ``i + 1`` da entrada; o primeiro
+    concurso não tem anterior (``None`` no Rust) e por isso não aparece."""
+    if posicoes.ndim != 2:
+        raise ErroIndice(f"posições com forma {posicoes.shape}, esperada (T, N)")
+    return posicoes[:-1] - posicoes[1:]
 
 
 def calcular_indice(

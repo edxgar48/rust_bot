@@ -1,0 +1,46 @@
+{
+  "versao_formato": 1,
+  "descricao": "Minmax com todos os componentes opcionais NULL e os demais zerados: cada componente recebe o neutro 0,5 e o total de todas as dezenas e 0,5 x soma dos pesos = 14,125.",
+  "loteria": {"qtd_dezenas": 1, "dezena_min": 1, "dezena_max": 3},
+  "feature_version": 1,
+  "entrada": {
+    "tipo": "features",
+    "colunas_features": ["concurso", "dezena", "janela", "frequencia", "maior_espaco", "maior_espaco_ocorrencias", "menor_espaco", "menor_espaco_ocorrencias", "soma_variacoes", "espaco_final", "repeticoes_total", "repeticao_atual", "saiu"],
+    "features": [
+      [1, 1, 0, 0, null, null, null, null, null, null, 0, 0, null],
+      [1, 2, 0, 0, null, null, null, null, null, null, 0, 0, null],
+      [1, 3, 0, 0, null, null, null, null, null, null, 0, 0, null],
+      [2, 1, 0, 0, null, null, null, null, null, null, 0, 0, null],
+      [2, 2, 0, 0, null, null, null, null, null, null, 0, 0, null],
+      [2, 3, 0, 0, null, null, null, null, null, null, 0, 0, null]
+    ]
+  },
+  "perfil": {
+    "janela": 0,
+    "normalizacao": "minmax",
+    "pesos": {
+      "frequencia": 1.0000000000000000e0,
+      "maior_espaco": 2.0000000000000000e0,
+      "maior_espaco_ocorrencias": 3.0000000000000000e0,
+      "menor_espaco": 5.0000000000000000e-1,
+      "menor_espaco_ocorrencias": 4.0000000000000000e0,
+      "soma_variacoes": 5.0000000000000000e0,
+      "espaco_final": -2.5000000000000000e-1,
+      "repeticoes_total": 6.0000000000000000e0,
+      "repeticao_atual": 7.0000000000000000e0
+    }
+  },
+  "esperado": {
+    "concursos_conferidos": null,
+    "features": null,
+    "colunas_indice": ["concurso", "dezena", "total", "posicao", "variacao_posicao"],
+    "indice": [
+      [1, 1, 1.4125000000000000e1, 1, null],
+      [1, 2, 1.4125000000000000e1, 2, null],
+      [1, 3, 1.4125000000000000e1, 3, null],
+      [2, 1, 1.4125000000000000e1, 1, 0],
+      [2, 2, 1.4125000000000000e1, 2, 0],
+      [2, 3, 1.4125000000000000e1, 3, 0]
+    ]
+  }
+}

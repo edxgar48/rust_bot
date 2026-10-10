@@ -17,7 +17,7 @@ use crate::motor::FeaturesDezena;
 use parquet::basic::Compression;
 use parquet::data_type::{ByteArray, ByteArrayType, Int32Type};
 use parquet::file::metadata::KeyValue;
-use parquet::file::properties::{WriterProperties, WriterVersion};
+use parquet::file::properties::{EnabledStatistics, WriterProperties, WriterVersion};
 use parquet::file::writer::SerializedFileWriter;
 use parquet::schema::parser::parse_message_type;
 use serde::Serialize;
@@ -350,8 +350,11 @@ pub fn formatar_csv(dataset: &Dataset) -> String {
 }
 
 /// Propriedades fixas do escritor: Parquet 1.0, sem compressão, `created_by`
-/// fixo e metadados chave-valor só com o que vem do dataset. O resto fica no
-/// padrão do crate (dicionário e estatísticas por página), que é
+/// fixo e metadados chave-valor só com o que vem do dataset. As estatísticas
+/// (mín/máx por coluna, no row group e por página) são pedidas de forma
+/// explícita: o Python recusa o trancado lendo as de `trecho` e `concurso`
+/// antes de decodificar, e um padrão do crate que mudasse tiraria essa
+/// proteção. O resto fica no padrão do crate (dicionário), que é
 /// determinístico: o dicionário guarda os valores na ordem de chegada.
 fn propriedades(dataset: &Dataset) -> WriterProperties {
     let kv = |k: &str, v: String| KeyValue::new(k.to_string(), v);
@@ -359,6 +362,7 @@ fn propriedades(dataset: &Dataset) -> WriterProperties {
         .set_writer_version(WriterVersion::PARQUET_1_0)
         .set_compression(Compression::UNCOMPRESSED)
         .set_created_by(CRIADO_POR.to_string())
+        .set_statistics_enabled(EnabledStatistics::Page)
         .set_key_value_metadata(Some(vec![
             kv("loteria", dataset.loteria.clone()),
             kv("feature_version", dataset.feature_version.to_string()),
@@ -704,6 +708,32 @@ repeticoes_total,repeticao_atual,saiu,feature_version\n\
 
     fn ler_parquet(bytes: Vec<u8>) -> SerializedFileReader<bytes::Bytes> {
         SerializedFileReader::new(bytes::Bytes::from(bytes)).expect("Parquet legível")
+    }
+
+    #[test]
+    fn parquet_tem_estatisticas_de_trecho_e_concurso_em_cada_row_group() {
+        // O Python depende delas (recusa o trancado sem decodificar).
+        let ds = exemplo(true);
+        let leitor = ler_parquet(montar_parquet_em_grupos(&ds, 3).expect("parquet"));
+        let meta = leitor.metadata();
+        assert!(
+            meta.num_row_groups() > 1,
+            "o teste precisa de vários grupos"
+        );
+        for g in 0..meta.num_row_groups() {
+            for nome in ["trecho", "concurso"] {
+                let coluna = COLUNAS.iter().position(|c| *c == nome).expect("coluna");
+                let est = meta
+                    .row_group(g)
+                    .column(coluna)
+                    .statistics()
+                    .unwrap_or_else(|| panic!("grupo {g}: sem estatísticas de `{nome}`"));
+                assert!(
+                    est.min_bytes_opt().is_some() && est.max_bytes_opt().is_some(),
+                    "grupo {g}: `{nome}` sem mín/máx"
+                );
+            }
+        }
     }
 
     #[test]
