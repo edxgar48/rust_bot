@@ -1273,3 +1273,10 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   1d.4); `tests/evidencia.rs:186-205` não confere a unicidade da dezena "muito forte" que o comentário
   afirma; `tests/evidencia.rs:287` depende do alinhamento exato das colunas. Para a 1d.4:
   `evidencia_por_dezena` é O(t) por chamada — versão incremental para o CSV por concurso.
+- 2026-10-10 — Decisões do usuário sobre as pendências da 1d.1 e 1d.2 (todas as sugestões
+  aceitas), registradas em `PLANEJAMENTO.md`: (1) teto da evidência a favor do acaso documentado
+  na Fase 1d; o relatório do `sync evidencia` passa a imprimir o máximo atingível por janela (entra
+  na 1d.3) e o GUIA explica a assimetria (1d.4); (2) A lê o trancado por ser descritiva e não
+  alimenta busca nem escolha de perfil; (3) descrição da 1d.1 marca a concentração 1899–3796 como
+  refutada e guarda a linha do tempo dos locais de sorteio; (4) correção de `docs/GUIA.md:270`
+  entra na 1d.4. Pendências BAIXA da 1d.2 seguem para a 1d.3/1d.4.

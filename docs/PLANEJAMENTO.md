@@ -324,6 +324,15 @@ viés em cada dezena e de que o índice de força prevê — em cinco graus.
 - **Direção**: "a favor de viés" (FB > 1), "a favor do acaso" (FB < 1),
   sempre junto do grau; FB = 1 exato fica "a favor do acaso". Nada é
   escondido: a evidência contra o modelo aparece com o mesmo destaque.
+- **Teto da evidência a favor do acaso** (decisão de 2026-10-10, achado da
+  1d.2): com H0 pontual dentro de uma priori estreita, o FB a favor de H0 é
+  limitado — no máximo √(1 + Var_priori/Var_amostral), atingido em x = n·p.
+  Com priori de 5 %, |log10 FB| a favor do acaso não passa de ~0,13 na
+  Mega-Sena, ~0,17 na Quina e ~0,59 na Lotofácil no histórico inteiro (~0,03
+  na janela de 500): "muito fraca" ou, na Lotofácil, "fraca". A favor de viés
+  não há teto. "Mesmo destaque" significa mesma apresentação, não mesma
+  escala atingível: o relatório imprime o máximo atingível a favor do acaso
+  em cada janela, e o GUIA e o app explicam essa assimetria.
 - **A) Evidência por dezena** — H0: a chance de a dezena sair é exatamente
   K/N; H1: chance desconhecida com priori Beta centrada em K/N.
   - Cada dezena, sozinha, é Bernoulli(K/N) por concurso, independente entre
@@ -339,6 +348,10 @@ viés em cada dezena e de que o índice de força prevê — em cinco graus.
     nas duas; sem pesos de esquecimento.
   - **Ponto no tempo**: a evidência do concurso t usa só concursos até t−1;
     o snapshot vale para o próximo concurso, como as features.
+  - **Conjunto trancado**: A lê o histórico inteiro, trancado incluso,
+    porque descreve o sorteio (como o `sync aleatoriedade`), não avalia
+    modelo. Por isso o resultado de A **não alimenta** busca de pesos nem
+    escolha de perfil.
   - **Muitas dezenas**: com 25, 60 ou 80 dezenas, algumas saem "moderada" por
     acaso. O relatório mostra, ao lado da contagem de dezenas em cada grau, a
     contagem **esperada sob o acaso**, por simulação com semente fixa
@@ -361,10 +374,20 @@ Tarefas:
 - **1d.1** — Conferir os desvios de frequência da 1c.4 contra uma fonte
   independente e levantar mudanças de regra/equipamento nos trechos
   apontados (sai do Backlog): uniformidade rejeitada na Lotofácil,
-  p ≈ 1,5e-4, concentrada nos concursos 1899–3796; Mega-Sena, p ≈ 6,4e-3;
+  p ≈ 1,5e-4, concentrada nos concursos 1899–3796 (concentração refutada na
+  1d.1: mesmo padrão nas duas metades); Mega-Sena, p ≈ 6,4e-3;
   Quina, p ≈ 0,042; runs da dezena 25 da Quina. Se o desvio for erro de dado, corrigir a base
   antes da 1d.2. **Pronto quando:** cada trecho apontado tem conclusão
-  escrita em `PROGRESSO.md`.
+  escrita em `PROGRESSO.md`. Resultado: sem erro de dado; nenhuma mudança de
+  local explica os desvios.
+  - **Locais de sorteio** (contexto para leitura da evidência; campo `local`
+    do espelho de terceiros, demais datas pela Wikipédia): Caminhão da Sorte
+    desde 2000; Estúdio de TV (2014-08-27); Espaço Caixa Loterias, Terminal
+    Tietê (2015-12 — Lotofácil 1300, Mega-Sena 1772, Quina 3963); fim do
+    Caminhão (2019-06); Espaço da Sorte, Av. Paulista (2021-11-17 —
+    Lotofácil 2374, Mega-Sena 2429, Quina 5707). Globo de acrílico na
+    Mega-Sena em 2009-12-31 (concurso 1140, sem fonte primária). Nenhuma
+    troca de globos ou bolas datada depois de 2009.
 - **1d.2** — Evidência por dezena (A): módulo `src/avaliacao/evidencia.rs`
   (função pura, sem banco), comando `sync evidencia`, testes (FB contra
   valores calculados à mão, simetria, graus nos limites, ponto no tempo,
@@ -372,8 +395,11 @@ Tarefas:
   sensibilidade da priori no relatório.
 - **1d.3** — Evidência do índice (B) no mesmo comando, conferida contra a
   diferença de log loss do `sync avaliar` (mesmo número, outra escala).
+  O relatório passa a imprimir, por janela, o máximo atingível a favor do
+  acaso em A.
 - **1d.4** — Grau e direção no CSV do `sync tabela`; `docs/GUIA.md`
-  atualizado com a leitura dos graus.
+  atualizado com a leitura dos graus, o teto a favor do acaso e a correção
+  do trecho que ainda dá a Lotofácil como "concentrada em 1899–3796".
 
 ### Fase 2 — Exportação para o app
 
