@@ -136,6 +136,7 @@ fn config_do_caso(q: Quantidades) -> LoteriaConfig {
         primeira_coluna_dezena: 2,
         // O motor não olha o corte da busca.
         ultimo_concurso_busca: 0,
+        perfil_ativo: "caso_v1",
     }
 }
 

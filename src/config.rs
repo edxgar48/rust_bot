@@ -36,6 +36,11 @@ pub struct LoteriaConfig {
     /// move: `docs/PLANEJAMENTO.md`, 1c, "Conjunto final trancado". Use
     /// [`LoteriaConfig::trecho_do_concurso`] em vez de comparar à mão.
     pub ultimo_concurso_busca: u32,
+    /// Perfil de pesos **ativo** da loteria: o que o `sync evidencia` usa por
+    /// padrão (`docs/PLANEJAMENTO.md`, Fase 1d, item B). Nome do arquivo
+    /// `perfis/<slug>/<nome>.toml`, sem a extensão. A busca de pesos (1.5.3) não
+    /// trocou o perfil ativo: segue o `padrao_v1`.
+    pub perfil_ativo: &'static str,
 }
 
 /// A qual parte do histórico um concurso pertence, pelo corte fixo
@@ -124,6 +129,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_data: 1,
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 3416,
+        perfil_ativo: "padrao_v1",
     },
     LoteriaConfig {
         slug: "megasena",
@@ -143,6 +149,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_data: 1,
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 2759,
+        perfil_ativo: "padrao_v1",
     },
     LoteriaConfig {
         slug: "quina",
@@ -162,6 +169,7 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         coluna_data: 1,
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 6421,
+        perfil_ativo: "padrao_v1",
     },
 ];
 
@@ -436,6 +444,19 @@ mod tests {
                 assert!(!l.contem(abaixo), "{}: min - 1", l.slug);
             }
             assert!(!l.contem(l.dezena_max + 1), "{}: max + 1", l.slug);
+        }
+    }
+
+    #[test]
+    fn perfil_ativo_e_o_padrao_v1_e_existe_em_perfis() {
+        // O `sync evidencia` usa o perfil ativo por padrão (1d.3): tem de ser um
+        // perfil válido da pasta `perfis/<loteria>/` do repositório.
+        let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("perfis");
+        for l in LOTERIAS {
+            assert_eq!(l.perfil_ativo, "padrao_v1", "{}", l.slug);
+            let carregado = crate::perfil::carregar(&raiz, l, l.perfil_ativo)
+                .unwrap_or_else(|e| panic!("{}: {e}", l.slug));
+            assert_eq!(carregado.perfil.loteria, l.slug);
         }
     }
 }

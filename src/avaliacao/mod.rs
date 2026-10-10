@@ -34,11 +34,17 @@
 //!
 //! Evidência bayesiana por dezena (1d.2, [`evidencia_por_dezena`]): fator de
 //! Bayes em cinco graus, de fórmula fechada, sobre `resultados` até `t−1`.
+//!
+//! Evidência bayesiana do índice de força (1d.3, [`evidencia_do_indice`]): o
+//! mesmo número da diferença de log loss do walk-forward (dobras de teste 2 a
+//! 5), em outra escala e em graus, ao lado do esperado de um índice inerte
+//! ([`esperado_indice_inerte`]).
 
 mod aleatoriedade;
 mod bootstrap;
 mod calibracao;
 mod evidencia;
+mod evidencia_indice;
 mod metricas;
 mod topk;
 mod walk_forward;
@@ -62,10 +68,15 @@ pub use bootstrap::{
 };
 pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
 pub use evidencia::{
-    classificar, esperado_exato, esperado_sob_o_acaso, evidencia_por_dezena, ln_gamma,
-    log10_fator_bayes, Classificacao, Direcao, EsperadoAcaso, EsperadoPriori, EvidenciaDezena,
+    classificar, esperado_sob_o_acaso, evidencia_por_dezena, ln_gamma, log10_fator_bayes,
+    teto_a_favor_do_acaso, Classificacao, Direcao, EsperadoAcaso, EsperadoPriori, EvidenciaDezena,
     EvidenciaJanela, Grade, Grau, Janela, Priori, DESVIOS_PRIORI, JANELA_SECUNDARIA, QTD_PRIORIS,
     REPLICAS_ESPERADO, SEMENTE_ESPERADO,
+};
+pub use evidencia_indice::{
+    classificar_indice, esperado_indice_inerte, evidencia_do_indice, DirecaoIndice,
+    DobraEvidenciaIndice, EvidenciaIndice, IndiceInerte, PRIMEIRA_DOBRA_DE_TESTE, REPLICAS_INERTE,
+    SEMENTE_INERTE,
 };
 pub use metricas::{
     brier, log_loss, metricas_por_concurso, resumir, Comparacao, Intervalo, MetricasConcurso,

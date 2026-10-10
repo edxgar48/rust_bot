@@ -328,8 +328,9 @@ viés em cada dezena e de que o índice de força prevê — em cinco graus.
   1d.2): com H0 pontual dentro de uma priori estreita, o FB a favor de H0 é
   limitado — no máximo √(1 + Var_priori/Var_amostral), atingido em x = n·p.
   Com priori de 5 %, |log10 FB| a favor do acaso não passa de ~0,13 na
-  Mega-Sena, ~0,17 na Quina e ~0,59 na Lotofácil no histórico inteiro (~0,03
-  na janela de 500): "muito fraca" ou, na Lotofácil, "fraca". A favor de viés
+  Mega-Sena, ~0,17 na Quina e ~0,59 na Lotofácil no histórico inteiro (na
+  janela de 500: ~0,03, ~0,02 e ~0,23): "muito fraca" ou, na Lotofácil
+  inteira, "fraca". A favor de viés
   não há teto. "Mesmo destaque" significa mesma apresentação, não mesma
   escala atingível: o relatório imprime o máximo atingível a favor do acaso
   em cada janela, e o GUIA e o app explicam essa assimetria.
@@ -363,7 +364,17 @@ viés em cada dezena e de que o índice de força prevê — em cinco graus.
   log loss da 1c, traduzida em graus. Ressalva registrada: as dezenas do
   concurso são tratadas como Bernoullis independentes (pseudo-verossimilhança),
   igual para o modelo e para o acaso. Perfil ativo por padrão; `--perfil`
-  aceito. Não toca o trancado.
+  aceito. O trancado não entra no cálculo.
+  - **Índice inerte** (decisão de 2026-10-10, achado da 1d.3): a calibração
+    estima uma taxa por posição, e isso custa evidência mesmo quando o
+    índice não carrega informação nenhuma — um índice inerte já sai "muito
+    forte, a favor do acaso" (ln FB médio ≈ −17, −40 e −60 na Lotofácil,
+    Mega-Sena e Quina). O grau de B, sozinho, não diz que o índice atrapalha.
+    Por isso o relatório imprime ao lado o esperado de um índice inerte: as
+    mesmas posições diante de 200 históricos simulados sob o acaso (semente
+    20261010), com média, faixa de 95 % e quantas réplicas igualam ou
+    superam o observado. O índice só mostra informação se o observado ficar
+    acima da faixa dos inertes. O GUIA e o app levam a mesma ressalva.
 - **Sem tabela nova**: tudo de fórmula fechada e barato; calculado sob
   demanda a partir de `resultados` (A) e da avaliação já existente (B).
 - **Onde aparece**: comando `sync evidencia <loteria>` (relatório em texto,
@@ -396,10 +407,11 @@ Tarefas:
 - **1d.3** — Evidência do índice (B) no mesmo comando, conferida contra a
   diferença de log loss do `sync avaliar` (mesmo número, outra escala).
   O relatório passa a imprimir, por janela, o máximo atingível a favor do
-  acaso em A.
+  acaso em A, e, em B, o esperado de um índice inerte.
 - **1d.4** — Grau e direção no CSV do `sync tabela`; `docs/GUIA.md`
-  atualizado com a leitura dos graus, o teto a favor do acaso e a correção
-  do trecho que ainda dá a Lotofácil como "concentrada em 1899–3796".
+  atualizado com a leitura dos graus, o teto a favor do acaso, a ressalva
+  do índice inerte em B e a correção do trecho que ainda dá a Lotofácil
+  como "concentrada em 1899–3796".
 
 ### Fase 2 — Exportação para o app
 

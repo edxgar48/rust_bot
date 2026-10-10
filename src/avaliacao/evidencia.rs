@@ -52,7 +52,7 @@
 //! [`esperado_sob_o_acaso`] simula históricos com o mesmo `n` (sorteio sem
 //! reposição de *K* entre *N* por concurso, [`SplitMix64`], semente fixa) e
 //! devolve a média, por grau e direção, da contagem de dezenas.
-//! [`esperado_exato`] dá o mesmo valor pela binomial (a esperança de uma
+//! `esperado_exato` (só nos testes) dá o mesmo valor pela binomial (a esperança de uma
 //! soma vale a soma das esperanças, qualquer que seja a dependência entre as
 //! dezenas do concurso), e os testes conferem uma contra a outra.
 
@@ -201,6 +201,32 @@ pub fn log10_fator_bayes(x: u64, n: u64, p: f64, priori: &Priori) -> Result<f64>
     Ok(ln_fb * std::f64::consts::LOG10_E)
 }
 
+/// Teto da evidência **a favor do acaso** (decisão de 2026-10-10, achado da
+/// 1d.2): com H0 pontual dentro de uma priori estreita, o FB a favor de H0 é
+/// limitado. Para `n` concursos, a variância amostral da proporção é
+/// `p(1−p)/n` e a da priori é `(desvio·p)²`; o FB a favor de H0 fica, no
+/// máximo (em `x = n·p`), em `√(1 + Var_priori/Var_amostral)`. Devolve o
+/// `log10` desse máximo (≥ 0), isto é, o maior `|log10 FB|` que os dados podem
+/// dar a favor do acaso:
+///
+/// `0,5 · log10(1 + n·desvio²·p/(1−p))`.
+///
+/// É a aproximação normal do plano (conferida nos testes contra
+/// [`log10_fator_bayes`] em `x = n·p`); a favor de viés não há teto. `n = 0`
+/// dá 0. Exige `0 < p < 1` e `desvio > 0` finito.
+pub fn teto_a_favor_do_acaso(n: u64, p: f64, desvio: f64) -> Result<f64> {
+    if !(p > 0.0 && p < 1.0) {
+        return Err(invalida(format!("chance sob H0 fora de (0, 1): {p}")));
+    }
+    if !(desvio > 0.0 && desvio.is_finite()) {
+        return Err(invalida(format!(
+            "desvio da priori deve ser positivo e finito: {desvio}"
+        )));
+    }
+    let razao_de_variancias = n as f64 * desvio * desvio * p / (1.0 - p);
+    Ok(0.5 * razao_de_variancias.ln_1p() * std::f64::consts::LOG10_E)
+}
+
 // ---------------------------------------------------------------------------
 // Graus e direção
 // ---------------------------------------------------------------------------
@@ -316,7 +342,7 @@ pub struct Grade<T> {
 }
 
 impl<T: Copy> Grade<T> {
-    pub fn get(&self, c: Classificacao) -> T {
+    fn get(&self, c: Classificacao) -> T {
         self.celulas()[c.celula()]
     }
 
@@ -657,8 +683,10 @@ pub fn esperado_sob_o_acaso(
 /// concursos e a priori de desvio `desvio`: *N* · `P(x cai na célula)` com
 /// `x ~ Binomial(n, p)`. Vale para a contagem de dezenas do concurso inteiro
 /// pela linearidade da esperança, apesar de as dezenas serem dependentes
-/// (sorteio sem reposição). Referência da simulação.
-pub fn esperado_exato(cfg: &LoteriaConfig, n: u64, desvio: f64) -> Result<Grade<f64>> {
+/// (sorteio sem reposição). Referência da simulação: só os testes a usam
+/// (a CLI usa a simulação), então não faz parte da API pública.
+#[cfg(test)]
+pub(crate) fn esperado_exato(cfg: &LoteriaConfig, n: u64, desvio: f64) -> Result<Grade<f64>> {
     let (p, _) = chance_e_prioris(cfg)?;
     let tabela = tabela_de_celulas(n, p, &Priori::nova(p, desvio)?)?;
     let nf = n as f64;

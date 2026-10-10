@@ -34,6 +34,7 @@ const MINI: LoteriaConfig = LoteriaConfig {
     primeira_coluna_dezena: 2,
     // O motor não usa o corte da busca.
     ultimo_concurso_busca: 0,
+    perfil_ativo: "mini_v1",
 };
 
 fn res(cfg: &LoteriaConfig, concurso: u32, dezenas: &[u32]) -> Resultado {

@@ -44,7 +44,7 @@ src/
 ├── parser.rs      # calamine: lê a planilha (.xlsx) e extrai os concursos
 ├── db.rs          # rusqlite: schema, upsert por (loteria, concurso) e tabelas derivadas
 ├── motor/         # features por dezena e janela (série temporal) e índice de força, puro: sem I/O nem SQL
-├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap), testes de aleatoriedade e evidência bayesiana por dezena, puro
+├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap), testes de aleatoriedade e evidência bayesiana (por dezena e do índice), puro
 ├── registros.rs   # registro de uso do conjunto trancado (`registros/trancado_<loteria>.json`, versionado)
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
 ├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela` e `dataset`: validação + motor/avaliação + banco
@@ -101,10 +101,27 @@ cargo run --bin sync -- avaliar quina --perfil padrao_v1 --trancado            #
 # testes de aleatoriedade do histórico inteiro (qui-quadrado e runs por dezena)
 cargo run --bin sync -- aleatoriedade todas
 
-# evidência bayesiana por dezena (fator de Bayes em cinco graus) para o próximo concurso: histórico
-# inteiro e últimos 500 concursos, priori de 5 % de K/N com sensibilidade de 2,5 % e 10 %, e a
-# contagem de dezenas por grau ao lado da esperada sob o acaso (simulação, semente fixa). Só lê o banco
+# evidência bayesiana (fator de Bayes em cinco graus). Só lê o banco; não grava nada.
+#  A) por dezena, para o próximo concurso: histórico inteiro e últimos 500 concursos, priori de 5 %
+#     de K/N com sensibilidade de 2,5 % e 10 %, a contagem de dezenas por grau ao lado da esperada
+#     sob o acaso (simulação, semente fixa) e, por janela e priori, o máximo atingível a favor do
+#     acaso (`log10 √(1 + Var_priori/Var_amostral)`: a favor do acaso a evidência tem teto).
+#  B) do índice de força de um perfil: FB prequencial (soma, par a par, de ln p_índice − ln p_acaso
+#     com a calibração pela posição da 1c) nas dobras de teste 2 a 5 do walk-forward do `avaliar`,
+#     com grau, direção ("a favor do índice" se FB > 1, senão "a favor do acaso") e o log10 FB por
+#     dobra (com a Δ log loss por par). É a diferença de log loss do `avaliar` em outra escala:
+#     ln FB = −pares × (log loss do perfil − log loss do acaso). O trancado não entra no cálculo
+#     (nada acima do corte da busca). Ao lado, o esperado de um ÍNDICE INERTE (as mesmas posições
+#     diante de 200 históricos sorteados ao acaso, semente 20261010): a calibração por posição custa
+#     evidência mesmo sem informação nenhuma, então um inerte já sai "muito forte, a favor do
+#     acaso". O índice só mostra algo se o observado ficar acima da faixa de 95 % dos inertes.
+#  `--perfil` escolhe o perfil de B (padrão: o perfil ativo da loteria, `padrao_v1`); `--perfis`
+#  muda a pasta dos perfis (padrão `perfis`). B tem as mesmas pré-condições do `avaliar` (perfil
+#  registrado com o hash do `.toml`, `features` e `indice` em dia). Se B não puder ser calculada, A
+#  sai igual e a seção B traz o motivo e os comandos a rodar, um por linha; o exit é 0 com o perfil padrão e
+#  diferente de 0 quando `--perfil` foi passado.
 cargo run --bin sync -- evidencia quina
+cargo run --bin sync -- evidencia quina --perfil busca_v1 --perfis outra/pasta
 
 # tabela geral em CSV (Excel: `;` e vírgula decimal), um arquivo por concurso
 # em tabelas/<loteria>/tabela_<loteria>_<perfil>_<concurso>.csv

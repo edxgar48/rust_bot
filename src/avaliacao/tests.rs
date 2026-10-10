@@ -22,6 +22,7 @@ pub(super) const MINI: LoteriaConfig = LoteriaConfig {
     primeira_coluna_dezena: 2,
     // Corte fictício da busca: os testes do walk-forward usam séries maiores.
     ultimo_concurso_busca: 20,
+    perfil_ativo: "mini_v1",
 };
 
 pub(super) fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {

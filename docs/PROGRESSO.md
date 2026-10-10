@@ -49,7 +49,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1d.1 Conferir os desvios de frequência da 1c.4 contra fonte independente
 - [x] 1d.2 Evidência por dezena (fator de Bayes, cinco graus) + `sync evidencia`
-- [ ] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
+- [x] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
 - [ ] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
@@ -1280,3 +1280,56 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   alimenta busca nem escolha de perfil; (3) descrição da 1d.1 marca a concentração 1899–3796 como
   refutada e guarda a linha do tempo dos locais de sorteio; (4) correção de `docs/GUIA.md:270`
   entra na 1d.4. Pendências BAIXA da 1d.2 seguem para a 1d.3/1d.4.
+- 2026-10-10 — 1d.3: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): (1) "perfil ativo" não existe no código; passa a ser `padrao_v1` (o plano diz
+  que a busca não trocou o perfil ativo), num campo do `LoteriaConfig`, não em `match slug`;
+  (2) B = Σ, nos pares (concurso, dezena) das dobras de teste 2 a 5 do walk-forward do `sync avaliar`,
+  de ln p_modelo − ln p_acaso (Bernoulli, com o mesmo limite [1e-15, 1 − 1e-15] do log loss), guardado
+  como `log10_fb`; graus e limites da escala de A; direção de B rotulada "a favor do índice" (FB > 1) /
+  "a favor do acaso" (FB ≤ 1); por dobra só informativo; (3) pré-condições de B iguais às do
+  `sync avaliar` (perfil registrado com hash igual ao `.toml`, índice até último + 1, features em dia);
+  se B não puder ser calculada, A sai do mesmo jeito e B mostra o motivo e o comando a rodar — exit 0
+  com o perfil padrão, exit ≠ 0 com `--perfil` explícito; (4) teto a favor do acaso de A impresso por
+  janela e por largura de priori, `log10 √(1 + Var_priori/Var_amostral)` em x = n·p.
+- 2026-10-10 — 1d.3 concluída (engenheiro-avaliacao). `src/avaliacao/evidencia_indice.rs` (novo, puro:
+  `evidencia_do_indice`, `DirecaoIndice`, por dobra 2–5; reaproveita `calibrar`, `dobras_da_busca`,
+  `log_loss`) + 13 testes; `config.rs` (`perfil_ativo = "padrao_v1"`); `evidencia.rs`
+  (`teto_a_favor_do_acaso`, `Grade::get` privado, `esperado_exato` só em teste); `orquestracao.rs`
+  (`evidencia_completa`, `SecaoIndice`, B indisponível → A sai e B mostra motivo e comando); `sync
+  evidencia --perfil --perfis`; `tests/evidencia.rs` (+9); README. Segue a interpretação acima sem desvio.
+  Conferência: ln FB = −pares × (log loss perfil − acaso) dobra a dobra contra `walk_forward` e
+  `avaliar_perfil`, tolerância 1e-13 × pares × log loss do acaso (erro medido ~50× menor). Resultado
+  (`padrao_v1`, dobras 2–5): log10 FB Lotofácil −7,31, Mega-Sena −13,59, Quina −25,00, todas "muito
+  forte, a favor do acaso". Teto de A a favor do acaso (priori 5 %, inteiro / últimos 500): Lotofácil
+  0,592 / 0,229; Mega-Sena 0,134 / 0,028; Quina 0,170 / 0,017. verificador-vazamento: sem vazamento.
+  Revisão: aprovada com ressalvas, sem ALTA. Gate: fmt ok, clippy ok, cargo test verde (lib 500,
+  avaliar 85, evidencia 19, indice 57, features 56, ...), pytest 175, `validar todas` ok.
+  **Pendência (MÉDIA, muda o plano, aguarda o usuário):** "muito forte a favor do acaso" em B é o
+  esperado de um índice **sem informação**: a calibração estima N taxas por posição e paga um custo de
+  Occam (estimativa do revisor, ln FB esperado sob o acaso ≈ −17,5 / −41 / −60 contra observados −16,8
+  / −31,3 / −57,6). Sugestão: registrar a assimetria de B no plano e imprimir no relatório o ln FB
+  esperado de um índice inerte (fórmula fechada ou simulação com semente fixa), ou ao menos ressalva
+  no relatório e no GUIA (1d.4). **Pendências BAIXA:** plano diz "~0,03 na janela de 500" para o
+  teto, só vale na Mega-Sena (Lotofácil 0,23, Quina 0,02) — corrigir PLANEJAMENTO.md com aprovação;
+  tabela por dobra de B sem a coluna "diferença de log loss por par" para conferir com o `avaliar`;
+  `comando_para_destravar_o_indice` ignora `--perfis` e usa `&&` (não existe no PowerShell 5.1);
+  `IndiceEvidenciado.primeiro_indice`/`ultimo_concurso` sem uso na CLI; README:113 "não lê o
+  trancado" → "o trancado não entra no cálculo de B"; duas funções públicas `evidencia_do_indice`
+  (pura e com banco) — renomear a da orquestração para `evidencia_do_indice_do_banco`.
+- 2026-10-10 — Decisões do usuário sobre a 1d.3 ("aceito as sugestões"): interpretações (perfil
+  ativo `padrao_v1`, rótulo "a favor do índice", regra de exit) mantidas. **Índice inerte** registrado
+  no plano (Fase 1d, B) e implementado: `esperado_indice_inerte` (200 réplicas, semente 20261010,
+  `REPLICAS_INERTE`/`SEMENTE_INERTE`) simula, com as mesmas posições do perfil, resultados sorteados
+  ao acaso e devolve média, faixa de 95 % e réplicas ≥ observado; réplica em laço único, conferida
+  contra `evidencia_do_indice` nos testes (Quina: 86 s → 12,7 s em debug, 2,9 s em release). Relatório
+  imprime o inerte e uma ressalva. Resultado (`padrao_v1`, log10 FB observado / média do inerte /
+  faixa 95 % / réplicas ≥ observado): Lotofácil −7,31 / −7,48 / [−11,67; −3,93] / 91 de 200;
+  Mega-Sena −13,59 / −17,58 / [−22,42; −12,75] / 12 de 200; Quina −25,00 / −26,18 / [−32,39; −19,71]
+  / 72 de 200 — nas três o índice é indistinguível de um inerte (ln FB médio do inerte ≈ −17,2 /
+  −40,5 / −60,3, batendo com a estimativa do revisor). Pendências BAIXA resolvidas: plano corrigido
+  (teto na janela de 500: ~0,03 / ~0,02 / ~0,23); coluna "Δ log loss/par" na tabela por dobra;
+  comandos a rodar um por linha (sem `&&`), com `--perfis` quando a pasta não é a padrão
+  (`IndiceIndisponivel.comandos: Vec<String>`); `primeiro_indice`/`ultimo_concurso` impressos ("Índice
+  lido"); README ("o trancado não entra no cálculo"); função da orquestração renomeada para
+  `evidencia_do_indice_no_banco`. 1d.4 passa a incluir a ressalva do inerte no GUIA. Gate: fmt,
+  clippy, cargo test verde (lib 506, evidencia 19, ...), pytest 175.

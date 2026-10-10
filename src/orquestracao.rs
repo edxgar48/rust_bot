@@ -28,8 +28,8 @@
 //! ([`classificar_atualizacao`], tarefa 0.8).
 
 use crate::avaliacao::{
-    self, Cauda, EsperadoAcaso, EvidenciaJanela, Observacao, ResumoAleatoriedade, VereditoTrecho,
-    WalkForward,
+    self, Cauda, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte, Observacao,
+    ResumoAleatoriedade, VereditoTrecho, WalkForward,
 };
 use crate::config::LoteriaConfig;
 use crate::dataset::{ConcursoDataset, Dataset, ImpressoesResultados};
@@ -1499,6 +1499,10 @@ pub fn testar_aleatoriedade_do_banco(
 pub struct JanelaEvidencia {
     pub evidencia: EvidenciaJanela,
     pub esperado: EsperadoAcaso,
+    /// Máximo `|log10 FB|` atingível **a favor do acaso** em `n` concursos, por
+    /// priori (na ordem de [`avaliacao::DESVIOS_PRIORI`]): ver
+    /// [`avaliacao::teto_a_favor_do_acaso`]. A favor de viés não há teto.
+    pub teto_acaso: [f64; avaliacao::QTD_PRIORIS],
 }
 
 /// Relatório do `sync evidencia` (1d.2): evidência bayesiana por dezena para
@@ -1559,9 +1563,15 @@ pub fn evidencia_do_banco(conn: &Connection, cfg: &LoteriaConfig) -> Result<Rela
             avaliacao::REPLICAS_ESPERADO,
             avaliacao::SEMENTE_ESPERADO,
         )?;
+        let mut teto_acaso = [0.0; avaliacao::QTD_PRIORIS];
+        for (teto, desvio) in teto_acaso.iter_mut().zip(avaliacao::DESVIOS_PRIORI) {
+            *teto =
+                avaliacao::teto_a_favor_do_acaso(evidencia.concursos as u64, evidencia.p, desvio)?;
+        }
         Ok(JanelaEvidencia {
             evidencia,
             esperado,
+            teto_acaso,
         })
     })
     .collect::<Result<Vec<_>>>()?;
@@ -1575,6 +1585,187 @@ pub fn evidencia_do_banco(conn: &Connection, cfg: &LoteriaConfig) -> Result<Rela
         janelas,
         avisos,
     })
+}
+
+/// Evidência do índice (B) de um perfil, com o que o relatório precisa para
+/// identificá-lo.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IndiceEvidenciado {
+    pub perfil: String,
+    pub versao: u32,
+    pub janela: u32,
+    pub normalizacao: String,
+    pub hash_toml: String,
+    /// `cfg.ultimo_concurso_busca`: nada acima dele entra em B.
+    pub corte: u32,
+    /// Primeiro concurso do índice (a calibração começa nele).
+    pub primeiro_indice: u32,
+    /// Último concurso de `resultados`; o índice vai até ele + 1.
+    pub ultimo_concurso: u32,
+    pub evidencia: EvidenciaIndice,
+    /// O esperado de um índice inerte, para comparar com `evidencia`.
+    pub inerte: IndiceInerte,
+}
+
+/// Por que a evidência do índice (B) não pôde ser calculada, e o que rodar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IndiceIndisponivel {
+    pub perfil: String,
+    /// Mensagem do erro das pré-condições (já diz o que fazer).
+    pub motivo: String,
+    /// Comandos que resolvem, nesta ordem (`sync features ...`, `sync indice
+    /// ...`); vazio quando não há um comando que resolva.
+    pub comandos: Vec<String>,
+}
+
+/// A seção B do `sync evidencia`: calculada ou indisponível (com o motivo).
+#[derive(Debug, Clone, PartialEq)]
+pub enum SecaoIndice {
+    Calculada(Box<IndiceEvidenciado>),
+    Indisponivel(IndiceIndisponivel),
+}
+
+/// Tudo o que o `sync evidencia` imprime: A (por dezena) e B (do índice).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvidenciaCompleta {
+    pub dezenas: RelatorioEvidencia,
+    pub indice: SecaoIndice,
+}
+
+/// `sync evidencia <loteria>`: A ([`evidencia_do_banco`]) e B
+/// ([`evidencia_do_indice_no_banco`]) do perfil `nome` em `raiz_perfis`. Se B não puder
+/// ser calculada, A sai do mesmo jeito e B vem como
+/// [`SecaoIndice::Indisponivel`]. Só lê.
+pub fn evidencia_completa(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    raiz_perfis: &Path,
+    nome: &str,
+) -> Result<EvidenciaCompleta> {
+    let dezenas = evidencia_do_banco(conn, cfg)?;
+    let indice = evidencia_do_indice_no_banco(conn, cfg, raiz_perfis, nome)?;
+    Ok(EvidenciaCompleta { dezenas, indice })
+}
+
+/// Evidência do índice de força (B, `docs/PLANEJAMENTO.md`, Fase 1d): FB
+/// prequencial do perfil `nome` contra o acaso nas dobras de teste 2 a 5 do
+/// walk-forward do `sync avaliar` ([`avaliacao::evidencia_do_indice`]), com o
+/// esperado de um índice inerte ([`avaliacao::esperado_indice_inerte`]). Não
+/// grava nada: lê numa transação desfeita no fim, e nada acima do corte da
+/// busca entra no cálculo (o trancado só passa pela leitura do índice, que a
+/// função pura descarta antes de calibrar).
+///
+/// Pré-condições iguais às do `sync avaliar`: perfil legível e registrado com
+/// o hash do `.toml`, features em dia, índice até o último concurso + 1 e
+/// idêntico ao recalculado. Se alguma falhar (ou se o histórico for curto
+/// demais para as 5 dobras), devolve [`SecaoIndice::Indisponivel`] com o
+/// motivo e os comandos a rodar; erros de banco e de integridade dos resultados
+/// seguem como `Err`.
+pub fn evidencia_do_indice_no_banco(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    raiz_perfis: &Path,
+    nome: &str,
+) -> Result<SecaoIndice> {
+    let indisponivel = |erro: SpiderError, comandos: Vec<String>| {
+        SecaoIndice::Indisponivel(IndiceIndisponivel {
+            perfil: nome.to_string(),
+            motivo: erro.to_string(),
+            comandos,
+        })
+    };
+    let carregado = match crate::perfil::carregar(raiz_perfis, cfg, nome) {
+        Ok(c) => c,
+        Err(e) => return Ok(indisponivel(e, Vec::new())),
+    };
+    if let Err(e) = conferir_loteria_do_perfil(cfg, &carregado.perfil) {
+        return Ok(indisponivel(e, Vec::new()));
+    }
+
+    let tx = db::iniciar_leitura(conn)?;
+    let lidas = ler_observacoes(&tx, cfg, &carregado);
+    drop(tx);
+    let lidas = match lidas {
+        Ok(l) => l,
+        Err(e) => {
+            return match comandos_para_destravar_o_indice(cfg, raiz_perfis, nome, &e) {
+                Some(comandos) => Ok(indisponivel(e, comandos)),
+                None => Err(e),
+            }
+        }
+    };
+
+    let evidencia = match avaliacao::evidencia_do_indice(cfg, &lidas.observacoes) {
+        Ok(b) => b,
+        // Histórico curto demais para as 5 dobras do walk-forward.
+        Err(e @ SpiderError::AvaliacaoSemConcursos(_)) => return Ok(indisponivel(e, Vec::new())),
+        Err(e) => return Err(e),
+    };
+    let inerte = avaliacao::esperado_indice_inerte(
+        cfg,
+        &lidas.observacoes,
+        &evidencia,
+        avaliacao::REPLICAS_INERTE,
+        avaliacao::SEMENTE_INERTE,
+    )?;
+    Ok(SecaoIndice::Calculada(Box::new(IndiceEvidenciado {
+        perfil: carregado.perfil.nome.clone(),
+        versao: carregado.perfil.versao,
+        janela: carregado.perfil.janela,
+        normalizacao: carregado.perfil.normalizacao.como_str().to_string(),
+        hash_toml: carregado.hash_toml.clone(),
+        corte: cfg.ultimo_concurso_busca,
+        primeiro_indice: lidas.primeiro_indice,
+        ultimo_concurso: lidas.ultimo,
+        evidencia,
+        inerte,
+    })))
+}
+
+/// Para os erros que são pré-condição não cumprida (B indisponível, não
+/// falha): `Some(comandos a rodar, nesta ordem)`, vazio quando não há um
+/// comando que resolva. Qualquer outro erro (banco, integridade dos
+/// resultados) é `None` e segue como erro. Um comando por item (sem `&&`,
+/// que o PowerShell 5.1 não tem); o `sync indice` leva `--perfis` quando a
+/// pasta não é a padrão.
+fn comandos_para_destravar_o_indice(
+    cfg: &LoteriaConfig,
+    raiz_perfis: &Path,
+    nome: &str,
+    erro: &SpiderError,
+) -> Option<Vec<String>> {
+    let slug = cfg.slug;
+    let mut indice = format!("sync indice {slug} --perfil {nome}");
+    if raiz_perfis != Path::new("perfis") {
+        let pasta = raiz_perfis.display().to_string();
+        if pasta.contains(char::is_whitespace) {
+            indice.push_str(&format!(" --perfis \"{pasta}\""));
+        } else {
+            indice.push_str(&format!(" --perfis {pasta}"));
+        }
+    }
+    let features = format!("sync features {slug}");
+    match erro {
+        // Perfil ainda não registrado ou índice velho: o `sync features` é
+        // incremental (no-op se já está em dia) e garante as features que o
+        // `sync indice` exige.
+        SpiderError::SemFeatures(_)
+        | SpiderError::FeaturesDesatualizadas { .. }
+        | SpiderError::FeaturesDeResultadosAlterados { .. }
+        | SpiderError::FeaturesDeOutraVersao { .. }
+        | SpiderError::PerfilNaoRegistrado { .. }
+        | SpiderError::IndiceDesatualizado { .. } => Some(vec![features, indice]),
+        SpiderError::FeaturesIncoerentes { .. } => {
+            Some(vec![format!("{features} --completo"), indice])
+        }
+        SpiderError::IndiceIncoerente { .. } => Some(vec![indice]),
+        // O erro já diz o que fazer (criar outro nome de perfil; usar o perfil
+        // da pasta certa).
+        SpiderError::PerfilAlterado { .. } | SpiderError::PerfilDeOutraLoteria { .. } => {
+            Some(Vec::new())
+        }
+        _ => None,
+    }
 }
 
 /// O que fazer com o concurso lido na página pelo `sync atualizar`, comparado
@@ -1628,6 +1819,62 @@ pub fn classificar_atualizacao(ultimo_salvo: Option<u32>, da_pagina: u32) -> Atu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comandos_para_destravar_o_indice_um_por_item_e_com_a_pasta_de_perfis() {
+        let cfg = crate::config::buscar("quina").expect("quina");
+        let nao_registrado = SpiderError::PerfilNaoRegistrado {
+            nome: "padrao_v1".to_string(),
+            loteria: "quina".to_string(),
+        };
+        // Pasta padrão: sem `--perfis`.
+        assert_eq!(
+            comandos_para_destravar_o_indice(
+                cfg,
+                Path::new("perfis"),
+                "padrao_v1",
+                &nao_registrado
+            ),
+            Some(vec![
+                "sync features quina".to_string(),
+                "sync indice quina --perfil padrao_v1".to_string(),
+            ])
+        );
+        // Outra pasta, com espaço: entre aspas.
+        assert_eq!(
+            comandos_para_destravar_o_indice(
+                cfg,
+                Path::new("meus perfis"),
+                "padrao_v1",
+                &nao_registrado
+            ),
+            Some(vec![
+                "sync features quina".to_string(),
+                "sync indice quina --perfil padrao_v1 --perfis \"meus perfis\"".to_string(),
+            ])
+        );
+        let incoerente = SpiderError::IndiceIncoerente {
+            loteria: "quina".to_string(),
+            perfil: "padrao_v1".to_string(),
+            detalhe: String::new(),
+        };
+        assert_eq!(
+            comandos_para_destravar_o_indice(cfg, Path::new("outra"), "padrao_v1", &incoerente),
+            Some(vec![
+                "sync indice quina --perfil padrao_v1 --perfis outra".to_string()
+            ])
+        );
+        // Erro que não é pré-condição: segue como erro.
+        assert_eq!(
+            comandos_para_destravar_o_indice(
+                cfg,
+                Path::new("perfis"),
+                "padrao_v1",
+                &SpiderError::AvaliacaoEntradaInvalida(String::new())
+            ),
+            None
+        );
+    }
 
     #[test]
     fn atualizacao_sem_novidade_quando_a_pagina_nao_passa_do_ultimo() {

@@ -267,15 +267,25 @@ enum Comando {
         #[arg(long)]
         db: Option<PathBuf>,
     },
-    /// Evidência bayesiana por dezena (fator de Bayes em cinco graus) para o
-    /// próximo concurso, com o histórico inteiro e os últimos 500 concursos.
-    /// Só lê o banco: não grava nada.
+    /// Evidência bayesiana (fator de Bayes em cinco graus): (A) por dezena, para
+    /// o próximo concurso, com o histórico inteiro e os últimos 500 concursos;
+    /// (B) do índice de força de um perfil, nas dobras de teste 2 a 5 do
+    /// walk-forward. Só lê o banco: não grava nada.
     Evidencia {
         /// Slug da loteria (ex.: lotofacil, megasena, quina); `todas` não é aceito
         loteria: String,
+        /// Perfil de pesos de B (arquivo `<perfis>/<loteria>/<nome>.toml`, já
+        /// registrado pelo `indice`). Padrão: o perfil ativo da loteria
+        /// (`padrao_v1`); se B não puder ser calculada com um perfil dado aqui,
+        /// o comando termina com erro (com o perfil padrão, só avisa)
+        #[arg(long)]
+        perfil: Option<String>,
         /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
         #[arg(long)]
         db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
     },
 }
 
@@ -515,10 +525,15 @@ async fn main() -> anyhow::Result<()> {
             }
             execucao.concluir()?;
         }
-        Comando::Evidencia { loteria, db } => {
+        Comando::Evidencia {
+            loteria,
+            perfil,
+            db,
+            perfis,
+        } => {
             let cfg = buscar_config_unica(&loteria, "evidencia", MOTIVO_EVIDENCIA_UMA_LOTERIA)?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-            evidenciar(cfg, &db_caminho)?;
+            evidenciar(cfg, &db_caminho, &perfis, perfil.as_deref())?;
         }
     }
 
@@ -2083,16 +2098,29 @@ fn testar_aleatoriedade(
     Ok(())
 }
 
-/// `sync evidencia`: evidência bayesiana por dezena (em `orquestracao`) e o
-/// relatório. Banco aberto só para leitura; inexistente é erro, sem criar
-/// arquivo. O tempo vai para o stderr: o stdout é determinístico.
-fn evidenciar(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
+/// `sync evidencia`: evidência bayesiana por dezena (A) e do índice de força
+/// (B), em `orquestracao`, e o relatório. Banco aberto só para leitura;
+/// inexistente é erro, sem criar arquivo. O tempo vai para o stderr: o stdout
+/// é determinístico.
+///
+/// `perfil` é o `--perfil`: sem ele vale o perfil ativo da loteria
+/// (`cfg.perfil_ativo`) e, se B não puder ser calculada, o relatório sai com o
+/// motivo e o comando termina com sucesso; com `--perfil` explícito a mesma
+/// falha também imprime o relatório (A inclusive) mas termina com erro.
+fn evidenciar(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    perfil: Option<&str>,
+) -> anyhow::Result<()> {
     if !db_caminho.exists() {
         anyhow::bail!("banco não encontrado: {}", db_caminho.display());
     }
-    let conn = db::abrir_somente_leitura(db_caminho)?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let nome_perfil = perfil.unwrap_or(cfg.perfil_ativo);
     let inicio = std::time::Instant::now();
-    let relatorio = match orquestracao::evidencia_do_banco(&conn, cfg) {
+    let relatorio = match orquestracao::evidencia_completa(&mut conn, cfg, raiz_perfis, nome_perfil)
+    {
         Ok(r) => r,
         Err(SpiderError::ResultadosReprovados {
             loteria,
@@ -2116,10 +2144,175 @@ fn evidenciar(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyh
         Err(e) => return Err(e.into()),
     };
     let duracao = inicio.elapsed();
-    imprimir_problemas("aviso(s)", &relatorio.avisos, Saida::Erro);
-    print!("{}", formatar_evidencia(&relatorio));
+    imprimir_problemas("aviso(s)", &relatorio.dezenas.avisos, Saida::Erro);
+    let mut texto = formatar_evidencia(&relatorio.dezenas);
+    texto.push('\n');
+    texto.push_str(&formatar_evidencia_indice(
+        &relatorio.indice,
+        perfil.is_some(),
+    ));
+    imprimir(&texto)?;
     eprintln!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    if let (orquestracao::SecaoIndice::Indisponivel(i), Some(_)) = (&relatorio.indice, perfil) {
+        anyhow::bail!(
+            "a evidência do índice (B) não pôde ser calculada com o perfil `{}` pedido em \
+             `--perfil` (A foi impressa): {}",
+            i.perfil,
+            i.motivo
+        );
+    }
     Ok(())
+}
+
+/// Seção B do relatório do `sync evidencia`: o FB prequencial do índice nas
+/// dobras de teste 2 a 5, ou o motivo de não ter sido calculado. `explicito`:
+/// o perfil veio de `--perfil` (senão é o perfil ativo da loteria).
+fn formatar_evidencia_indice(secao: &orquestracao::SecaoIndice, explicito: bool) -> String {
+    let mut s = String::new();
+    let mut linha = |texto: String| {
+        s.push_str(&texto);
+        s.push('\n');
+    };
+    linha("== Evidência do índice de força (B) ==".to_string());
+    let origem = if explicito {
+        "informado por --perfil"
+    } else {
+        "perfil ativo da loteria"
+    };
+    match secao {
+        orquestracao::SecaoIndice::Indisponivel(i) => {
+            linha(format!("Perfil: {} ({origem}).", i.perfil));
+            linha(format!("B não pôde ser calculada: {}", i.motivo));
+            if !i.comandos.is_empty() {
+                linha("Comandos a rodar, nesta ordem:".to_string());
+                for comando in &i.comandos {
+                    linha(format!("  {comando}"));
+                }
+            }
+            linha("A seção A acima não depende do perfil e vale do mesmo jeito.".to_string());
+        }
+        orquestracao::SecaoIndice::Calculada(c) => {
+            let b = &c.evidencia;
+            linha(format!(
+                "Perfil: {} (versão {}, janela {}, {}; {origem}).",
+                c.perfil,
+                c.versao,
+                descrever_janela(c.janela),
+                c.normalizacao
+            ));
+            linha(format!("  Hash do perfil: {}", c.hash_toml));
+            linha(format!(
+                "  Índice lido: concursos {} (até o último sorteado + 1); só o trecho abaixo \
+                 entra no cálculo.",
+                descrever_faixa(c.primeiro_indice, c.ultimo_concurso + 1)
+            ));
+            linha(format!(
+                "  Trecho: dobras de teste 2 a 5 do walk-forward de 5 dobras (as mesmas do \
+                 `sync avaliar`; a dobra 1 só treina na busca de pesos e fica fora); concursos \
+                 {} ({} concursos, {} pares concurso-dezena).",
+                descrever_faixa(b.faixa.primeiro, b.faixa.ultimo),
+                b.concursos,
+                b.pares
+            ));
+            linha(format!(
+                "  Corte da busca: concurso {} (o trancado, do {} em diante, não entra em B).",
+                c.corte,
+                u64::from(c.corte) + 1
+            ));
+            linha(format!(
+                "  Probabilidades: calibradas pela posição do índice (m = {} concursos \
+                 fictícios, só com o passado) contra o acaso K/N, ambas com p limitado a \
+                 [{:e}, 1 − {:e}] como no log loss.",
+                avaliacao::CONCURSOS_FICTICIOS,
+                avaliacao::LIMITE_PROBABILIDADE,
+                avaliacao::LIMITE_PROBABILIDADE
+            ));
+            linha(String::new());
+            linha(format!(
+                "  log10 FB (índice contra o acaso, prequencial): {:+.3}  →  grau {}, {}.",
+                b.log10_fb,
+                b.grau.nome(),
+                b.direcao.nome()
+            ));
+            linha(format!(
+                "  ln FB = {:+.6}; equivale a uma diferença de log loss de {:+.3e} por par \
+                 (perfil − acaso; < 0 = perfil melhor), a mesma do `sync avaliar` nas dobras \
+                 2 a 5, em outra escala.",
+                b.ln_fb,
+                -b.ln_fb / b.pares as f64
+            ));
+            linha(
+                "  FB > 1: a favor do índice; FB ≤ 1 (FB = 1 exato inclusive): a favor do acaso. \
+                 Graus como em A. Ao contrário de A, aqui a favor do acaso não há teto: o índice \
+                 calibrado é um modelo concreto, que pode perder para o acaso por muito."
+                    .to_string(),
+            );
+            let inerte = &c.inerte;
+            linha(String::new());
+            linha(format!(
+                "  Esperado de um índice inerte (as mesmas posições diante de {} históricos \
+                 sorteados ao acaso, semente {}): log10 FB médio {:+.3}; 95 % das réplicas entre \
+                 {:+.3} e {:+.3}.",
+                inerte.replicas,
+                inerte.semente,
+                inerte.media_log10,
+                inerte.p025_log10,
+                inerte.p975_log10
+            ));
+            linha(format!(
+                "  Observado contra o inerte: {:+.3} ({:+.3} em relação à média); {} de {} \
+                 réplicas inertes deram log10 FB igual ou maior.",
+                b.log10_fb,
+                b.log10_fb - inerte.media_log10,
+                inerte.replicas_iguais_ou_acima,
+                inerte.replicas
+            ));
+            linha(
+                "  ATENÇÃO: a calibração estima uma taxa por posição, e isso custa evidência \
+                 mesmo quando o índice não carrega informação nenhuma: um índice inerte já sai \
+                 \"a favor do acaso\" com grau alto. O grau acima não quer dizer, sozinho, que o \
+                 índice atrapalha; o que mostra se ele carrega informação é o observado ficar \
+                 acima da faixa dos inertes."
+                    .to_string(),
+            );
+            linha(String::new());
+            linha("  Por dobra (só informativo; o grau sai do total):".to_string());
+            linha(format!(
+                "    {:>5}  {:>11}  {:>9}  {:>8}  {:>10}  {:>14}",
+                "dobra", "concursos", "avaliados", "pares", "log10 FB", "Δ log loss/par"
+            ));
+            for d in &b.por_dobra {
+                linha(format!(
+                    "    {:>5}  {:>11}  {:>9}  {:>8}  {:>+10.3}  {:>+14.3e}",
+                    d.dobra,
+                    descrever_faixa(d.faixa.primeiro, d.faixa.ultimo),
+                    d.concursos,
+                    d.pares,
+                    d.log10_fb,
+                    -d.ln_fb / d.pares as f64
+                ));
+            }
+            linha(
+                "    Δ log loss/par: log loss do perfil − log loss do acaso na dobra (< 0 = perfil \
+                 melhor), a mesma diferença que o `sync avaliar` mostra por dobra."
+                    .to_string(),
+            );
+            linha(String::new());
+            linha(
+                "  Ressalva: as dezenas de um concurso são tratadas como Bernoullis \
+                 independentes (pseudo-verossimilhança), igual para o índice e para o acaso; \
+                 na verdade elas somam exatamente K. O FB é uma régua de evidência, não a \
+                 probabilidade exata do sorteio."
+                    .to_string(),
+            );
+            linha(
+                "  Ressalva: se o perfil foi escolhido ou ajustado vendo estes concursos (busca de \
+                 pesos), o FB sai otimista; o conjunto trancado existe para isso."
+                    .to_string(),
+            );
+        }
+    }
+    s
 }
 
 /// Percentual com uma casa (`0.025` vira `2.5 %`).
@@ -2172,6 +2365,14 @@ fn formatar_evidencia(r: &orquestracao::RelatorioEvidencia) -> String {
         "Fator de Bayes (FB) em log10; grau sobre F = max(FB, 1/FB): muito fraca F < 3, fraca \
          3 ≤ F < 10, moderada 10 ≤ F < 30, forte 30 ≤ F < 100, muito forte F ≥ 100. Direção: \
          a favor de viés se FB > 1; a favor do acaso se FB < 1 ou FB = 1."
+            .to_string(),
+    );
+    linha(
+        "ASSIMETRIA: a favor do acaso a evidência tem teto, porque H0 (chance exata K/N) está \
+         dentro de uma priori estreita: |log10 FB| ≤ log10 √(1 + Var_priori/Var_amostral), \
+         atingido quando a frequência é exatamente K/N, com Var da proporção igual a (s·K/N)² na \
+         priori e p(1−p)/n na amostra. O máximo de cada janela e priori vem abaixo; a favor de \
+         viés não há teto."
             .to_string(),
     );
     linha(format!(
@@ -2268,6 +2469,13 @@ fn formatar_evidencia(r: &orquestracao::RelatorioEvidencia) -> String {
                  sob o acaso.",
                 ev.observada[k].a_partir_de(avaliacao::Grau::Moderada),
                 esperado.media.a_partir_de(avaliacao::Grau::Moderada)
+            ));
+            let teto = janela.teto_acaso[k];
+            let grau_do_teto = avaliacao::classificar(teto).map_or("?", |c| c.grau.nome());
+            linha(format!(
+                "    Máximo atingível a favor do acaso com n = {}: |log10 FB| ≤ {teto:.3} (grau \
+                 {grau_do_teto}); a favor de viés não há teto.",
+                ev.concursos
             ));
         }
     }
@@ -2490,7 +2698,8 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_file(&caminho);
-        let erro = evidenciar(quina(), &caminho).expect_err("banco inexistente");
+        let erro = evidenciar(quina(), &caminho, std::path::Path::new("perfis"), None)
+            .expect_err("banco inexistente");
         assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
         assert!(!caminho.exists());
     }

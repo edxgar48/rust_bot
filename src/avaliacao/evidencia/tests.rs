@@ -795,3 +795,125 @@ fn simulacao_de_producao_confere_com_o_exato_na_megasena() {
         }
     }
 }
+
+// ------------------------------------------- teto a favor do acaso
+
+#[test]
+fn teto_conferido_a_mao() {
+    // p = 1/2, s = 10 %: Var_priori/Var_amostral = n·s²·p/(1−p) = 0,01·n.
+    // n = 9900 → 99 → √(1 + 99) = 10 → log10 = 1.
+    assert_perto!(teto_a_favor_do_acaso(9_900, 0.5, 0.10).unwrap(), 1.0, 1e-14);
+    // n = 99 → razão 0,99 → √1,99.
+    assert_perto!(
+        teto_a_favor_do_acaso(99, 0.5, 0.10).unwrap(),
+        0.5 * 1.99_f64.log10(),
+        1e-14
+    );
+    // Sem concursos não há o que acumular: FB = 1.
+    assert_eq!(teto_a_favor_do_acaso(0, 0.6, 0.05).unwrap(), 0.0);
+}
+
+#[test]
+fn teto_reproduz_os_numeros_do_plano() {
+    // Plano (decisão de 2026-10-10): priori de 5 %, histórico inteiro de
+    // 2026-10: ~0,13 na Mega-Sena (n ≈ 3070), ~0,17 na Quina (n ≈ 7150) e
+    // ~0,59 na Lotofácil (n ≈ 3800). Na janela de 500 (a mão: 0,5·log10(1 +
+    // 500·0,0025·p/(1−p))): 0,028 na Mega-Sena, 0,017 na Quina e 0,229 na
+    // Lotofácil (o "~0,03" do plano vale para a Mega-Sena).
+    let casos = [
+        ("megasena", 3_070_u64, 0.13, 0.028),
+        ("quina", 7_150, 0.17, 0.017),
+        ("lotofacil", 3_800, 0.59, 0.229),
+    ];
+    for (slug, n, esperado, na_janela) in casos {
+        let c = cfg(slug);
+        let p = c.qtd_dezenas as f64 / f64::from(c.qtd_dezenas_possiveis());
+        let teto = teto_a_favor_do_acaso(n, p, 0.05).unwrap();
+        assert!((teto - esperado).abs() < 0.01, "{slug}: {teto}");
+        let pequeno = teto_a_favor_do_acaso(500, p, 0.05).unwrap();
+        assert!((pequeno - na_janela).abs() < 0.001, "{slug}: {pequeno}");
+    }
+}
+
+#[test]
+fn teto_cresce_com_n_e_com_a_largura_da_priori() {
+    let p = 0.1;
+    let mut anterior = 0.0;
+    for n in [1_u64, 10, 100, 1_000, 10_000, 100_000] {
+        let t = teto_a_favor_do_acaso(n, p, 0.05).unwrap();
+        assert!(t > anterior, "n = {n}");
+        anterior = t;
+    }
+    let mut anterior = 0.0;
+    for s in [0.025, 0.05, 0.10] {
+        let t = teto_a_favor_do_acaso(3_000, p, s).unwrap();
+        assert!(t > anterior, "s = {s}");
+        anterior = t;
+    }
+}
+
+#[test]
+fn teto_confere_com_o_fator_de_bayes_exato_em_x_igual_a_n_p() {
+    // O máximo do FB a favor de H0 é atingido em x = n·p; a fórmula é a
+    // aproximação normal desse ponto, então o FB exato de `log10_fator_bayes`
+    // em x = n·p (n·p inteiro) tem de ficar perto de −teto. Mede-se o erro:
+    // abaixo de 1 % do teto a partir de n = 1000.
+    let casos = [
+        (0.6, 1_000_u64),
+        (0.6, 3_800),
+        (0.1, 3_000),
+        (0.1, 1_000),
+        (0.0625, 3_200),
+        (0.0625, 16_000),
+        (0.5, 10_000),
+    ];
+    for (p, n) in casos {
+        let x = (n as f64 * p).round() as u64;
+        assert_eq!(x as f64, n as f64 * p, "n·p inteiro: n = {n}, p = {p}");
+        for s in DESVIOS_PRIORI {
+            let priori = Priori::nova(p, s).unwrap();
+            let exato = -log10_fator_bayes(x, n, p, &priori).unwrap();
+            let teto = teto_a_favor_do_acaso(n, p, s).unwrap();
+            assert!(exato > 0.0, "a favor do acaso: p = {p}, n = {n}, s = {s}");
+            assert!(
+                (exato - teto).abs() <= 0.01 * teto,
+                "p = {p}, n = {n}, s = {s}: exato {exato}, teto {teto}"
+            );
+        }
+    }
+}
+
+#[test]
+fn teto_vale_como_maximo_no_entorno_de_x_igual_a_n_p() {
+    // Nenhum x vizinho dá mais evidência a favor de H0 que o ponto n·p (a
+    // menos do erro da aproximação).
+    let (p, n) = (0.6, 1_000_u64);
+    let priori = Priori::nova(p, 0.05).unwrap();
+    let no_pico = -log10_fator_bayes(600, n, p, &priori).unwrap();
+    for x in 560..=640 {
+        let a_favor_do_acaso = -log10_fator_bayes(x, n, p, &priori).unwrap();
+        assert!(a_favor_do_acaso <= no_pico + 1e-9, "x = {x}");
+    }
+}
+
+#[test]
+fn teto_recusa_entradas_invalidas() {
+    for (p, s) in [
+        (0.0, 0.05),
+        (1.0, 0.05),
+        (-0.1, 0.05),
+        (f64::NAN, 0.05),
+        (0.5, 0.0),
+        (0.5, -0.05),
+        (0.5, f64::NAN),
+        (0.5, f64::INFINITY),
+    ] {
+        assert!(
+            matches!(
+                teto_a_favor_do_acaso(100, p, s),
+                Err(SpiderError::EvidenciaEntradaInvalida(_))
+            ),
+            "p = {p}, s = {s}"
+        );
+    }
+}
