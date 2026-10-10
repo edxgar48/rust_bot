@@ -47,8 +47,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1d — Índice de evidência bayesiano · `engenheiro-avaliacao`
 
-- [ ] 1d.1 Conferir os desvios de frequência da 1c.4 contra fonte independente
-- [ ] 1d.2 Evidência por dezena (fator de Bayes, cinco graus) + `sync evidencia`
+- [x] 1d.1 Conferir os desvios de frequência da 1c.4 contra fonte independente
+- [x] 1d.2 Evidência por dezena (fator de Bayes, cinco graus) + `sync evidencia`
 - [ ] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
 - [ ] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
 
@@ -1179,3 +1179,97 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   meio para longe do zero e meio para o par divergem) e `13_empate_exato_zscore` (empate exato e
   empate que só existe depois do arredondamento a 1e-9, em z-score). Gate: fmt e clippy ok, Rust
   721 passaram, pytest 175 passaram.
+- 2026-10-09 — 1d.1: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): investigação **só de leitura** (nada no repositório nem nos bancos; cópias
+  e scripts no scratchpad da sessão); "fonte independente" = API JSON da Caixa por concurso
+  (`servicebus2.caixa.gov.br/portaldeloterias/api/<loteria>/<n>`) + espelho de terceiros com o
+  histórico completo (`loteriascaixa-api.herokuapp.com/api/<loteria>`); erro de dado seria só
+  proposto, não corrigido.
+- 2026-10-09 — 1d.1 concluída (engenheiro-avaliacao). **Fontes e cobertura** (acesso 2026-10-09):
+  API da Caixa — Lotofácil 1899–3796 inteiro + 1–14 (1912 de 3799), Mega-Sena 3067/3067, Quina
+  7137/7137, sem bloqueio; espelho de terceiros — 100% nas três. Comparados concurso, data e dezenas
+  (conjunto; dezena repetida no concurso checada à parte). **Divergências: só a data da Quina 380**,
+  que as duas fontes trazem com o mesmo erro da planilha (1997) e já está em `CORRECOES_DATA`.
+  Ressalva: as duas fontes são independentes do nosso pipeline de planilha, **não da Caixa** —
+  descartam erro nosso de coleta/parse, não um erro na fonte primária (não existe outra). χ² da 1c.4
+  reproduzidos exatamente no snapshot da época (57,27 / 89,47 / 101,92); com o histórico atual
+  57,43 (p 1,5e-4) / 89,87 (p 5,9e-3) / 101,69 (p 0,044). Diagnóstico com ~150–200 olhares por
+  loteria (blocos, janelas, pontos de mudança, eventos, locais): tratar como exploração, não prova.
+  **Conclusões por trecho:**
+  - **Lotofácil "1899–3796"**: não é erro de dado. A "concentração" não se sustenta: o corte em 1899
+    (2019-12-04) foi escolhido depois de olhar os dados e não coincide com nenhuma mudança de regra,
+    local ou equipamento. 1–1898 dá X² 27,5 (p 0,28) e 1899–3796 dá 52,1 (p 7,6e-4), mas as metades
+    não diferem (homogeneidade 23,2, p 0,55 analítico e Monte Carlo; se o desvio estivesse só na 2ª
+    metade, o esperado seria ≈ 38) e os z por dezena das duas metades correlacionam +0,46 (p perm.
+    0,008). Leitura: o mesmo padrão nas duas metades, significativo só no total e na 2ª metade —
+    dezena 16 abaixo (z −3,5, abaixo nos 4 quartos), 20/25/10 acima, repetido entre locais de sorteio.
+    Sem explicação: acaso ou viés pequeno e persistente (p ≈ 4e-4 após Bonferroni ×3 loterias).
+  - **Mega-Sena**: não é erro de dado (3067/3067, 0 divergências). O desvio **global sobrevive** à
+    correção entre loterias (p 0,018 com Bonferroni ×3). O que é fraco é a localização no tempo:
+    nenhum bloco de ~307 passa sozinho; ponto de mudança marginal em 1751 (2015-10-15, p global
+    0,047); homogeneidade na mudança para o Espaço Caixa Loterias/Tietê (concurso 1772, evento
+    definido sem olhar os dados) p nominal 7,2e-3, ≈ 0,04 corrigido pelos ~6 eventos da Mega-Sena e
+    ≈ 0,13 pelos ~18 das três loterias; Estúdio de TV (2014-08-27) p 0,012 e troca para globo de
+    acrílico (concurso 1140, 2009-12-31, fonte: Wikipédia) p 0,04, nominais. Possível associação com
+    a mudança de local em 2014–2015, não confirmada.
+  - **Quina**: não é erro de dado (7137/7137; só a data do 380). X² p 0,044 vira 0,13 com Bonferroni
+    ×3 loterias; único bloco forte 715–1427 (2000–2005, p 0,0012), sem ponto de mudança (p global
+    0,87). Compatível com o acaso.
+  - **Quina, runs da dezena 25**: não é erro de dado (sequências iguais nas duas fontes). Excesso de
+    saídas em concursos seguidos: 42 pares contra 24,2 esperados dado n1 = 416 (cauda exata
+    condicional 2,7e-4), espalhados pelo histórico (15/14/12 por terço), sem coincidir com mudança de
+    local ou equipamento; a sobreposição geral entre sorteios seguidos é normal (0,311 × 0,3125).
+    Marginal depois da multiplicidade: ×80 dezenas ≈ 0,022 unilateral; entre as 165 dezenas das três
+    loterias ≈ 0,09 bilateral; agregado de runs das 80 dezenas Σz² = 93,0 (p ≈ 0,15). Sem explicação.
+  **Linha do tempo levantada** (campo `local` do espelho = dado; demais pela Wikipédia, confiança
+  média): Caminhão da Sorte desde 2000; Estúdio de TV (2014-08-27); Espaço Caixa Loterias, Terminal
+  Tietê (2015-12, Lotofácil 1300 / Mega-Sena 1772 / Quina 3963); fim do Caminhão (2019-06); Espaço da
+  Sorte, Av. Paulista (2021-11-17, Lotofácil 2374 / Mega-Sena 2429 / Quina 5707); mudanças de
+  frequência semanal; globo de acrílico na Mega-Sena em 2009-12-31 (sem fonte primária). Sem
+  interrupção na pandemia. Nenhuma data de troca de globos/bolas depois de 2009 encontrada. Teste por
+  local: Lotofácil com excesso de variação (p 0,0013) mas o padrão se repete entre locais; Mega-Sena
+  p 0,55; Quina p 0,50. **Correções de dado propostas: nenhuma.** A base segue como está para a 1d.2.
+  Gate: fmt ok, clippy ok, `cargo test` verde (nenhum código mudou), pytest 175, `validar todas` ok.
+  Revisão: aprovada com ressalvas, sem ALTA; recálculos independentes conferiram χ², homogeneidade e a
+  cauda exata da Quina 25; as ressalvas de redação (Mega-Sena global × localização, "fonte
+  independente", p ajustado da Quina 25, "persistente") estão incorporadas acima.
+  **Correção de registros antigos:** a expressão "desvio concentrado em 1899–3796" (notas da 1c.4,
+  acima, e `docs/GUIA.md:270`) fica refutada por esta nota. **Pendência (MÉDIA, revisor):** corrigir
+  o texto de `docs/GUIA.md:270` — sugerido fazer junto da 1d.4, que já atualiza o GUIA.
+- 2026-10-09 — 1d.2: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): (1) priori Beta(a, b) com média p = K/N e desvio s·p (s = 5 %; 2,5 % e
+  10 % na sensibilidade) → a + b = (1 − p)/(s²·p) − 1; FB = beta-binomial ÷ binomial, via `ln_gamma`;
+  (2) janela secundária = últimos min(500, t−1) concursos antes de t; (3) o relatório usa o snapshot
+  de t = último + 1 (histórico inteiro); a função pura aceita qualquer t, para a 1d.4; (4) esperado
+  sob o acaso: simulação de históricos com sorteio sem reposição (K de N), `SplitMix64` já existente,
+  semente 20261008, R = 1000 réplicas, média da contagem por grau — e teste que a confere contra o
+  valor exato N·P(grau) da binomial (linearidade da esperança); (5) `sync evidencia <loteria> [--db]`,
+  sem `todas`, recusa se `validar` apontar erro, sem gravar nada nem criar tabela; fluxo em
+  `orquestracao`, CLI só imprime.
+- 2026-10-10 — 1d.2 concluída (engenheiro-avaliacao). `src/avaliacao/evidencia.rs` (novo, puro:
+  `ln_gamma` próprio por Stirling + recorrência, `Priori::nova`, `log10_fator_bayes`, `classificar`,
+  `Grau`, `Direcao`, `evidencia_por_dezena(cfg, resultados, t, janela)` para qualquer t,
+  `esperado_sob_o_acaso` (SplitMix64, semente 20261008, R = 1000) e `esperado_exato` (binomial));
+  `src/avaliacao/evidencia/tests.rs` (36), `tests/evidencia.rs` (10), `src/error.rs`
+  (`EvidenciaEntradaInvalida`), `src/orquestracao.rs` (`evidencia_do_banco`, sem SQL), subcomando
+  `evidencia <loteria> [--db]` em `src/bin/sync.rs` (+2 testes; banco aberto só leitura, tempo no
+  stderr, stdout determinístico), README. Segue as interpretações da nota de 2026-10-09 sem desvio.
+  Desvio de leitura: a evidência A usa o histórico inteiro, **trancado incluso** (descritiva do
+  sorteio, como o `sync aleatoriedade`); a revisão considerou que não fere a regra do trancado.
+  Resultado (priori 5 %, histórico inteiro, moderada ou mais observadas / esperadas sob o acaso):
+  Lotofácil 2 / 0,14 (dezena 16 forte, log10 FB +1,906; dezena 20 moderada, +1,170), Mega-Sena
+  1 / 0,04, Quina 0 / 0,14; últimos 500: nenhuma nas três. Tempo (release): 0,2–0,5 s.
+  verificador-vazamento: sem vazamento. Revisão: aprovada com ressalvas, sem ALTA. Gate: fmt ok,
+  clippy ok, `cargo test` verde (480 lib + integração), pytest 175, `validar todas` ok.
+  **Pendências (MÉDIA, mudam o plano — aguardam o usuário):** (1) teto matemático da direção
+  "a favor do acaso": FB máximo a favor de H0 = √(1 + Var_priori/Var_amostral), em x = n·p; com
+  s = 5 % dá |log10 FB| ≤ ~0,13 na Mega-Sena, ~0,17 na Quina e ~0,59 na Lotofácil (janela de 500:
+  ~0,03) — a evidência contra viés nunca passa de "muito fraca"/"fraca", o que contradiz o "mesmo
+  destaque" do plano se não for explicado; sugestão: registrar no plano e no GUIA (1d.4) e imprimir
+  no relatório o máximo atingível por janela; (2) escrever no plano que A lê o trancado por ser
+  descritiva e que seu resultado não alimenta busca nem escolha de perfil.
+  **Pendências BAIXA:** `esperado_exato` e `Grade::get` públicos sem uso externo; `evidencia_por_dezena`
+  com t acima do último concurso devolve o snapshot do último em silêncio (documentar ou recusar na
+  1d.4); `tests/evidencia.rs:186-205` não confere a unicidade da dezena "muito forte" que o comentário
+  afirma; `tests/evidencia.rs:287` depende do alinhamento exato das colunas. Para a 1d.4:
+  `evidencia_por_dezena` é O(t) por chamada — versão incremental para o CSV por concurso.

@@ -31,10 +31,14 @@
 //! Testes de aleatoriedade do histórico (1c.4, [`testar_aleatoriedade`]):
 //! qui-quadrado de frequência e runs test por dezena com Holm, sobre
 //! `resultados` inteiro (não usam índice nem perfil).
+//!
+//! Evidência bayesiana por dezena (1d.2, [`evidencia_por_dezena`]): fator de
+//! Bayes em cinco graus, de fórmula fechada, sobre `resultados` até `t−1`.
 
 mod aleatoriedade;
 mod bootstrap;
 mod calibracao;
+mod evidencia;
 mod metricas;
 mod topk;
 mod walk_forward;
@@ -57,6 +61,12 @@ pub use bootstrap::{
     REAMOSTRAGENS_BOOTSTRAP, SEMENTE_BOOTSTRAP,
 };
 pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
+pub use evidencia::{
+    classificar, esperado_exato, esperado_sob_o_acaso, evidencia_por_dezena, ln_gamma,
+    log10_fator_bayes, Classificacao, Direcao, EsperadoAcaso, EsperadoPriori, EvidenciaDezena,
+    EvidenciaJanela, Grade, Grau, Janela, Priori, DESVIOS_PRIORI, JANELA_SECUNDARIA, QTD_PRIORIS,
+    REPLICAS_ESPERADO, SEMENTE_ESPERADO,
+};
 pub use metricas::{
     brier, log_loss, metricas_por_concurso, resumir, Comparacao, Intervalo, MetricasConcurso,
     ResumoAvaliacao, LIMITE_PROBABILIDADE, Z_95,

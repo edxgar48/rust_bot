@@ -267,6 +267,16 @@ enum Comando {
         #[arg(long)]
         db: Option<PathBuf>,
     },
+    /// Evidência bayesiana por dezena (fator de Bayes em cinco graus) para o
+    /// próximo concurso, com o histórico inteiro e os últimos 500 concursos.
+    /// Só lê o banco: não grava nada.
+    Evidencia {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); `todas` não é aceito
+        loteria: String,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
 
 /// Formato do `sync dataset` na linha de comando.
@@ -291,6 +301,10 @@ const MOTIVO_DATASET_UMA_LOTERIA: &str =
 
 /// Quantos problemas imprimir antes de resumir o restante numa contagem.
 const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
+
+/// Por que `evidencia` não aceita `todas`.
+const MOTIVO_EVIDENCIA_UMA_LOTERIA: &str =
+    "calcule uma loteria por vez (cada uma tem seu banco e suas dezenas)";
 
 /// Por que `indice` não aceita `todas`.
 const MOTIVO_INDICE_UMA_LOTERIA: &str =
@@ -500,6 +514,11 @@ async fn main() -> anyhow::Result<()> {
                 execucao.registrar(cfg, testar_aleatoriedade(cfg, &db_caminho))?;
             }
             execucao.concluir()?;
+        }
+        Comando::Evidencia { loteria, db } => {
+            let cfg = buscar_config_unica(&loteria, "evidencia", MOTIVO_EVIDENCIA_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            evidenciar(cfg, &db_caminho)?;
         }
     }
 
@@ -2064,6 +2083,197 @@ fn testar_aleatoriedade(
     Ok(())
 }
 
+/// `sync evidencia`: evidência bayesiana por dezena (em `orquestracao`) e o
+/// relatório. Banco aberto só para leitura; inexistente é erro, sem criar
+/// arquivo. O tempo vai para o stderr: o stdout é determinístico.
+fn evidenciar(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let conn = db::abrir_somente_leitura(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let relatorio = match orquestracao::evidencia_do_banco(&conn, cfg) {
+        Ok(r) => r,
+        Err(SpiderError::ResultadosReprovados {
+            loteria,
+            erros,
+            avisos,
+        }) => {
+            imprimir_problemas("aviso(s)", &avisos, Saida::Erro);
+            imprimir_problemas("erro(s)", &erros, Saida::Erro);
+            if erros
+                .iter()
+                .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
+            {
+                imprimir_dica_buracos(cfg);
+            }
+            anyhow::bail!(SpiderError::ResultadosReprovados {
+                loteria,
+                erros,
+                avisos,
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let duracao = inicio.elapsed();
+    imprimir_problemas("aviso(s)", &relatorio.avisos, Saida::Erro);
+    print!("{}", formatar_evidencia(&relatorio));
+    eprintln!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    Ok(())
+}
+
+/// Percentual com uma casa (`0.025` vira `2.5 %`).
+fn formatar_desvio(desvio: f64) -> String {
+    format!("{:.1} %", desvio * 100.0)
+}
+
+/// Relatório em texto do `sync evidencia`. Determinístico: mesma entrada,
+/// mesmos bytes (formatação de floats fixa, dezenas em ordem crescente).
+fn formatar_evidencia(r: &orquestracao::RelatorioEvidencia) -> String {
+    let mut s = String::new();
+    let mut linha = |texto: String| {
+        s.push_str(&texto);
+        s.push('\n');
+    };
+
+    let proximo = r.ultimo_concurso + 1;
+    let p = r.qtd_dezenas as f64 / f64::from(r.dezenas_possiveis);
+    linha(format!(
+        "Evidência bayesiana por dezena de {} ({}): para o concurso {proximo}, só com os \
+         concursos até o {}.",
+        r.nome_exibicao, r.loteria, r.ultimo_concurso
+    ));
+    linha(format!(
+        "H0: cada dezena sai com chance exatamente K/N = {}/{} = {p:.6}. H1: a chance tem priori \
+         Beta centrada em K/N.",
+        r.qtd_dezenas, r.dezenas_possiveis
+    ));
+    if let Some(j) = r.janelas.first() {
+        let prioris: Vec<String> = j
+            .evidencia
+            .prioris
+            .iter()
+            .map(|q| {
+                format!(
+                    "{} (a = {:.2}, b = {:.2})",
+                    formatar_desvio(q.desvio),
+                    q.a,
+                    q.b
+                )
+            })
+            .collect();
+        linha(format!(
+            "Priori: desvio padrão da chance sob H1 = s·K/N; principal s = {}; sensibilidade: {}.",
+            prioris[0],
+            prioris[1..].join(" e ")
+        ));
+    }
+    linha(
+        "Fator de Bayes (FB) em log10; grau sobre F = max(FB, 1/FB): muito fraca F < 3, fraca \
+         3 ≤ F < 10, moderada 10 ≤ F < 30, forte 30 ≤ F < 100, muito forte F ≥ 100. Direção: \
+         a favor de viés se FB > 1; a favor do acaso se FB < 1 ou FB = 1."
+            .to_string(),
+    );
+    linha(format!(
+        "AVISO: com {} dezenas, algumas saem com grau moderado ou maior só por acaso. Compare a \
+         contagem observada com a esperada sob o acaso (simulação de {} réplicas, semente {}, \
+         sorteio sem reposição); só um excesso sobre o esperado indica algo além do acaso.",
+        r.dezenas_possiveis,
+        avaliacao::REPLICAS_ESPERADO,
+        avaliacao::SEMENTE_ESPERADO
+    ));
+
+    for (indice, janela) in r.janelas.iter().enumerate() {
+        let ev = &janela.evidencia;
+        linha(String::new());
+        let nome = match ev.janela {
+            avaliacao::Janela::Inteira => "histórico inteiro (principal)".to_string(),
+            avaliacao::Janela::Ultimos(j) => format!("últimos {j} concursos (secundária)"),
+        };
+        linha(format!(
+            "== Janela {}: {nome} — concursos {} ({} concursos) ==",
+            indice + 1,
+            descrever_faixa(ev.primeiro_concurso, ev.ultimo_concurso),
+            ev.concursos
+        ));
+        linha(format!(
+            "  {:>6}  {:>6}  {:>6}  {:>8}  {:>12}  {:<11}  {:<16}  {:>8}  {:>8}",
+            "dezena",
+            "x",
+            "n",
+            "freq (%)",
+            format!("log10 FB {}", formatar_desvio(ev.prioris[0].desvio)),
+            "grau",
+            "direção",
+            formatar_desvio(ev.prioris[1].desvio),
+            formatar_desvio(ev.prioris[2].desvio),
+        ));
+        for d in &ev.dezenas {
+            let c = d.classificacao[0];
+            linha(format!(
+                "  {:>6}  {:>6}  {:>6}  {:>8.2}  {:>+12.3}  {:<11}  {:<16}  {:>+8.3}  {:>+8.3}",
+                format!("{:02}", d.dezena),
+                d.saidas,
+                d.concursos,
+                100.0 * d.saidas as f64 / d.concursos as f64,
+                d.log10_fb[0],
+                c.grau.nome(),
+                c.direcao.nome(),
+                d.log10_fb[1],
+                d.log10_fb[2],
+            ));
+        }
+        linha(format!(
+            "  (as duas últimas colunas são o log10 FB com a priori de {} e de {}; frequência \
+             esperada sob H0 = {:.2} %.)",
+            formatar_desvio(ev.prioris[1].desvio),
+            formatar_desvio(ev.prioris[2].desvio),
+            100.0 * ev.p
+        ));
+
+        linha(String::new());
+        linha(format!(
+            "  Dezenas por grau: observadas / esperadas sob o acaso (média ± erro padrão de {} \
+             réplicas com n = {}):",
+            janela.esperado.replicas, janela.esperado.concursos
+        ));
+        for (k, esperado) in janela.esperado.por_priori.iter().enumerate() {
+            let rotulo = if k == 0 { " (principal)" } else { "" };
+            linha(format!(
+                "  Priori {}{rotulo}:",
+                formatar_desvio(esperado.desvio)
+            ));
+            linha(format!(
+                "    {:<12}  {:>24}  {:>24}",
+                "grau", "a favor de viés", "a favor do acaso"
+            ));
+            for grau in avaliacao::Grau::TODOS {
+                let celula = |direcao| {
+                    format!(
+                        "{:>3} / {:>7.2} ± {:.2}",
+                        ev.observada[k].do_grau(grau, direcao),
+                        esperado.media.do_grau(grau, direcao),
+                        esperado.erro_padrao.do_grau(grau, direcao)
+                    )
+                };
+                linha(format!(
+                    "    {:<12}  {:>24}  {:>24}",
+                    grau.nome(),
+                    celula(avaliacao::Direcao::Vies),
+                    celula(avaliacao::Direcao::Acaso)
+                ));
+            }
+            linha(format!(
+                "    Moderada ou maior (as duas direções): {} observadas contra {:.2} esperadas \
+                 sob o acaso.",
+                ev.observada[k].a_partir_de(avaliacao::Grau::Moderada),
+                esperado.media.a_partir_de(avaliacao::Grau::Moderada)
+            ));
+        }
+    }
+    s
+}
+
 fn descrever_janela(janela: u32) -> String {
     if janela == rust_spider::motor::JANELA_TOTAL {
         "total".to_string()
@@ -2258,6 +2468,31 @@ mod tests {
 
         assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
         assert!(!existe, "features não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn evidencia_recusa_todas() {
+        let erro = buscar_config_unica("todas", "evidencia", MOTIVO_EVIDENCIA_UMA_LOTERIA)
+            .expect_err("todas é recusado");
+        let texto = erro.to_string();
+        assert!(texto.contains("evidencia"), "{texto}");
+        assert!(texto.contains(MOTIVO_EVIDENCIA_UMA_LOTERIA), "{texto}");
+    }
+
+    #[test]
+    fn evidencia_banco_inexistente_da_erro_sem_criar_arquivo() {
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let caminho = std::env::temp_dir().join(format!(
+            "rust_spider_evidencia_{}_{unico}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&caminho);
+        let erro = evidenciar(quina(), &caminho).expect_err("banco inexistente");
+        assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
+        assert!(!caminho.exists());
     }
 
     #[test]

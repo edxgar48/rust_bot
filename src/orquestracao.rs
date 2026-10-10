@@ -27,7 +27,10 @@
 //! E decide o que o `sync atualizar` faz com o concurso lido na página
 //! ([`classificar_atualizacao`], tarefa 0.8).
 
-use crate::avaliacao::{self, Cauda, Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward};
+use crate::avaliacao::{
+    self, Cauda, EsperadoAcaso, EvidenciaJanela, Observacao, ResumoAleatoriedade, VereditoTrecho,
+    WalkForward,
+};
 use crate::config::LoteriaConfig;
 use crate::dataset::{ConcursoDataset, Dataset, ImpressoesResultados};
 use crate::db::{self, MotorEstadoSalvo, PerfilRegistrado};
@@ -1488,6 +1491,90 @@ pub fn testar_aleatoriedade_do_banco(
         return Err(SpiderError::SemResultados(cfg.slug.to_string()));
     }
     avaliacao::testar_aleatoriedade(cfg, &resultados)
+}
+
+/// Uma janela do relatório do `sync evidencia`: a evidência por dezena e o
+/// esperado sob o acaso para o mesmo `n`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JanelaEvidencia {
+    pub evidencia: EvidenciaJanela,
+    pub esperado: EsperadoAcaso,
+}
+
+/// Relatório do `sync evidencia` (1d.2): evidência bayesiana por dezena para
+/// o próximo concurso (`t` = último + 1), na janela do histórico inteiro e
+/// na dos últimos [`avaliacao::JANELA_SECUNDARIA`] concursos.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelatorioEvidencia {
+    pub loteria: String,
+    pub nome_exibicao: String,
+    /// *K*: dezenas sorteadas por concurso.
+    pub qtd_dezenas: usize,
+    /// *N*: dezenas possíveis.
+    pub dezenas_possiveis: u32,
+    /// Último concurso do banco; a evidência vale para o seguinte.
+    pub ultimo_concurso: u32,
+    /// Principal (histórico inteiro) e secundária (últimos 500).
+    pub janelas: Vec<JanelaEvidencia>,
+    /// Avisos do `validar` (ex.: data fora de ordem), que não impedem o cálculo.
+    pub avisos: Vec<Problema>,
+}
+
+/// `sync evidencia <loteria>`: evidência por dezena (fator de Bayes em cinco
+/// graus) para o próximo concurso, só com o histórico de `resultados`
+/// (inclusive o trancado: aqui se mede o sorteio, não um perfil). Só lê:
+/// não grava nada nem cria tabela.
+///
+/// Banco sem resultados é [`SpiderError::SemResultados`]; qualquer erro do
+/// `validar` (buraco incluso) é [`SpiderError::ResultadosReprovados`], sem
+/// calcular nada.
+pub fn evidencia_do_banco(conn: &Connection, cfg: &LoteriaConfig) -> Result<RelatorioEvidencia> {
+    let resultados = db::listar_crescente(conn, cfg.slug)?;
+    let Some(ultimo) = resultados.last().map(|r| r.concurso) else {
+        return Err(SpiderError::SemResultados(cfg.slug.to_string()));
+    };
+    let (erros, avisos): (Vec<Problema>, Vec<Problema>) = validacao::validar(cfg, &resultados)
+        .into_iter()
+        .partition(|p| p.severidade() == Severidade::Erro);
+    if !erros.is_empty() {
+        return Err(SpiderError::ResultadosReprovados {
+            loteria: cfg.slug.to_string(),
+            erros,
+            avisos,
+        });
+    }
+
+    let t = ultimo + 1;
+    let janelas = [
+        avaliacao::Janela::Inteira,
+        avaliacao::Janela::Ultimos(avaliacao::JANELA_SECUNDARIA),
+    ]
+    .into_iter()
+    .map(|janela| {
+        let evidencia = avaliacao::evidencia_por_dezena(cfg, &resultados, t, janela)?;
+        let esperado = avaliacao::esperado_sob_o_acaso(
+            cfg,
+            evidencia.concursos,
+            &avaliacao::DESVIOS_PRIORI,
+            avaliacao::REPLICAS_ESPERADO,
+            avaliacao::SEMENTE_ESPERADO,
+        )?;
+        Ok(JanelaEvidencia {
+            evidencia,
+            esperado,
+        })
+    })
+    .collect::<Result<Vec<_>>>()?;
+
+    Ok(RelatorioEvidencia {
+        loteria: cfg.slug.to_string(),
+        nome_exibicao: cfg.nome_exibicao.to_string(),
+        qtd_dezenas: cfg.qtd_dezenas,
+        dezenas_possiveis: cfg.qtd_dezenas_possiveis(),
+        ultimo_concurso: ultimo,
+        janelas,
+        avisos,
+    })
 }
 
 /// O que fazer com o concurso lido na página pelo `sync atualizar`, comparado

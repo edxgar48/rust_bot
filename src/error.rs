@@ -166,6 +166,12 @@ pub enum SpiderError {
     #[error("aleatoriedade: resultados inválidos para os testes: {0} — confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`; nada foi testado")]
     AleatoriedadeEntradaInvalida(String),
 
+    /// A evidência bayesiana por dezena (1d.2) lê `resultados` direto: os
+    /// concursos usados precisam ser seguidos e válidos; os parâmetros
+    /// (chance, priori, `x ≤ n`) precisam fazer sentido. O detalhe diz qual.
+    #[error("evidência: entrada inválida: {0} — confira com `sync validar` e feche buracos com `sync buracos`/`sync inserir`; nada foi calculado")]
+    EvidenciaEntradaInvalida(String),
+
     /// O `sync avaliar` lê o índice gravado pelo `sync indice`, e o perfil
     /// tem de estar em `perfis` (registrado com o hash do `.toml`).
     #[error("perfil `{nome}` não está registrado em `perfis` no banco da {loteria} — rode `sync indice {loteria} --perfil {nome}` antes; nada foi avaliado")]

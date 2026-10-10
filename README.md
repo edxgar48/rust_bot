@@ -44,10 +44,10 @@ src/
 ├── parser.rs      # calamine: lê a planilha (.xlsx) e extrai os concursos
 ├── db.rs          # rusqlite: schema, upsert por (loteria, concurso) e tabelas derivadas
 ├── motor/         # features por dezena e janela (série temporal) e índice de força, puro: sem I/O nem SQL
-├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap) e testes de aleatoriedade, puro
+├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap), testes de aleatoriedade e evidência bayesiana por dezena, puro
 ├── registros.rs   # registro de uso do conjunto trancado (`registros/trancado_<loteria>.json`, versionado)
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
-├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `tabela` e `dataset`: validação + motor/avaliação + banco
+├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela` e `dataset`: validação + motor/avaliação + banco
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
@@ -101,6 +101,11 @@ cargo run --bin sync -- avaliar quina --perfil padrao_v1 --trancado            #
 # testes de aleatoriedade do histórico inteiro (qui-quadrado e runs por dezena)
 cargo run --bin sync -- aleatoriedade todas
 
+# evidência bayesiana por dezena (fator de Bayes em cinco graus) para o próximo concurso: histórico
+# inteiro e últimos 500 concursos, priori de 5 % de K/N com sensibilidade de 2,5 % e 10 %, e a
+# contagem de dezenas por grau ao lado da esperada sob o acaso (simulação, semente fixa). Só lê o banco
+cargo run --bin sync -- evidencia quina
+
 # tabela geral em CSV (Excel: `;` e vírgula decimal), um arquivo por concurso
 # em tabelas/<loteria>/tabela_<loteria>_<perfil>_<concurso>.csv
 cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
@@ -125,10 +130,10 @@ combinados com `todas`). Uma loteria que falha não interrompe as demais: no
 fim sai um resumo (ok/falhou por loteria) e o comando termina com erro se
 alguma falhou. O cabeçalho de cada loteria e o resumo vão para a saída
 padrão; o erro de cada loteria vai sempre para a saída de erro. `importar`,
-`inserir`, `listar`, `features`, `indice`, `avaliar` e `dataset` aceitam só
+`inserir`, `listar`, `features`, `indice`, `avaliar`, `evidencia` e `dataset` aceitam só
 uma loteria.
 `listar`, `validar`, `buracos`, `features`, `indice`, `avaliar`,
-`aleatoriedade`, `tabela` e `dataset` falham com "banco não encontrado" em vez de criar um banco
+`aleatoriedade`, `evidencia`, `tabela` e `dataset` falham com "banco não encontrado" em vez de criar um banco
 vazio.
 
 `atualizar` compara o concurso lido na página com `MAX(concurso)` já salvo no
