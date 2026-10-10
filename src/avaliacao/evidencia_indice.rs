@@ -6,7 +6,7 @@
 //! # Fator de Bayes prequencial
 //!
 //! O FB do índice (H1: o índice prevê, com a probabilidade calibrada pela
-//! posição da 1c; H0: o acaso, *K/N* em toda dezena) é a razão das
+//! posição; H0: o acaso, *K/N* em toda dezena) é a razão das
 //! verossimilhanças **prequenciais**: concurso a concurso, a probabilidade que
 //! cada hipótese dava ao que saiu, calculada só com o passado. Cada par
 //! (concurso, dezena) é uma Bernoulli (*p* se saiu, 1−*p* se não saiu):
@@ -25,6 +25,16 @@
 //! guardado como `log10_fb = ln FB ÷ ln 10` e classificado pela escala de A
 //! ([`classificar`]: mesmos graus e limites).
 //!
+//! # Régua (Fase 1e)
+//!
+//! A calibração é uma [`Regua`]. A **linear** da 1e ([`super::calibrar_linear`], um
+//! parâmetro) é a régua principal de B e do índice inerte; a **por posição** da
+//! 1c ([`super::calibrar`], *N* parâmetros) segue disponível para a linha informativa
+//! do relatório, sem inerte. Tudo o mais (dobras, limite de probabilidade,
+//! graus, direção, conferência com o `sync avaliar`) é igual nas duas.
+//! [`evidencia_do_indice`] mantém a régua por posição da 1d.3;
+//! [`evidencia_do_indice_com`] escolhe.
+//!
 //! # Direção
 //!
 //! "A favor do índice" se FB > 1; "a favor do acaso" se FB ≤ 1 (FB = 1 exato
@@ -40,10 +50,12 @@
 //!
 //! # Índice inerte (decisão de 2026-10-10, achado da 1d.3)
 //!
-//! A calibração estima uma taxa por posição, e esse aprendizado custa
-//! evidência mesmo quando o índice não carrega informação nenhuma: um índice
-//! inerte sai, em média, "a favor do acaso" com grau alto. Por isso o FB
-//! observado vem ao lado do esperado de um índice inerte
+//! A calibração pela posição estima uma taxa por posição, e esse aprendizado
+//! custa evidência mesmo quando o índice não carrega informação nenhuma: um
+//! índice inerte sai, em média, "a favor do acaso" com grau alto (ln FB médio
+//! ≈ −17, −40 e −60). A linear da 1e custa da ordem de ½·ln T, e por isso é a
+//! régua principal; o inerte continua impresso ao lado. O FB observado vem ao
+//! lado do esperado de um índice inerte
 //! ([`esperado_indice_inerte`]): as mesmas posições do perfil diante de
 //! históricos simulados sob o acaso (a cada concurso, *K* de *N* sem
 //! reposição, [`SplitMix64`] com semente fixa). Sob o acaso a posição não
@@ -52,12 +64,13 @@
 //!
 //! # Ponto no tempo
 //!
-//! As probabilidades vêm de [`calibrar`] (a de `t` usa só concursos `< t`) e
+//! As probabilidades vêm da [`Regua`] (a de `t` usa só concursos `< t`, nas
+//! duas) e
 //! a entrada é cortada no último concurso da última dobra antes de qualquer
 //! cálculo: nada acima do corte da busca (o conjunto trancado) é lido.
 
 use super::bootstrap::SplitMix64;
-use super::calibracao::{calibrar, Observacao};
+use super::calibracao::{ConstantesLineares, Observacao, Regua};
 use super::evidencia::{classificar, Direcao, Grau};
 use super::metricas::log_loss;
 use super::walk_forward::{dobras_da_busca, FaixaConcursos};
@@ -114,6 +127,8 @@ pub struct DobraEvidenciaIndice {
 /// Evidência do índice (B) no conjunto das dobras de teste.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EvidenciaIndice {
+    /// A calibração que traduziu a posição em probabilidade.
+    pub regua: Regua,
     /// Da primeira dobra de teste ao fim da última (consecutivas).
     pub faixa: FaixaConcursos,
     pub concursos: usize,
@@ -142,6 +157,17 @@ pub fn evidencia_do_indice(
     cfg: &LoteriaConfig,
     observacoes: &[Observacao],
 ) -> Result<EvidenciaIndice> {
+    evidencia_do_indice_com(cfg, observacoes, Regua::Posicao)
+}
+
+/// [`evidencia_do_indice`] com a [`Regua`] à escolha: a por posição da 1c ou a
+/// linear da 1e. Mesmas dobras, mesmo corte, mesmas garantias de ponto no
+/// tempo e mesmos erros.
+pub fn evidencia_do_indice_com(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    regua: Regua,
+) -> Result<EvidenciaIndice> {
     let todas = dobras_da_busca(cfg, observacoes)?;
     let primeira = PRIMEIRA_DOBRA_DE_TESTE as usize - 1;
     let (Some(ultima), Some(inicial)) = (todas.last(), todas.get(primeira)) else {
@@ -157,7 +183,7 @@ pub fn evidencia_do_indice(
     let teste = &todas[primeira..];
 
     // Nada acima do fim da última dobra chega ao cálculo.
-    let probabilidades = calibrar(cfg, &ate_o_corte(observacoes, faixa.ultimo))?;
+    let probabilidades = regua.calibrar(cfg, &ate_o_corte(observacoes, faixa.ultimo))?;
     let acaso = taxa_do_acaso(cfg);
 
     let mut ln_dobras = vec![0.0_f64; teste.len()];
@@ -210,6 +236,7 @@ pub fn evidencia_do_indice(
     let log10_fb = ln_fb * std::f64::consts::LOG10_E;
     let (grau, direcao) = classificar_indice(log10_fb)?;
     Ok(EvidenciaIndice {
+        regua,
         faixa,
         concursos,
         pares: concursos as u64 * dezenas,
@@ -249,6 +276,9 @@ pub struct IndiceInerte {
 /// concursos sorteados, cada um com as *N* posições (0 … N−1) na ordem das
 /// dezenas.
 struct SerieInerte {
+    /// Só na régua linear: as constantes inteiras de [`super::calibrar_linear`], as
+    /// mesmas da calibração direta.
+    linear: Option<ConstantesLineares>,
     /// `concursos × N` posições, concurso a concurso.
     posicoes: Vec<usize>,
     /// Por concurso: se está nas dobras de teste (entra no ln FB).
@@ -258,11 +288,12 @@ struct SerieInerte {
 impl SerieInerte {
     /// Corta em `faixa.ultimo`, ordena por (concurso, dezena) e confere que
     /// cada concurso tem as *N* dezenas (a série completa já foi validada pela
-    /// [`calibrar`] de [`evidencia_do_indice`]; aqui é só defesa).
+    /// [`super::calibrar`] de [`evidencia_do_indice`]; aqui é só defesa).
     fn nova(
         cfg: &LoteriaConfig,
         observacoes: &[Observacao],
         faixa: FaixaConcursos,
+        regua: Regua,
     ) -> Result<Self> {
         let mut linhas = ate_o_corte(observacoes, faixa.ultimo);
         linhas.sort_unstable_by_key(|o| (o.concurso, o.dezena));
@@ -286,19 +317,29 @@ impl SerieInerte {
             posicoes.extend(grupo.iter().map(|o| (o.posicao - 1) as usize));
             no_teste.push(grupo[0].concurso >= faixa.primeiro);
         }
-        Ok(Self { posicoes, no_teste })
+        let linear = match regua {
+            Regua::Posicao => None,
+            Regua::Linear => Some(ConstantesLineares::novas(cfg)?),
+        };
+        Ok(Self {
+            linear,
+            posicoes,
+            no_teste,
+        })
     }
 
     /// Uma réplica: sorteia *K* de *N* em cada concurso (Fisher–Yates
-    /// parcial) e devolve o ln FB da mesma conta de [`evidencia_do_indice`]
-    /// (fórmula da [`calibrar`] em inteiros, limite do [`log_loss`]), num laço
-    /// só, sem refazer ordenação e validação a cada réplica.
+    /// parcial) e devolve o ln FB da mesma conta de [`evidencia_do_indice_com`]
+    /// (a fórmula da régua em inteiros, limite do [`log_loss`]), num laço só,
+    /// sem refazer ordenação e validação a cada réplica.
     fn ln_fb_de_uma_replica(&self, cfg: &LoteriaConfig, gerador: &mut SplitMix64) -> Result<f64> {
         let n = cfg.qtd_dezenas_possiveis() as usize;
         let k = cfg.qtd_dezenas;
         let m = u64::from(super::CONCURSOS_FICTICIOS);
         let acaso = taxa_do_acaso(cfg);
         let mut saidas_por_posicao = vec![0_u64; n];
+        // Só na régua linear: S, a soma dos pesos das posições que saíram.
+        let mut soma_pesos = 0_i128;
         let mut baralho: Vec<usize> = (0..n).collect();
         let mut saiu = vec![false; n];
         let mut ln_fb = 0.0_f64;
@@ -309,23 +350,43 @@ impl SerieInerte {
                 baralho.swap(i, j);
                 saiu[baralho[i]] = true;
             }
-            if no_teste {
-                let denominador = ((c as u64 + m) * n as u64) as f64;
-                for (&r, &s) in posicoes.iter().zip(&saiu) {
-                    let p = (saidas_por_posicao[r] * n as u64 + m * k as u64) as f64 / denominador;
-                    ln_fb += log_loss(acaso, s) - log_loss(p, s);
+            match &self.linear {
+                Some(constantes) => {
+                    // `posicoes` guarda r − 1; o peso é o de r.
+                    let peso = |r: usize| constantes.peso(r as u32 + 1);
+                    if no_teste {
+                        let passo = constantes.passo(c as i128, soma_pesos);
+                        for (&r, &s) in posicoes.iter().zip(&saiu) {
+                            ln_fb += log_loss(acaso, s) - log_loss(passo.probabilidade(peso(r)), s);
+                        }
+                    }
+                    for (&r, &s) in posicoes.iter().zip(&saiu) {
+                        if s {
+                            soma_pesos += peso(r);
+                        }
+                    }
                 }
-            }
-            for (&r, &s) in posicoes.iter().zip(&saiu) {
-                saidas_por_posicao[r] += u64::from(s);
+                None => {
+                    if no_teste {
+                        let denominador = ((c as u64 + m) * n as u64) as f64;
+                        for (&r, &s) in posicoes.iter().zip(&saiu) {
+                            let p = (saidas_por_posicao[r] * n as u64 + m * k as u64) as f64
+                                / denominador;
+                            ln_fb += log_loss(acaso, s) - log_loss(p, s);
+                        }
+                    }
+                    for (&r, &s) in posicoes.iter().zip(&saiu) {
+                        saidas_por_posicao[r] += u64::from(s);
+                    }
+                }
             }
         }
         Ok(ln_fb)
     }
 }
 
-/// Simula `replicas` vezes o mesmo cálculo de [`evidencia_do_indice`] com as
-/// posições de `observacoes` e o resultado de cada concurso sorteado ao acaso
+/// Simula `replicas` vezes o mesmo cálculo de [`evidencia_do_indice_com`], na
+/// régua de `observado` ([`EvidenciaIndice::regua`]), com as posições de `observacoes` e o resultado de cada concurso sorteado ao acaso
 /// (*K* de *N* sem reposição, Fisher–Yates parcial com [`SplitMix64`] em
 /// `semente`), e situa `observado` nessa distribuição. Mesma entrada, mesmos
 /// bits. Nada acima do fim da última dobra é usado; o snapshot ainda não
@@ -343,7 +404,7 @@ pub fn esperado_indice_inerte(
             "a simulação do índice inerte precisa de ao menos 2 réplicas".to_string(),
         ));
     }
-    let serie = SerieInerte::nova(cfg, observacoes, observado.faixa)?;
+    let serie = SerieInerte::nova(cfg, observacoes, observado.faixa, observado.regua)?;
     let mut gerador = SplitMix64::nova(semente);
     let mut valores = Vec::with_capacity(replicas);
     for _ in 0..replicas {

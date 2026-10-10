@@ -10,7 +10,7 @@ use rust_spider::error::SpiderError;
 use rust_spider::orquestracao::{
     avaliar_perfil, evidencia_completa, evidencia_do_banco, evidencia_do_indice_no_banco,
     sincronizar_features, sincronizar_indice, IndiceEvidenciado, IndiceIndisponivel,
-    OpcoesAvaliacao, SecaoIndice, TrechoAvaliado,
+    OpcoesAvaliacao, RelatorioAvaliacao, SecaoIndice, TrechoAvaliado,
 };
 use rust_spider::perfil::{self, PerfilCarregado};
 use rust_spider::Resultado;
@@ -471,17 +471,13 @@ fn indisponivel(secao: SecaoIndice) -> IndiceIndisponivel {
     }
 }
 
-#[test]
-fn b_confere_com_a_diferenca_de_log_loss_do_avaliar() {
-    // Conferência exigida pelo plano, no caminho de produção (banco, índice
-    // gravado, calibração): ln FB de B = −pares × (log loss do perfil − log
-    // loss do acaso) nas dobras 2 a 5 do walk-forward que o `sync avaliar`
-    // produz. Mesmo número, outra escala.
+/// Banco com `260` concursos (corte 200), o B calculado e o relatório do
+/// `avaliar`, para as conferências B × `avaliar`.
+fn b_e_avaliacao(rotulo: &str) -> (Box<IndiceEvidenciado>, RelatorioAvaliacao) {
     let c = cfg_corte(CORTE_BAIXO);
-    let pasta = Pasta::nova("b_confere");
+    let pasta = Pasta::nova(rotulo);
     let p = gravar_perfil(&pasta.0, NOME, 1.0);
     let mut conn = indexado(&c, &historico(&c, 260), &p);
-
     let b = calculada(evidencia_do_indice_no_banco(&mut conn, &c, &pasta.0, NOME).expect("B"));
     let registros = pasta.0.join("registros");
     let avaliacao = avaliar_perfil(
@@ -493,25 +489,42 @@ fn b_confere_com_a_diferenca_de_log_loss_do_avaliar() {
         "2026-10-10T12:00:00Z",
     )
     .expect("avaliação");
-    let TrechoAvaliado::Busca(wf) = &avaliacao.trecho else {
-        panic!("esperava a busca");
-    };
+    (b, avaliacao)
+}
+
+#[test]
+fn b_linear_confere_com_a_linha_linear_do_avaliar() {
+    // Conferência exigida pelo plano (1e), no caminho de produção (banco,
+    // índice gravado, calibração linear): ln FB de B = −pares × (log loss
+    // linear − log loss do acaso) da linha nova do `sync avaliar`, dobra a
+    // dobra (2 a 5). Mesmo número, outra escala.
+    let (b, avaliacao) = b_e_avaliacao("b_confere_linear");
+    let linear = avaliacao
+        .linear
+        .as_ref()
+        .expect("a busca traz a linha linear");
 
     assert_eq!(b.perfil, NOME);
     assert_eq!(b.hash_toml, avaliacao.hash_toml);
     assert_eq!(b.corte, CORTE_BAIXO);
     assert_eq!(b.primeiro_indice, avaliacao.primeiro_indice);
     assert_eq!(b.ultimo_concurso, avaliacao.ultimo_concurso);
+    assert_eq!(b.evidencia.regua, avaliacao::Regua::Linear);
     assert_eq!(b.evidencia.por_dobra.len(), 4);
+    assert_eq!(linear.dobras.len(), 5);
     let mut total = 0.0;
     let mut escala = 0.0;
     for d in &b.evidencia.por_dobra {
-        let a = &wf.dobras[d.dobra as usize - 1];
-        assert_eq!(a.faixa, d.faixa);
-        let ll = &a.metricas.log_loss;
+        let a = &linear.dobras[d.dobra as usize - 1];
+        assert_eq!(
+            (a.primeiro_concurso, a.ultimo_concurso),
+            (d.faixa.primeiro, d.faixa.ultimo)
+        );
+        assert_eq!(a.concursos_avaliados, d.concursos);
+        let ll = &a.log_loss;
         let esperado = -(d.pares as f64) * (ll.perfil - ll.acaso);
-        // 1e-13 × pares × log loss do acaso: o lado do walk-forward subtrai
-        // duas médias de ~0,67 (cancelamento de ~1e-15 por par).
+        // 1e-13 × pares × log loss do acaso: o lado do `avaliar` subtrai duas
+        // médias de ~0,67 (cancelamento de ~1e-15 por par).
         let tolerancia = 1e-13 * d.pares as f64 * ll.acaso;
         assert!(
             (d.ln_fb - esperado).abs() <= tolerancia,
@@ -524,15 +537,58 @@ fn b_confere_com_a_diferenca_de_log_loss_do_avaliar() {
     }
     assert!((b.evidencia.ln_fb - total).abs() <= 1e-13 * escala);
     // O trecho de B é o das dobras 2..=5 e termina no corte.
-    assert_eq!(b.evidencia.faixa.primeiro, wf.dobras[1].faixa.primeiro);
-    assert_eq!(b.evidencia.faixa.ultimo, wf.dobras[4].faixa.ultimo);
+    assert_eq!(
+        b.evidencia.faixa.primeiro,
+        linear.dobras[1].primeiro_concurso
+    );
+    assert_eq!(b.evidencia.faixa.ultimo, linear.dobras[4].ultimo_concurso);
     assert_eq!(b.evidencia.faixa.ultimo, CORTE_BAIXO);
-    // O inerte vem junto, com as constantes do plano.
+    // O total da linha linear cobre a busca inteira, como o veredito.
+    let faixa = avaliacao.veredito.avaliacao.faixa;
+    assert_eq!(
+        (linear.total.primeiro_concurso, linear.total.ultimo_concurso),
+        (faixa.primeiro, faixa.ultimo)
+    );
+    // O inerte vem junto, na régua linear, com as constantes do plano.
     assert_eq!(b.inerte.replicas, avaliacao::REPLICAS_INERTE);
     assert_eq!(b.inerte.semente, avaliacao::SEMENTE_INERTE);
     assert!(b.inerte.p025_log10 <= b.inerte.media_log10);
     assert!(b.inerte.media_log10 <= b.inerte.p975_log10);
     assert!(b.inerte.replicas_iguais_ou_acima <= b.inerte.replicas);
+}
+
+#[test]
+fn b_por_posicao_informativo_confere_com_o_log_loss_do_walk_forward() {
+    // A linha informativa (calibração pela posição da 1c, sem inerte) segue
+    // conferida com as tabelas de log loss que o `avaliar` já tinha (1d.3).
+    let (b, avaliacao) = b_e_avaliacao("b_confere_posicao");
+    let TrechoAvaliado::Busca(wf) = &avaliacao.trecho else {
+        panic!("esperava a busca");
+    };
+    assert_eq!(b.por_posicao.regua, avaliacao::Regua::Posicao);
+    assert_eq!(b.por_posicao.por_dobra.len(), 4);
+    let mut total = 0.0;
+    let mut escala = 0.0;
+    for d in &b.por_posicao.por_dobra {
+        let a = &wf.dobras[d.dobra as usize - 1];
+        assert_eq!(a.faixa, d.faixa);
+        let ll = &a.metricas.log_loss;
+        let esperado = -(d.pares as f64) * (ll.perfil - ll.acaso);
+        let tolerancia = 1e-13 * d.pares as f64 * ll.acaso;
+        assert!(
+            (d.ln_fb - esperado).abs() <= tolerancia,
+            "dobra {}: {} contra {esperado}",
+            d.dobra,
+            d.ln_fb
+        );
+        total += esperado;
+        escala += d.pares as f64 * ll.acaso;
+    }
+    assert!((b.por_posicao.ln_fb - total).abs() <= 1e-13 * escala);
+    // Mesmo trecho nas duas réguas; só os valores mudam.
+    assert_eq!(b.por_posicao.faixa, b.evidencia.faixa);
+    assert_eq!(b.por_posicao.pares, b.evidencia.pares);
+    assert_ne!(b.por_posicao.ln_fb.to_bits(), b.evidencia.ln_fb.to_bits());
 }
 
 #[test]
@@ -562,6 +618,7 @@ fn b_nao_toca_o_trancado() {
     let ba = calculada(evidencia_do_indice_no_banco(&mut a, &c, &pasta.0, NOME).expect("B"));
     let bb = calculada(evidencia_do_indice_no_banco(&mut b, &c, &pasta.0, NOME).expect("B"));
     assert_eq!(ba.evidencia, bb.evidencia);
+    assert_eq!(ba.por_posicao, bb.por_posicao);
     assert_eq!(ba.inerte, bb.inerte);
     assert_eq!(ba.evidencia.faixa.ultimo, CORTE_BAIXO);
 }
@@ -742,14 +799,18 @@ fn cli_imprime_a_secao_b_do_perfil_ativo_sem_tocar_no_banco() {
         "Perfil: padrao_v1 (versão 1, janela 10, minmax; perfil ativo da loteria).",
         "Hash do perfil:",
         "dobras de teste 2 a 5",
-        "log10 FB (índice contra o acaso, prequencial):",
+        "Probabilidades (régua principal): calibração LINEAR na posição do índice",
+        "log10 FB (índice contra o acaso, prequencial, calibração linear):",
+        "da linha de log loss com a calibração linear do `sync avaliar` nas dobras 2 a 5",
         "FB > 1: a favor do índice",
         "Por dobra (só informativo",
         "Δ log loss/par",
         "–121 (até o último sorteado + 1)",
-        "Esperado de um índice inerte (as mesmas posições diante de 200 históricos",
+        "Esperado de um índice inerte, na mesma calibração linear (as mesmas posições diante de 200",
         "Observado contra o inerte:",
-        "ATENÇÃO: a calibração estima uma taxa por posição",
+        "ATENÇÃO: mesmo um índice sem informação paga um custo para aprender a calibração",
+        "Informativo, sem inerte — calibração pela posição da 1c",
+        "Δ posição/par",
         "pseudo-verossimilhança",
     ] {
         assert!(texto.contains(esperado), "faltou `{esperado}` em:\n{texto}");
@@ -760,16 +821,32 @@ fn cli_imprime_a_secao_b_do_perfil_ativo_sem_tocar_no_banco() {
         .skip_while(|l| !l.contains("Por dobra"))
         .skip(2)
         .take_while(|l| !l.trim().is_empty())
-        .filter(|l| !l.trim_start().starts_with("Δ log loss/par:"))
+        .filter(|l| !l.trim_start().starts_with("log10 FB e Δ log loss/par:"))
         .collect();
     assert_eq!(dobras.len(), 4, "{texto}");
     for (i, l) in dobras.iter().enumerate() {
+        let colunas: Vec<&str> = l.split_whitespace().collect();
         assert_eq!(
-            l.split_whitespace().next(),
+            colunas.first().copied(),
             Some((i + 2).to_string().as_str()),
             "{l}"
         );
+        // dobra, concursos, avaliados, pares, log10 FB e Δ (linear), log10 FB e
+        // Δ (posição): a linear e a por posição lado a lado.
+        assert_eq!(colunas.len(), 8, "{l}");
+        assert_ne!(colunas[4], colunas[6], "{l}");
     }
+    // O inerte sai uma vez só, o da régua linear; a linha por posição não tem.
+    assert_eq!(
+        texto.matches("Esperado de um índice inerte").count(),
+        1,
+        "{texto}"
+    );
+    assert_eq!(
+        texto.matches("Observado contra o inerte:").count(),
+        1,
+        "{texto}"
+    );
 
     // Só leitura e determinístico.
     assert_eq!(std::fs::read(&caminho).expect("bytes do banco"), antes);

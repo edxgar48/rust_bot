@@ -9,7 +9,7 @@
 //!   perfil − média no acaso, porque as dezenas de um mesmo concurso não são
 //!   independentes (somam exatamente *K* saídas).
 
-use super::calibracao::{calibrar, Observacao};
+use super::calibracao::{Observacao, Regua};
 use super::{ate_o_corte, concursos_avaliados, taxa_do_acaso};
 use crate::config::LoteriaConfig;
 use crate::error::{Result, SpiderError};
@@ -93,7 +93,7 @@ pub struct ResumoAvaliacao {
 ///
 /// Antes de tudo descarta as observações acima de `corte` (inclusive o
 /// conjunto trancado, quando o corte é o da busca): nada acima do corte é
-/// lido, nem para validar. Depois calibra ([`calibrar`]) e avalia os
+/// lido, nem para validar. Depois calibra ([`super::calibrar`]) e avalia os
 /// concursos do segundo da entrada até `corte`, só os já sorteados. O
 /// primeiro fica de fora porque recebe o acaso por construção; mas entra na
 /// calibração dos seguintes, assim como qualquer concurso anterior.
@@ -125,7 +125,21 @@ pub(crate) fn metricas_por_concurso_entre(
     inicio: u32,
     fim: u32,
 ) -> Result<Vec<MetricasConcurso>> {
-    let probabilidades = calibrar(cfg, &ate_o_corte(observacoes, fim))?;
+    metricas_por_concurso_entre_com(Regua::Posicao, cfg, observacoes, inicio, fim)
+}
+
+/// [`metricas_por_concurso_entre`] com a régua à escolha: a calibração pela
+/// posição da 1c ([`Regua::Posicao`], a única do veredito) ou a linear da 1e
+/// ([`Regua::Linear`], só informativa). Tudo o mais é igual: o mesmo corte, a
+/// mesma calibração desde o primeiro concurso da entrada, os mesmos concursos.
+pub(crate) fn metricas_por_concurso_entre_com(
+    regua: Regua,
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+    inicio: u32,
+    fim: u32,
+) -> Result<Vec<MetricasConcurso>> {
+    let probabilidades = regua.calibrar(cfg, &ate_o_corte(observacoes, fim))?;
     let acaso = taxa_do_acaso(cfg);
 
     // Do segundo concurso da entrada em diante, a partir de `inicio`, só os

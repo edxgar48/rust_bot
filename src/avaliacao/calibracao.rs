@@ -135,22 +135,7 @@ pub fn calibrar_linear(
     observacoes: &[Observacao],
 ) -> Result<Vec<ProbabilidadeDezena>> {
     let linhas = ordenar_e_validar(cfg, observacoes)?;
-
-    let n = i128::from(cfg.qtd_dezenas_possiveis());
-    if n < 2 {
-        // z(r) divide por N − 1; uma loteria de uma dezena não tem posição.
-        return Err(invalida(format!(
-            "calibração linear exige ao menos 2 dezenas possíveis, a {} tem {n}",
-            cfg.nome_exibicao
-        )));
-    }
-    let k = cfg.qtd_dezenas as i128;
-    let m = i128::from(CONCURSOS_FICTICIOS);
-    let menor_lado = k.min(n - k);
-    let peso = |posicao: u32| (n + 1) - 2 * i128::from(posicao);
-    let w2: i128 = (1..=cfg.qtd_dezenas_possiveis())
-        .map(|r| peso(r) * peso(r))
-        .sum();
+    let constantes = ConstantesLineares::novas(cfg)?;
 
     // S: soma dos pesos das posições que saíram, nos concursos já sorteados.
     let mut soma_pesos = 0_i128;
@@ -158,24 +143,14 @@ pub fn calibrar_linear(
 
     let mut saida = Vec::with_capacity(linhas.len());
     for grupo in linhas.chunk_by(|a, b| a.concurso == b.concurso) {
-        let d = (concursos_sorteados + m) * w2;
-        let saturado = soma_pesos.abs() * (n - 1) * n > d * menor_lado;
+        let passo = constantes.passo(concursos_sorteados, soma_pesos);
         for o in grupo {
             // `ordenar_e_validar` garante posicao em 1..=N.
-            let w = peso(o.posicao);
-            let (numerador, denominador) = if saturado {
-                (
-                    k * (n - 1) + soma_pesos.signum() * menor_lado * w,
-                    n * (n - 1),
-                )
-            } else {
-                (k * d + n * soma_pesos * w, n * d)
-            };
             saida.push(ProbabilidadeDezena {
                 concurso: o.concurso,
                 dezena: o.dezena,
                 posicao: o.posicao,
-                probabilidade: numerador as f64 / denominador as f64,
+                probabilidade: passo.probabilidade(constantes.peso(o.posicao)),
                 saiu: o.saiu,
             });
         }
@@ -184,12 +159,130 @@ pub fn calibrar_linear(
             soma_pesos += grupo
                 .iter()
                 .filter(|o| o.saiu == Some(true))
-                .map(|o| peso(o.posicao))
+                .map(|o| constantes.peso(o.posicao))
                 .sum::<i128>();
             concursos_sorteados += 1;
         }
     }
     Ok(saida)
+}
+
+/// Constantes inteiras da calibração linear de uma loteria (ver
+/// [`calibrar_linear`]). Compartilhadas com a simulação do índice inerte
+/// (`evidencia_indice`), para as duas contas serem a mesma, bit a bit.
+pub(super) struct ConstantesLineares {
+    n: i128,
+    k: i128,
+    /// `min(K, N−K)`: o limite de `b_t` é `menor_lado / N`.
+    menor_lado: i128,
+    /// `W2 = Σ w(r)²`.
+    w2: i128,
+}
+
+impl ConstantesLineares {
+    pub(super) fn novas(cfg: &LoteriaConfig) -> Result<Self> {
+        let n = i128::from(cfg.qtd_dezenas_possiveis());
+        if n < 2 {
+            // z(r) divide por N − 1; uma loteria de uma dezena não tem posição.
+            return Err(invalida(format!(
+                "calibração linear exige ao menos 2 dezenas possíveis, a {} tem {n}",
+                cfg.nome_exibicao
+            )));
+        }
+        let k = cfg.qtd_dezenas as i128;
+        let peso = |posicao: u32| (n + 1) - 2 * i128::from(posicao);
+        let w2 = (1..=cfg.qtd_dezenas_possiveis())
+            .map(|r| peso(r) * peso(r))
+            .sum();
+        Ok(Self {
+            n,
+            k,
+            menor_lado: k.min(n - k),
+            w2,
+        })
+    }
+
+    /// `w(r) = (N+1) − 2r`, para `r` em `1..=N`.
+    pub(super) fn peso(&self, posicao: u32) -> i128 {
+        (self.n + 1) - 2 * i128::from(posicao)
+    }
+
+    /// O que vale para todas as dezenas de um concurso `t`, dados `c` (concursos
+    /// sorteados antes de `t`, sem contar os `m` fictícios) e `S` (soma dos
+    /// pesos das posições que saíram antes de `t`).
+    pub(super) fn passo(&self, concursos_sorteados: i128, soma_pesos: i128) -> PassoLinear {
+        let Self {
+            n,
+            k,
+            menor_lado,
+            w2,
+        } = *self;
+        let m = i128::from(CONCURSOS_FICTICIOS);
+        let d = (concursos_sorteados + m) * w2;
+        // Comparação exata do limite de b_t, sem ponto flutuante.
+        let saturado = soma_pesos.abs() * (n - 1) * n > d * menor_lado;
+        // Tanto o numerador quanto o denominador cabem em f64 sem arredondar
+        // (inteiros abaixo de 2^53 são exatos): N·D = N·(c + m)·W2 fica em ~5e8
+        // na Lotofácil, ~1e10 na Mega-Sena e ~1e11 na Quina com os históricos
+        // atuais, e só chegaria a 2^53 com c da ordem de 10^8 concursos. Assim
+        // a única divisão do f64 é a do fim, correta até o último bit.
+        if saturado {
+            PassoLinear {
+                fixo: k * (n - 1),
+                coeficiente: soma_pesos.signum() * menor_lado,
+                denominador: n * (n - 1),
+            }
+        } else {
+            PassoLinear {
+                fixo: k * d,
+                coeficiente: n * soma_pesos,
+                denominador: n * d,
+            }
+        }
+    }
+}
+
+/// `p(r) = (fixo + coeficiente · w(r)) / denominador`, de um concurso.
+pub(super) struct PassoLinear {
+    fixo: i128,
+    coeficiente: i128,
+    denominador: i128,
+}
+
+impl PassoLinear {
+    pub(super) fn probabilidade(&self, peso: i128) -> f64 {
+        (self.fixo + self.coeficiente * peso) as f64 / self.denominador as f64
+    }
+}
+
+/// A régua que traduz posição em probabilidade: a da 1c (uma taxa por
+/// posição) ou a linear da 1e (um parâmetro).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Regua {
+    /// [`calibrar`]: *N* parâmetros, m = [`CONCURSOS_FICTICIOS`].
+    Posicao,
+    /// [`calibrar_linear`]: um parâmetro, m = [`CONCURSOS_FICTICIOS`].
+    Linear,
+}
+
+impl Regua {
+    pub fn calibrar(
+        self,
+        cfg: &LoteriaConfig,
+        observacoes: &[Observacao],
+    ) -> Result<Vec<ProbabilidadeDezena>> {
+        match self {
+            Regua::Posicao => calibrar(cfg, observacoes),
+            Regua::Linear => calibrar_linear(cfg, observacoes),
+        }
+    }
+
+    pub const fn nome(self) -> &'static str {
+        match self {
+            Regua::Posicao => "calibração pela posição",
+            Regua::Linear => "calibração linear na posição",
+        }
+    }
 }
 
 /// Ordena por (concurso, dezena) e confere que a entrada é uma série

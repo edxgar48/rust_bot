@@ -1017,7 +1017,11 @@ fn entrada_so_com_o_snapshot_calibra_com_o_acaso_e_nao_avalia() {
 
 /// Série em que o índice acerta sempre: a dezena `d` fica na posição
 /// `d − dezena_min + 1` e saem exatamente as posições 1..=K.
-fn serie_perfeita(cfg: &LoteriaConfig, concursos: u32, com_snapshot: bool) -> Vec<Observacao> {
+pub(super) fn serie_perfeita(
+    cfg: &LoteriaConfig,
+    concursos: u32,
+    com_snapshot: bool,
+) -> Vec<Observacao> {
     serie_de_posicao_fixa(cfg, concursos, com_snapshot, |posicao| {
         posicao as usize <= cfg.qtd_dezenas
     })
@@ -1045,7 +1049,7 @@ fn serie_de_posicao_fixa(
 /// Série com sinal monotônico na posição: posições embaralhadas a cada
 /// concurso e as K dezenas sorteadas uma a uma, sem reposição, com peso
 /// `1 + forca·z(posição)` (`z` = +1 na posição 1 e −1 na posição N).
-fn serie_com_sinal(
+pub(super) fn serie_com_sinal(
     cfg: &LoteriaConfig,
     concursos: u32,
     semente: u64,
@@ -1115,7 +1119,7 @@ fn ln_fb_com_limite(cfg: &LoteriaConfig, probs: &[ProbabilidadeDezena]) -> f64 {
 /// Oráculo independente: a fórmula do plano em ponto flutuante, direto, sem
 /// pesos inteiros nem a comparação exata do limite. `serie` já vem ordenada
 /// por (concurso, dezena) e válida.
-fn oraculo_linear(cfg: &LoteriaConfig, serie: &[Observacao]) -> Vec<f64> {
+pub(super) fn oraculo_linear(cfg: &LoteriaConfig, serie: &[Observacao]) -> Vec<f64> {
     let n = f64::from(cfg.qtd_dezenas_possiveis());
     let k = cfg.qtd_dezenas as f64;
     let m = f64::from(CONCURSOS_FICTICIOS);
@@ -1570,6 +1574,48 @@ fn linear_entrada_vazia_devolve_vazio() {
     assert!(calibrar_linear(&MINI, &[])
         .expect("vazio é válido")
         .is_empty());
+}
+
+#[test]
+fn linear_recusa_loteria_com_menos_de_duas_dezenas_possiveis() {
+    // z(r) divide por N − 1: com N = 1 não há posição a calibrar. Inalcançável
+    // nas loterias reais; a guarda existe para não dividir por zero.
+    let uma_dezena = LoteriaConfig {
+        qtd_dezenas: 1,
+        dezena_min: 1,
+        dezena_max: 1,
+        ..MINI
+    };
+    assert_eq!(uma_dezena.qtd_dezenas_possiveis(), 1);
+    let serie = [
+        obs(1, 1, 1, Some(true)),
+        obs(2, 1, 1, Some(true)),
+        obs(3, 1, 1, None),
+    ];
+    for entrada in [&serie[..], &[]] {
+        match calibrar_linear(&uma_dezena, entrada) {
+            Err(SpiderError::AvaliacaoEntradaInvalida(detalhe)) => {
+                assert!(detalhe.contains("ao menos 2 dezenas"), "{detalhe}");
+            }
+            outro => panic!("esperava AvaliacaoEntradaInvalida, veio {outro:?}"),
+        }
+    }
+    // Com N = 2 (o menor aceito) a conta fecha: p(1) + p(2) = K = 1.
+    let duas = LoteriaConfig {
+        qtd_dezenas: 1,
+        dezena_min: 1,
+        dezena_max: 2,
+        ..MINI
+    };
+    let serie = [
+        obs(1, 1, 1, Some(true)),
+        obs(1, 2, 2, Some(false)),
+        obs(2, 1, 1, None),
+        obs(2, 2, 2, None),
+    ];
+    let probs = calibrar_linear(&duas, &serie).expect("N = 2 é válido");
+    assert_eq!(probs[0].probabilidade, 0.5);
+    assert_perto!(probs[2].probabilidade + probs[3].probabilidade, 1.0);
 }
 
 #[test]

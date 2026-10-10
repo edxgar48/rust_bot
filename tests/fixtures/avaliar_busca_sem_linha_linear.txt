@@ -1,0 +1,61 @@
+Avaliação de Lotofácil (lotofacil) com o perfil teste_v1 (versão 1, janela 10, minmax).
+  Hash do perfil: 3504ead59342ef6745bae6b31b6c395658e538c6acad7c3896cc0e3d542faa6a
+  Trecho: busca, walk-forward em 5 dobras consecutivas; concursos 2–300 (299 avaliados).
+  Corte da busca: concurso 3416 (o trancado, do 3417 em diante, fica fora desta avaliação).
+  Índice: concursos 1–301 (último sorteado 300 e o snapshot do próximo); a calibração começa no 1 com m = 100 concursos fictícios, e esse primeiro concurso não é avaliado.
+  Top-k: k = 15 (padrão: K da loteria).
+
+Log loss (menor é melhor; diferença < 0 = perfil melhor que o acaso):
+     dobra    concursos      T      perfil       acaso    diferença          EP  IC 95% (normal)
+         1         2–60     59    0.675125    0.673012    +2.113e-3    7.677e-4  [+6.085e-4, +3.618e-3]
+         2       61–119     59    0.674253    0.673012    +1.241e-3    1.118e-3  [-9.510e-4, +3.433e-3]
+         3      120–178     59    0.673330    0.673012    +3.187e-4    1.075e-3  [-1.787e-3, +2.425e-3]
+         4      179–237     59    0.674364    0.673012    +1.353e-3    1.040e-3  [-6.851e-4, +3.390e-3]
+         5      238–300     63    0.673737    0.673012    +7.257e-4    1.107e-3  [-1.444e-3, +2.895e-3]
+     total        2–300    299    0.674156    0.673012    +1.145e-3    4.599e-4  [+2.432e-4, +2.046e-3]
+
+Brier (menor é melhor; diferença < 0 = perfil melhor que o acaso):
+     dobra    concursos      T      perfil       acaso    diferença          EP  IC 95% (normal)
+         1         2–60     59    0.241013    0.240000    +1.013e-3    3.690e-4  [+2.902e-4, +1.737e-3]
+         2       61–119     59    0.240596    0.240000    +5.957e-4    5.359e-4  [-4.547e-4, +1.646e-3]
+         3      120–178     59    0.240163    0.240000    +1.629e-4    5.115e-4  [-8.396e-4, +1.165e-3]
+         4      179–237     59    0.240634    0.240000    +6.340e-4    4.950e-4  [-3.361e-4, +1.604e-3]
+         5      238–300     63    0.240348    0.240000    +3.476e-4    5.310e-4  [-6.932e-4, +1.388e-3]
+     total        2–300    299    0.240548    0.240000    +5.480e-4    2.199e-4  [+1.170e-4, +9.790e-4]
+
+Top-15 (acertos por concurso; maior é melhor; ao acaso k·K/N = 9.0000):
+     dobra    concursos      T   perfil    acaso  diferença       EP      IC 95% (normal)  p exato
+         1         2–60     59   9.1186   9.0000    +0.1186   0.1745   [-0.2233, +0.4606]  0.2446
+         2       61–119     59   8.8644   9.0000    -0.1356   0.1312   [-0.3928, +0.1216]  0.8169
+         3      120–178     59   9.1695   9.0000    +0.1695   0.1729   [-0.1694, +0.5084]  0.1562
+         4      179–237     59   8.6441   9.0000    -0.3559   0.1688   [-0.6868, -0.0250]  0.9890
+         5      238–300     63   8.8571   9.0000    -0.1429   0.1481   [-0.4332, +0.1475]  0.8358
+     total        2–300    299   8.9298   9.0000    -0.0702   0.0718   [-0.2110, +0.0705]  0.8450
+
+Distribuição de acertos do top-15 no trecho inteiro (concursos; observado × acaso):
+   0 acerto(s):      0 ×       0.0
+   1 acerto(s):      0 ×       0.0
+   2 acerto(s):      0 ×       0.0
+   3 acerto(s):      0 ×       0.0
+   4 acerto(s):      0 ×       0.0
+   5 acerto(s):      1 ×       0.3
+   6 acerto(s):      7 ×       4.6
+   7 acerto(s):     29 ×      26.5
+   8 acerto(s):     68 ×      70.6
+   9 acerto(s):     95 ×      96.1
+  10 acerto(s):     71 ×      69.2
+  11 acerto(s):     25 ×      26.2
+  12 acerto(s):      3 ×       5.0
+  13 acerto(s):      0 ×       0.4
+  14 acerto(s):      0 ×       0.0
+  15 acerto(s):      0 ×       0.0
+
+Veredito no trecho inteiro (concursos 2–300, 299 avaliados):
+  Bootstrap circular por blocos de 50 concursos, 10000 reamostragens, semente 20261005.
+  Log loss, perfil − acaso: média +1.145e-3, IC 95% percentil [+4.985e-4, +1.747e-3], p unilateral (perfil melhor) = 1.0000.
+  Brier (só informativo): média +5.480e-4, IC 95% percentil [+2.389e-4, +8.358e-4], p = 1.0000.
+  Top-15 (p exato unilateral, trecho inteiro): 2670 acertos em 299 concursos (ao acaso, 2691.0 em média), p = 0.8450.
+=> NÃO supera o acaso no log loss: p = 1.0000 > α = 0.05.
+
+Aviso: os p-valores só valem se o perfil e o k foram escolhidos sem ver os sorteios deste trecho. Se a busca de pesos usou estes concursos, ou se este é o melhor entre vários perfis ou k, eles saem otimistas: informe quantos foram testados com --testados N (Bonferroni) ou avalie o campeão no conjunto trancado (--trancado, uso único).
+Aviso: o IC normal e o EP das tabelas ignoram a correlação serial da calibração acumulada (tendem a sair estreitos); o veredito usa o bootstrap por blocos.

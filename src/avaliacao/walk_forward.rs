@@ -38,8 +38,11 @@ use super::bootstrap::{
     bootstrap_circular, concursos_minimos, Bootstrap, BLOCO_BOOTSTRAP, REAMOSTRAGENS_BOOTSTRAP,
     SEMENTE_BOOTSTRAP,
 };
-use super::calibracao::{ordenar_e_validar, Observacao};
-use super::metricas::{metricas_por_concurso_entre, resumir, MetricasConcurso, ResumoAvaliacao};
+use super::calibracao::{ordenar_e_validar, Observacao, Regua};
+use super::metricas::{
+    metricas_por_concurso_entre, metricas_por_concurso_entre_com, resumir, MetricasConcurso,
+    ResumoAvaliacao,
+};
 use super::topk::{acertos_por_concurso_entre, resumir_topk, validar_k, ResumoTopK};
 use super::{ate_o_corte, concursos_avaliados};
 use crate::config::LoteriaConfig;
@@ -181,6 +184,60 @@ pub fn walk_forward(
     Ok(WalkForward {
         corte: cfg.ultimo_concurso_busca,
         dobras,
+    })
+}
+
+/// Log loss (perfil − acaso) com a calibração **linear** da 1e, nas mesmas
+/// dobras e no mesmo trecho do [`walk_forward`]. Só informativo: o veredito, o
+/// bootstrap e o top-k seguem com a calibração pela posição.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogLossLinear {
+    /// Uma por dobra do [`walk_forward`], na mesma ordem. Traz também o Brier
+    /// (de graça, mesma série); quem imprime mostra só o log loss.
+    pub dobras: Vec<ResumoAvaliacao>,
+    /// O trecho de busca inteiro (a união das dobras).
+    pub total: ResumoAvaliacao,
+}
+
+/// [`LogLossLinear`] do trecho de busca: cada dobra de [`dobras_da_busca`] e o
+/// trecho inteiro, com [`Regua::Linear`] calibrada desde o primeiro concurso
+/// da entrada (só com o passado de cada concurso). Como o corte vem do config,
+/// nada acima dele é lido, nem para validar.
+///
+/// Erros: os de [`dobras_da_busca`] (série inválida, menos concursos que
+/// dobras) e os da calibração linear.
+pub fn log_loss_linear_da_busca(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+) -> Result<LogLossLinear> {
+    let faixa = faixa_da_busca(cfg, observacoes)?;
+    let resumo = |faixa: FaixaConcursos| {
+        let serie = metricas_por_concurso_entre_com(
+            Regua::Linear,
+            cfg,
+            observacoes,
+            faixa.primeiro,
+            faixa.ultimo,
+        )?;
+        // Defesa: a faixa vem de `faixa_avaliada`, então a série a cobre.
+        if serie.len() as u64 != faixa.tamanho() {
+            return Err(SpiderError::AvaliacaoEntradaInvalida(format!(
+                "faixa {}..={}: {} concurso(s) na calibração linear, esperados {}",
+                faixa.primeiro,
+                faixa.ultimo,
+                serie.len(),
+                faixa.tamanho()
+            )));
+        }
+        resumir(&serie)
+    };
+    let dobras = dividir_em_dobras(faixa, QTD_DOBRAS)?
+        .into_iter()
+        .map(resumo)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(LogLossLinear {
+        dobras,
+        total: resumo(faixa)?,
     })
 }
 

@@ -1370,3 +1370,202 @@ fn ranking_previsivel_supera_o_acaso_no_veredito() {
     );
     assert_eq!(v.supera_o_acaso(), Some(true));
 }
+
+// ------------------------------------- log loss linear (1e.2)
+
+/// Referência independente: calibra com `calibrar_linear` e calcula, por
+/// concurso de `primeiro..=ultimo`, a média do log loss do perfil e do acaso
+/// nos N pares; devolve as médias por concurso da faixa (perfil, acaso).
+fn medias_lineares(
+    cfg: &LoteriaConfig,
+    serie: &[Observacao],
+    primeiro: u32,
+    ultimo: u32,
+) -> (f64, f64) {
+    let probs = crate::avaliacao::calibrar_linear(cfg, serie).expect("calibração");
+    let acaso = crate::avaliacao::taxa_do_acaso(cfg);
+    let (mut perfil, mut base, mut concursos) = (0.0, 0.0, 0.0);
+    for g in probs.chunk_by(|a, b| a.concurso == b.concurso) {
+        let t = g[0].concurso;
+        if t < primeiro || t > ultimo || g[0].saiu.is_none() {
+            continue;
+        }
+        let n = g.len() as f64;
+        let ll = |p: f64, saiu: bool| if saiu { -p.ln() } else { -(1.0 - p).ln() };
+        perfil += g
+            .iter()
+            .map(|x| ll(x.probabilidade, x.saiu.unwrap()))
+            .sum::<f64>()
+            / n;
+        base += g.iter().map(|x| ll(acaso, x.saiu.unwrap())).sum::<f64>() / n;
+        concursos += 1.0;
+    }
+    (perfil / concursos, base / concursos)
+}
+
+#[test]
+fn log_loss_linear_cobre_as_mesmas_dobras_e_o_mesmo_total_do_walk_forward() {
+    for (slug, semente) in [("lotofacil", 3_u64), ("megasena", 4), ("quina", 5)] {
+        let c = LoteriaConfig {
+            ultimo_concurso_busca: 300,
+            ..*cfg(slug)
+        };
+        let serie = serie_aleatoria(&c, 320, semente, true);
+        let k = c.qtd_dezenas as u32;
+        let wf = walk_forward(&c, &serie, k).expect("walk-forward");
+        let veredito = veredito_da_busca(&c, &serie, k).expect("veredito");
+        let ll = log_loss_linear_da_busca(&c, &serie).expect("linear");
+
+        assert_eq!(ll.dobras.len(), wf.dobras.len());
+        for (l, d) in ll.dobras.iter().zip(&wf.dobras) {
+            assert_eq!(
+                (l.primeiro_concurso, l.ultimo_concurso),
+                (d.faixa.primeiro, d.faixa.ultimo)
+            );
+            assert_eq!(l.concursos_avaliados, d.metricas.concursos_avaliados);
+            // O acaso é o mesmo número, bit a bit, nas duas calibrações.
+            assert_eq!(
+                l.log_loss.acaso.to_bits(),
+                d.metricas.log_loss.acaso.to_bits(),
+                "{slug}"
+            );
+        }
+        let total = veredito.avaliacao.metricas;
+        assert_eq!(
+            (
+                ll.total.primeiro_concurso,
+                ll.total.ultimo_concurso,
+                ll.total.concursos_avaliados
+            ),
+            (
+                total.primeiro_concurso,
+                total.ultimo_concurso,
+                total.concursos_avaliados
+            )
+        );
+        assert_eq!(
+            ll.total.log_loss.acaso.to_bits(),
+            total.log_loss.acaso.to_bits()
+        );
+        // O perfil linear é outra calibração: outro número.
+        assert_ne!(
+            ll.total.log_loss.perfil.to_bits(),
+            total.log_loss.perfil.to_bits()
+        );
+    }
+}
+
+#[test]
+fn log_loss_linear_confere_com_calculo_direto_por_dobra_e_no_total() {
+    for (slug, semente) in [
+        ("lotofacil", 13_u64),
+        ("megasena", 14),
+        ("quina", 15),
+        ("mini", 16),
+    ] {
+        let c = if slug == "mini" {
+            mini_com_corte(120)
+        } else {
+            LoteriaConfig {
+                ultimo_concurso_busca: 250,
+                ..*cfg(slug)
+            }
+        };
+        let serie = serie_aleatoria(&c, c.ultimo_concurso_busca + 5, semente, true);
+        let ll = log_loss_linear_da_busca(&c, &serie).expect("linear");
+        for d in ll.dobras.iter().chain([&ll.total]) {
+            let (perfil, acaso) =
+                medias_lineares(&c, &serie, d.primeiro_concurso, d.ultimo_concurso);
+            assert!(
+                perto(d.log_loss.perfil, perfil),
+                "{slug}: {} × {perfil}",
+                d.log_loss.perfil
+            );
+            assert!(perto(d.log_loss.acaso, acaso), "{slug}");
+            assert!(perto(d.log_loss.diferenca, perfil - acaso), "{slug}");
+        }
+    }
+}
+
+#[test]
+fn log_loss_linear_nao_le_nada_acima_do_corte_nem_valida() {
+    let ate_o_corte = serie_aleatoria(&MINI, 20, 21, false);
+    let base = log_loss_linear_da_busca(&MINI, &ate_o_corte).expect("linear");
+
+    // Mais concursos válidos (o trancado) e o snapshot: nada muda.
+    let mut longa = ate_o_corte.clone();
+    longa.extend(
+        serie_aleatoria(&MINI, 31, 99, true)
+            .into_iter()
+            .filter(|o| o.concurso > 20),
+    );
+    assert_eq!(
+        bits(&log_loss_linear_da_busca(&MINI, &longa).expect("linear")),
+        bits(&base)
+    );
+
+    // Lixo acima do corte é ignorado; o mesmo lixo abaixo é recusado.
+    let mut lixo = ate_o_corte.clone();
+    lixo.push(obs(21, 99, 7, Some(true)));
+    lixo.extend(concurso_mini(23, [1, 1, 1, 1], None));
+    assert_eq!(
+        bits(&log_loss_linear_da_busca(&MINI, &lixo).expect("linear")),
+        bits(&base)
+    );
+    let mut lixo_abaixo: Vec<Observacao> = ate_o_corte
+        .iter()
+        .filter(|o| o.concurso != 20)
+        .copied()
+        .collect();
+    lixo_abaixo.push(obs(20, 99, 7, Some(true)));
+    assert!(matches!(
+        log_loss_linear_da_busca(&MINI, &lixo_abaixo),
+        Err(SpiderError::AvaliacaoEntradaInvalida(_))
+    ));
+}
+
+#[test]
+fn log_loss_linear_ponto_no_tempo_alterar_um_concurso_so_afeta_dobras_dele_em_diante() {
+    // A calibração de t usa só concursos < t: trocar `saiu` e posições do
+    // concurso 12 (dobra 4 da MINI, 2..=4 | 5..=7 | 8..=10 | 11..=13 | 14..=20)
+    // não muda as dobras 1 a 3 (que terminam antes) e muda a 4.
+    let base = serie_aleatoria(&MINI, 21, 8, true);
+    let original = log_loss_linear_da_busca(&MINI, &base).expect("linear");
+    let outra = serie_aleatoria(&MINI, 21, 321, true);
+    let mut mudada = base.clone();
+    for o in mudada.iter_mut().filter(|o| o.concurso == 12) {
+        *o = *outra
+            .iter()
+            .find(|x| x.concurso == 12 && x.dezena == o.dezena)
+            .unwrap();
+    }
+    assert_ne!(base, mudada);
+    let depois = log_loss_linear_da_busca(&MINI, &mudada).expect("linear");
+    assert_eq!(bits(&depois.dobras[..3]), bits(&original.dobras[..3]));
+    assert_ne!(bits(&depois.dobras[3]), bits(&original.dobras[3]));
+}
+
+#[test]
+fn log_loss_linear_recusa_historico_curto_e_e_deterministico() {
+    let curta = serie_aleatoria(&MINI, 5, 1, true);
+    assert!(matches!(
+        log_loss_linear_da_busca(&MINI, &curta),
+        Err(SpiderError::AvaliacaoSemConcursos(_))
+    ));
+    assert!(matches!(
+        log_loss_linear_da_busca(&MINI, &[]),
+        Err(SpiderError::AvaliacaoSemConcursos(_))
+    ));
+    let serie = serie_aleatoria(&MINI, 31, 5, true);
+    let a = log_loss_linear_da_busca(&MINI, &serie).unwrap();
+    assert_eq!(
+        bits(&a),
+        bits(&log_loss_linear_da_busca(&MINI, &serie).unwrap())
+    );
+    let mut invertida = serie.clone();
+    invertida.reverse();
+    assert_eq!(
+        bits(&a),
+        bits(&log_loss_linear_da_busca(&MINI, &invertida).unwrap())
+    );
+}

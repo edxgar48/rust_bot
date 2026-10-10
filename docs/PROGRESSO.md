@@ -55,7 +55,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1e — Régua sensível (calibração linear) · `engenheiro-avaliacao`
 
 - [x] 1e.1 `calibrar_linear` (um parâmetro, encolhimento m = 100) + testes
-- [ ] 1e.2 B e índice inerte na calibração linear; linha extra no `sync avaliar`
+- [x] 1e.2 B e índice inerte na calibração linear; linha extra no `sync avaliar`
 - [ ] 1e.3 `docs/GUIA.md` e README com a leitura nova; números das três loterias
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
@@ -1391,3 +1391,38 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   **Pendências BAIXA:** guarda N < 2 sem teste; falta em `calibrar_linear` o comentário de que N·D < 2^53
   (por isso o f64 sai exato), como em `calibrar`; o teste da fronteira não distingue `>` de `>=` (correto
   por construção).
+- 2026-10-10 — 1e.2: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): a linha linear do `sync avaliar` cobre as mesmas dobras (1 a 5) e o mesmo
+  total do walk-forward; o trancado não ganha linha linear; a parte antiga do relatório fica igual
+  byte a byte.
+- 2026-10-10 — 1e.2 concluída (engenheiro-avaliacao). `src/avaliacao/calibracao.rs` (`enum Regua
+  { Posicao, Linear }`; `ConstantesLineares`/`PassoLinear` com a conta inteira da linear, usada por
+  `calibrar_linear` e pela réplica do inerte; comentário N·D < 2^53), `metricas.rs`
+  (`metricas_por_concurso_entre_com`), `walk_forward.rs` (`LogLossLinear`, `log_loss_linear_da_busca`),
+  `evidencia_indice.rs` (`evidencia_do_indice_com`, campo `regua`; o inerte lê a régua do observado),
+  `orquestracao.rs` (`RelatorioAvaliacao.linear`, `None` no trancado; `IndiceEvidenciado` com
+  `evidencia`/`inerte` lineares e `por_posicao` informativo, sem inerte), `src/bin/sync.rs` (bloco
+  linear no `avaliar` entre Brier e top-k; B reescrito, tabela por dobra com Δ log loss/par das duas
+  réguas). Fixture nova `tests/fixtures/avaliar_busca_sem_linha_linear.txt` (saída do `avaliar` do
+  commit 8dd9d95; o teste tira o bloco novo e compara o resto byte a byte). Testes: lib +20, avaliar
+  +4, evidencia +1 (conferência B linear × linha linear do `avaliar` e B por posição × walk-forward;
+  oráculo f64 independente; réplica rápida do inerte = cálculo direto; teste da guarda N < 2).
+  **Resultado (`padrao_v1`, cópias, release)** — B linear, log10 FB observado / média do inerte /
+  faixa 95 % / réplicas ≥ observado: Lotofácil −0,121 / −0,291 / [−1,019; +0,554] / 38 de 200;
+  Mega-Sena −0,674 / −0,295 / [−1,172; +0,310] / 181 de 200; Quina −0,268 / −0,330 / [−1,046;
+  +0,226] / 65 de 200 — "muito fraca" / "fraca" / "muito fraca", a favor do acaso; nas três o índice é
+  indistinguível de um inerte. Régua por posição (informativa): −7,313 / −13,587 / −24,998 (iguais à
+  1d.3). Linha linear do `avaliar`, Δ log loss total (perfil − acaso): Lotofácil −5,02e-5, Mega-Sena
+  +9,86e-6, Quina +3,63e-6; veredito "NÃO supera o acaso" nas três, inalterado. Conferência B × `avaliar`
+  dobra a dobra passa (testes, tolerância 1e-13 × pares × log loss do acaso; e nos bancos reais com 4
+  algarismos). Tempo release: `evidencia` 0,95 / 1,05 / 3,71 s; `avaliar` 1,06 / 0,70 / 2,30 s.
+  verificador-vazamento: sem vazamento. Revisão: aprovada com ressalvas, só BAIXA. Gate: fmt ok, clippy
+  ok, cargo test verde (lib 547, 3 ignorados; sync 32, avaliar 89, conformidade 4, dataset 25, evidencia
+  20, features 56, indice 57, parser 10, tabela 13), pytest 175, `validar todas` ok.
+  **Pendências BAIXA:** comentar em `tests/avaliar.rs:2262` como regravar a fixture (casas de float podem
+  mudar com libm/toolchain); doc de `SerieInerte::nova` (`evidencia_indice.rs:291`) ainda cita só
+  `calibrar`; linha de doc > 100 colunas (`evidencia_indice.rs:389`); `evidencia_do_indice` sem sufixo é a
+  régua por posição (renomear para `_por_posicao` ou documentar); `zip` das dobras em `sync.rs:2373` sem
+  checagem de tamanho; README:110 ainda descreve B pela posição (entra na 1e.3, junto do novo ATENÇÃO do
+  inerte e da frase de que o custo da régua por posição não decide nada). `cargo doc -D warnings` já falha
+  por links a itens privados (pré-existente, fora da tarefa).

@@ -1,6 +1,8 @@
 use super::*;
-use crate::avaliacao::tests::{concurso_mini, serie_aleatoria, MINI};
-use crate::avaliacao::walk_forward;
+use crate::avaliacao::tests::{
+    concurso_mini, oraculo_linear, serie_aleatoria, serie_com_sinal, serie_perfeita, MINI,
+};
+use crate::avaliacao::{log_loss_linear_da_busca, walk_forward};
 use crate::config;
 
 fn cfg(slug: &str) -> &'static LoteriaConfig {
@@ -504,7 +506,7 @@ fn replica_do_inerte_e_a_mesma_conta_de_evidencia_do_indice() {
     ] {
         let obs = serie_aleatoria(&c, concursos, 8, true);
         let b = evidencia_do_indice(&c, &obs).expect("evidência");
-        let serie = SerieInerte::nova(&c, &obs, b.faixa).expect("série");
+        let serie = SerieInerte::nova(&c, &obs, b.faixa, Regua::Posicao).expect("série");
         for semente in [1, SEMENTE_INERTE] {
             let rapido = serie
                 .ln_fb_de_uma_replica(&c, &mut SplitMix64::nova(semente))
@@ -534,5 +536,436 @@ fn replica_do_inerte_e_a_mesma_conta_de_evidencia_do_indice() {
                 completo.ln_fb
             );
         }
+    }
+}
+
+// ======================================================================
+// Régua linear (Fase 1e.2)
+// ======================================================================
+
+fn linear(cfg: &LoteriaConfig, obs: &[Observacao]) -> EvidenciaIndice {
+    evidencia_do_indice_com(cfg, obs, Regua::Linear).expect("evidência linear")
+}
+
+/// Referência independente da `calibrar_linear` e do código de produção: a
+/// fórmula do plano em f64 (`oraculo_linear`: z real, b real) aplicada a cada
+/// par, `ln p_modelo − ln p_acaso`, sem o limite do `log_loss` (as séries
+/// aleatórias não saturam). Soma os concursos `de..=ate`.
+fn referencia_linear(cfg: &LoteriaConfig, obs: &[Observacao], de: u32, ate: u32) -> f64 {
+    let mut ordenada = obs.to_vec();
+    ordenada.sort_unstable_by_key(|o| (o.concurso, o.dezena));
+    let acaso = taxa_do_acaso(cfg);
+    ordenada
+        .iter()
+        .zip(oraculo_linear(cfg, &ordenada))
+        .filter(|(o, _)| o.concurso >= de && o.concurso <= ate && o.saiu.is_some())
+        .map(|(o, p)| {
+            if o.saiu == Some(true) {
+                (p / acaso).ln()
+            } else {
+                ((1.0 - p) / (1.0 - acaso)).ln()
+            }
+        })
+        .sum()
+}
+
+#[test]
+fn linear_valores_conferidos_a_mao_na_mini() {
+    // N = 4, K = 2, m = 100: w(r) = 5 − 2r = (3, 1, −1, −3), W2 = 20 e
+    // p(r) = 1/2 + S·w(r)/D, S = Σ w(posição que saiu) antes de t, D = (c + 100)·20.
+    // Posições que saíram (série à mão): c1 {1,2}, c2 {1,3}, c3 {1,4}, c4 {1,2},
+    // c5 {2,3}, c6 {3,4} → Σw = 4, 2, 0, 4, 0, −4 e S antes de t = 4, 6, 6, 10, 10, 6.
+    // O limite de b_t (|S|·12 > 2·D) nunca é atingido aqui. O termo de cada par
+    // é ln(2p) se saiu e ln(2(1 − p)) se não saiu.
+    //
+    // c3 (c = 2, S = 6, D = 2040): p = (173, 171, 169, 167)/340 nas posições
+    //   1..4; saíram 1 e 4; não saíram 2 (2(1−p) = 338/340) e 3 (342/340):
+    //   ln(346/340) + ln(334/340) + ln(338/340) + ln(342/340).
+    // c4 (c = 3, S = 6, D = 2060): p = (524, 518, 512, 506)/1030; saíram 1 e 2;
+    //   não saíram 3 (2(1−p) = 1036/1030) e 4 (1048/1030):
+    //   2·ln(1048/1030) + 2·ln(1036/1030).
+    // c5 (c = 4, S = 10, D = 2080): p = (107, 105, 103, 101)/208; saíram 2 e 3;
+    //   não saíram 1 (202/208) e 4 (214/208):
+    //   ln(210/208) + ln(206/208) + ln(202/208) + ln(214/208).
+    // c6 (c = 5, S = 10, D = 2100): p = (108, 106, 104, 102)/210; saíram 3 e 4;
+    //   não saíram 1 (204/210) e 2 (208/210):
+    //   ln(208/210) + ln(204/210) + ln(204/210) + ln(208/210).
+    let r = |a: f64, b: f64| (a / b).ln();
+    let esperado = [
+        r(346.0, 340.0) + r(334.0, 340.0) + r(338.0, 340.0) + r(342.0, 340.0),
+        2.0 * r(1048.0, 1030.0) + 2.0 * r(1036.0, 1030.0),
+        r(210.0, 208.0) + r(206.0, 208.0) + r(202.0, 208.0) + r(214.0, 208.0),
+        2.0 * r(208.0, 210.0) + 2.0 * r(204.0, 210.0),
+    ];
+    let b = linear(&mini_com_corte(6), &serie_a_mao());
+    assert_eq!(b.regua, Regua::Linear);
+    assert_eq!(
+        b.faixa,
+        FaixaConcursos {
+            primeiro: 3,
+            ultimo: 6
+        }
+    );
+    assert_eq!((b.concursos, b.pares, b.por_dobra.len()), (4, 16, 4));
+    for (d, e) in b.por_dobra.iter().zip(esperado) {
+        assert_eq!((d.concursos, d.pares), (1, 4));
+        assert_perto!(d.ln_fb, e);
+    }
+    assert_perto!(b.ln_fb, esperado.iter().sum::<f64>());
+    assert_perto!(b.log10_fb, b.ln_fb / std::f64::consts::LN_10);
+    // E a referência em ponto flutuante diz o mesmo.
+    assert_perto!(
+        b.ln_fb,
+        referencia_linear(&mini_com_corte(6), &serie_a_mao(), 3, 6)
+    );
+    // A régua por posição, sobre a mesma série, é outra conta (não é a linear).
+    let por_posicao = evidencia_do_indice(&mini_com_corte(6), &serie_a_mao()).unwrap();
+    assert_eq!(por_posicao.regua, Regua::Posicao);
+    assert!((por_posicao.ln_fb - b.ln_fb).abs() > 1e-6);
+}
+
+#[test]
+fn linear_bate_com_a_referencia_em_ponto_flutuante_nas_tres_loterias_e_na_mini() {
+    let casos = [
+        (mini_com_corte(60), 61_u32, 1_u64),
+        (mini_com_corte(60), 61, 99),
+        (com_corte("lotofacil", 400), 430, 11),
+        (com_corte("megasena", 400), 430, 22),
+        (com_corte("quina", 400), 430, 33),
+    ];
+    for (c, concursos, semente) in casos {
+        let obs = serie_aleatoria(&c, concursos, semente, true);
+        let b = linear(&c, &obs);
+        assert_perto!(
+            b.ln_fb,
+            referencia_linear(&c, &obs, b.faixa.primeiro, b.faixa.ultimo)
+        );
+        for d in &b.por_dobra {
+            assert_perto!(
+                d.ln_fb,
+                referencia_linear(&c, &obs, d.faixa.primeiro, d.faixa.ultimo)
+            );
+        }
+        assert!(b.ln_fb != 0.0, "{}: zero trivial", c.slug);
+    }
+}
+
+#[test]
+fn linear_ln_fb_e_menos_pares_vezes_a_diferenca_de_log_loss_linear_do_walk_forward() {
+    // A conferência do plano na função pura, com a régua linear: por dobra,
+    // ln FB = −pares × (log loss linear − log loss do acaso) da linha extra do
+    // `sync avaliar`. Mesma tolerância da 1d.3: 1e-13 × pares × log loss do acaso.
+    for (slug, seed) in [("lotofacil", 11_u64), ("megasena", 22), ("quina", 33)] {
+        let c = com_corte(slug, 400);
+        let obs = serie_aleatoria(&c, 430, seed, true);
+        let b = linear(&c, &obs);
+        let ll = log_loss_linear_da_busca(&c, &obs).expect("log loss linear");
+        assert_eq!(ll.dobras.len(), 5);
+        assert_eq!(b.por_dobra.len(), 4);
+
+        let mut total = 0.0;
+        let mut escala = 0.0;
+        for d in &b.por_dobra {
+            let a = &ll.dobras[d.dobra as usize - 1];
+            assert_eq!(
+                (a.primeiro_concurso, a.ultimo_concurso),
+                (d.faixa.primeiro, d.faixa.ultimo)
+            );
+            assert_eq!(a.concursos_avaliados, d.concursos);
+            let esperado = -(d.pares as f64) * (a.log_loss.perfil - a.log_loss.acaso);
+            let tolerancia = 1e-13 * d.pares as f64 * a.log_loss.acaso;
+            assert!(
+                (d.ln_fb - esperado).abs() <= tolerancia,
+                "{slug} dobra {}: ln FB {} contra {esperado}",
+                d.dobra,
+                d.ln_fb
+            );
+            let da_diferenca = -(d.pares as f64) * a.log_loss.diferenca;
+            assert!((d.ln_fb - da_diferenca).abs() <= tolerancia);
+            total += esperado;
+            escala += d.pares as f64 * a.log_loss.acaso;
+        }
+        assert!((b.ln_fb - total).abs() <= 1e-13 * escala, "{slug}");
+        // O total da linha linear cobre as 5 dobras (a 1 inclusive).
+        assert_eq!(
+            ll.total.concursos_avaliados,
+            ll.dobras
+                .iter()
+                .map(|d| d.concursos_avaliados)
+                .sum::<usize>()
+        );
+    }
+}
+
+#[test]
+fn linear_indice_que_acerta_sempre_e_a_favor_do_indice_e_fica_acima_de_todos_os_inertes() {
+    let c = com_corte("lotofacil", 150);
+    let obs = serie_perfeita(&c, 151, true);
+    let b = linear(&c, &obs);
+    assert_eq!(b.direcao, DirecaoIndice::Indice);
+    assert_eq!(b.grau, Grau::MuitoForte);
+    let inerte = esperado_indice_inerte(&c, &obs, &b, 40, SEMENTE_INERTE).expect("inerte");
+    assert_eq!(inerte.replicas_iguais_ou_acima, 0, "{inerte:?}");
+    assert!(inerte.p975_log10 < b.log10_fb);
+}
+
+#[test]
+fn linear_sinal_monotonico_moderado_fica_acima_da_faixa_dos_inertes() {
+    // Na régua por posição o sinal moderado se perde no custo de aprender;
+    // na linear sobra evidência acima de qualquer inerte (a razão de ser da 1e).
+    let c = com_corte("quina", 1200);
+    let obs = serie_com_sinal(&c, 1200, 5, 0.3);
+    let b = linear(&c, &obs);
+    let inerte = esperado_indice_inerte(&c, &obs, &b, 30, SEMENTE_INERTE).expect("inerte");
+    assert_eq!(b.direcao, DirecaoIndice::Indice);
+    assert!(
+        b.log10_fb > inerte.p975_log10,
+        "{} contra {inerte:?}",
+        b.log10_fb
+    );
+    assert_eq!(inerte.replicas_iguais_ou_acima, 0);
+}
+
+#[test]
+fn linear_nada_acima_do_corte_entra_no_calculo() {
+    let c = com_corte("lotofacil", 300);
+    let base = serie_aleatoria(&c, 340, 5, true);
+    let original = linear(&c, &base);
+
+    // Trocar tudo o que está acima do corte (saiu e posições) não muda nada,
+    // nem o inerte.
+    let outra = serie_aleatoria(&c, 340, 77, true);
+    let mut trocada = base.clone();
+    for o in trocada.iter_mut().filter(|o| o.concurso > 300) {
+        *o = *outra
+            .iter()
+            .find(|x| x.concurso == o.concurso && x.dezena == o.dezena)
+            .unwrap();
+    }
+    let b = linear(&c, &trocada);
+    assert_eq!(b, original);
+    assert_eq!(
+        esperado_indice_inerte(&c, &trocada, &b, 10, SEMENTE_INERTE).unwrap(),
+        esperado_indice_inerte(&c, &base, &original, 10, SEMENTE_INERTE).unwrap()
+    );
+
+    // Nem sequer é validado: um buraco no trancado não atrapalha; o snapshot
+    // do próximo concurso também não conta.
+    let com_buraco: Vec<Observacao> = base.iter().copied().filter(|o| o.concurso != 320).collect();
+    assert_eq!(linear(&c, &com_buraco), original);
+    let sem_trancado: Vec<Observacao> =
+        base.iter().copied().filter(|o| o.concurso <= 300).collect();
+    assert_eq!(linear(&c, &sem_trancado), original);
+}
+
+#[test]
+fn linear_alterar_um_concurso_nao_muda_os_anteriores() {
+    // Ponto no tempo: b_t só com concursos < t. Trocar `saiu` e posições do
+    // último concurso do trecho muda só a dobra dele.
+    let c = com_corte("megasena", 250);
+    let base = serie_aleatoria(&c, 260, 9, true);
+    let original = linear(&c, &base);
+    let outra = serie_aleatoria(&c, 260, 1234, true);
+    let mut mudada = base.clone();
+    for o in mudada.iter_mut().filter(|o| o.concurso == 250) {
+        *o = *outra
+            .iter()
+            .find(|x| x.concurso == 250 && x.dezena == o.dezena)
+            .unwrap();
+    }
+    let depois = linear(&c, &mudada);
+    assert_eq!(depois.por_dobra[..3], original.por_dobra[..3]);
+    assert_ne!(depois.por_dobra[3], original.por_dobra[3]);
+}
+
+#[test]
+fn linear_e_deterministica_bit_a_bit_e_a_estrutura_bate_com_a_da_posicao() {
+    let c = com_corte("lotofacil", 200);
+    let obs = serie_aleatoria(&c, 210, 8, true);
+    let a = linear(&c, &obs);
+    let b = linear(&c, &obs);
+    assert_eq!(a, b);
+    assert_eq!(a.ln_fb.to_bits(), b.ln_fb.to_bits());
+    let mut invertida = obs.clone();
+    invertida.reverse();
+    assert_eq!(linear(&c, &invertida), a);
+
+    // Mesmo trecho, dobras e pares nas duas réguas; só os valores mudam.
+    let p = evidencia_do_indice(&c, &obs).unwrap();
+    assert_eq!(
+        (a.faixa, a.concursos, a.pares),
+        (p.faixa, p.concursos, p.pares)
+    );
+    let estrutura = |e: &EvidenciaIndice| {
+        e.por_dobra
+            .iter()
+            .map(|d| (d.dobra, d.faixa, d.pares))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(estrutura(&a), estrutura(&p));
+    // A função de sempre é a régua por posição.
+    assert_eq!(
+        p,
+        evidencia_do_indice_com(&c, &obs, Regua::Posicao).unwrap()
+    );
+}
+
+#[test]
+fn linear_serie_invalida_e_historico_curto_dao_os_mesmos_erros() {
+    let c = mini_com_corte(60);
+    let mut obs = serie_aleatoria(&c, 61, 2, true);
+    obs.retain(|o| o.concurso != 30);
+    assert!(matches!(
+        evidencia_do_indice_com(&c, &obs, Regua::Linear),
+        Err(SpiderError::AvaliacaoEntradaInvalida(_))
+    ));
+    let c5 = mini_com_corte(5);
+    assert!(matches!(
+        evidencia_do_indice_com(&c5, &serie_aleatoria(&c5, 6, 1, true), Regua::Linear),
+        Err(SpiderError::AvaliacaoSemConcursos(_))
+    ));
+}
+
+// ------------------------------------- índice inerte na régua linear
+
+#[test]
+fn linear_inerte_e_deterministico_usa_a_semente_e_nao_depende_da_ordem() {
+    let c = com_corte("lotofacil", 200);
+    let obs = serie_aleatoria(&c, 210, 8, true);
+    let b = linear(&c, &obs);
+    let x = esperado_indice_inerte(&c, &obs, &b, 20, SEMENTE_INERTE).expect("inerte");
+    let y = esperado_indice_inerte(&c, &obs, &b, 20, SEMENTE_INERTE).expect("inerte");
+    assert_eq!(x, y);
+    assert_eq!(x.media_log10.to_bits(), y.media_log10.to_bits());
+    let mut invertida = obs.clone();
+    invertida.reverse();
+    assert_eq!(
+        esperado_indice_inerte(&c, &invertida, &b, 20, SEMENTE_INERTE).unwrap(),
+        x
+    );
+    let z = esperado_indice_inerte(&c, &obs, &b, 20, SEMENTE_INERTE + 1).unwrap();
+    assert_ne!(z.media_log10.to_bits(), x.media_log10.to_bits());
+    assert_eq!((x.replicas, x.semente), (20, SEMENTE_INERTE));
+    // A régua vem do observado: o inerte da por posição é outro número.
+    let p = evidencia_do_indice(&c, &obs).unwrap();
+    let xp = esperado_indice_inerte(&c, &obs, &p, 20, SEMENTE_INERTE).unwrap();
+    assert_ne!(xp.media_log10.to_bits(), x.media_log10.to_bits());
+}
+
+#[test]
+fn linear_inerte_custa_pouco_e_bem_menos_que_o_da_posicao() {
+    // Mesmas posições e mesma semente nas duas réguas. Custo de aprender:
+    // linear da ordem de ½·ln(1 + T/m) (T = 600: ≈ 0,97 em ln, 0,42 em log10),
+    // por posição da ordem de (N−1)/2·ln(1 + T/m) (Lotofácil: ≈ 11,6 em ln,
+    // 5 em log10). Limites folgados.
+    for (slug, concursos) in [("lotofacil", 600_u32), ("megasena", 600), ("quina", 600)] {
+        let c = com_corte(slug, concursos - 1);
+        let obs = serie_aleatoria(&c, concursos, 3, true);
+        let l = linear(&c, &obs);
+        let p = evidencia_do_indice(&c, &obs).unwrap();
+        let il = esperado_indice_inerte(&c, &obs, &l, 60, SEMENTE_INERTE).unwrap();
+        let ip = esperado_indice_inerte(&c, &obs, &p, 60, SEMENTE_INERTE).unwrap();
+        eprintln!(
+            "{slug}: inerte linear {:+.3} [{:+.3}, {:+.3}], por posição {:+.3}",
+            il.media_log10, il.p025_log10, il.p975_log10, ip.media_log10
+        );
+        let teto = 0.5 * f64::from(concursos).ln() / std::f64::consts::LN_10;
+        assert!(il.media_log10.abs() <= teto, "{slug}: {il:?}");
+        assert!(il.p025_log10 <= il.media_log10 && il.media_log10 <= il.p975_log10);
+        assert!(
+            il.media_log10.abs() * 4.0 <= ip.media_log10.abs(),
+            "{slug}: {} × {}",
+            il.media_log10,
+            ip.media_log10
+        );
+    }
+}
+
+#[test]
+fn linear_inerte_nao_usa_nada_acima_do_fim_da_ultima_dobra() {
+    let c = mini_com_corte(100);
+    let mut obs = serie_informativa(110);
+    let b = linear(&c, &obs);
+    let antes = esperado_indice_inerte(&c, &obs, &b, 10, SEMENTE_INERTE).unwrap();
+    obs.retain(|o| o.concurso <= 100);
+    for t in 101..=110 {
+        obs.extend(concurso_mini(t, [4, 3, 2, 1], Some([3, 4])));
+    }
+    obs.extend(concurso_mini(111, [2, 1, 4, 3], None));
+    assert_eq!(
+        esperado_indice_inerte(&c, &obs, &b, 10, SEMENTE_INERTE).unwrap(),
+        antes
+    );
+}
+
+#[test]
+fn replica_linear_do_inerte_e_a_mesma_conta_de_evidencia_do_indice_com() {
+    // A réplica rápida contra o cálculo direto: refaz os mesmos sorteios
+    // (mesma semente, mesmo baralho), grava-os em `saiu` e roda a evidência
+    // linear completa (calibrar_linear + log loss).
+    for (c, concursos) in [
+        (com_corte("lotofacil", 200), 210),
+        (com_corte("megasena", 180), 190),
+        (com_corte("quina", 150), 160),
+        (mini_com_corte(60), 70),
+    ] {
+        let obs = serie_aleatoria(&c, concursos, 8, true);
+        let b = linear(&c, &obs);
+        let serie = SerieInerte::nova(&c, &obs, b.faixa, Regua::Linear).expect("série");
+        assert!(serie.linear.is_some());
+        for semente in [1, SEMENTE_INERTE] {
+            let rapido = serie
+                .ln_fb_de_uma_replica(&c, &mut SplitMix64::nova(semente))
+                .expect("réplica");
+
+            let mut simuladas = ate_o_corte(&obs, b.faixa.ultimo);
+            simuladas.sort_unstable_by_key(|o| (o.concurso, o.dezena));
+            let n = c.qtd_dezenas_possiveis() as usize;
+            let mut gerador = SplitMix64::nova(semente);
+            let mut baralho: Vec<usize> = (0..n).collect();
+            for grupo in simuladas.chunk_by_mut(|a, b| a.concurso == b.concurso) {
+                if grupo[0].saiu.is_none() {
+                    continue;
+                }
+                grupo.iter_mut().for_each(|o| o.saiu = Some(false));
+                for i in 0..c.qtd_dezenas {
+                    let j = i + gerador.abaixo_de((n - i) as u64).unwrap() as usize;
+                    baralho.swap(i, j);
+                    grupo[baralho[i]].saiu = Some(true);
+                }
+            }
+            let completo = linear(&c, &simuladas);
+            assert!(
+                (rapido - completo.ln_fb).abs() <= 1e-9 * (1.0 + completo.ln_fb.abs()),
+                "{}: {rapido} contra {}",
+                c.slug,
+                completo.ln_fb
+            );
+        }
+    }
+}
+
+#[test]
+fn linear_com_o_limite_de_b_saturado_confere_com_a_referencia_que_aplica_o_clamp() {
+    // O índice perfeito satura b_t (p chega a 0 ou a 1) depois de
+    // poucos concursos. A referência em f64 aplica o clamp de b_t à parte; as
+    // posições que nunca saem têm p = 0 mas só entram como "não saiu" (termo 0),
+    // então não há ln(0). Confere o ramo saturado da conta em inteiros.
+    for slug in ["lotofacil", "megasena", "quina"] {
+        let c = com_corte(slug, 300);
+        let obs = serie_perfeita(&c, 301, true);
+        let b = linear(&c, &obs);
+        let probs = Regua::Linear.calibrar(&c, &obs).expect("calibração");
+        assert!(
+            probs
+                .iter()
+                .any(|p| p.probabilidade == 0.0 || p.probabilidade == 1.0),
+            "{slug}: o índice perfeito deveria saturar o limite de b_t"
+        );
+        assert_perto!(
+            b.ln_fb,
+            referencia_linear(&c, &obs, b.faixa.primeiro, b.faixa.ultimo)
+        );
+        assert_eq!(b.direcao, DirecaoIndice::Indice);
     }
 }

@@ -29,7 +29,7 @@
 
 use crate::avaliacao::{
     self, Cauda, Classificacao, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte,
-    Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward,
+    LogLossLinear, Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward,
 };
 use crate::config::LoteriaConfig;
 use crate::dataset::{ConcursoDataset, Dataset, ImpressoesResultados};
@@ -849,6 +849,10 @@ pub struct RelatorioAvaliacao {
     pub veredito: VereditoTrecho,
     /// Com `--testados` (busca) ou sempre no trancado.
     pub bonferroni: Option<CorrecaoBonferroni>,
+    /// Log loss (perfil − acaso) com a calibração linear da 1e, nas mesmas
+    /// dobras e no mesmo total do walk-forward. Só informativo: nada do
+    /// veredito depende dela. `None` no trancado, que não ganha linha linear.
+    pub linear: Option<LogLossLinear>,
 }
 
 /// `sync avaliar <loteria> --perfil X`: avalia o índice gravado do perfil
@@ -972,7 +976,7 @@ pub fn avaliar_perfil_e_formatar<T>(
     drop(tx);
     let observacoes = &lidas.observacoes;
 
-    let montar = |trecho, veredito, bonferroni| RelatorioAvaliacao {
+    let montar = |trecho, veredito, bonferroni, linear| RelatorioAvaliacao {
         loteria: cfg.slug.to_string(),
         perfil: perfil.nome.clone(),
         versao: perfil.versao,
@@ -986,6 +990,7 @@ pub fn avaliar_perfil_e_formatar<T>(
         trecho,
         veredito,
         bonferroni,
+        linear,
     };
 
     let Some(arquivo) = arquivo else {
@@ -995,7 +1000,8 @@ pub fn avaliar_perfil_e_formatar<T>(
             .testados
             .map(|n| corrigir(&veredito, n))
             .transpose()?;
-        let relatorio = montar(TrechoAvaliado::Busca(wf), veredito, bonferroni);
+        let linear = Some(avaliacao::log_loss_linear_da_busca(cfg, observacoes)?);
+        let relatorio = montar(TrechoAvaliado::Busca(wf), veredito, bonferroni, linear);
         let formatado = formatar(&relatorio);
         return Ok((relatorio, formatado));
     };
@@ -1033,6 +1039,7 @@ pub fn avaliar_perfil_e_formatar<T>(
             TrechoAvaliado::Trancado(Box::new(uso)),
             veredito.clone(),
             bonferroni,
+            None,
         );
         let formatado = formatar(&relatorio);
         // Recarga logo antes de gravar: o uso gravado por outra execução
@@ -1632,9 +1639,15 @@ pub struct IndiceEvidenciado {
     pub primeiro_indice: u32,
     /// Último concurso de `resultados`; o índice vai até ele + 1.
     pub ultimo_concurso: u32,
+    /// B com a calibração linear (1e), a régua principal: dela saem o grau e a
+    /// direção.
     pub evidencia: EvidenciaIndice,
-    /// O esperado de um índice inerte, para comparar com `evidencia`.
+    /// O esperado de um índice inerte na mesma régua linear, para comparar
+    /// com `evidencia`.
     pub inerte: IndiceInerte,
+    /// O FB com a calibração pela posição da 1c, só informativo e **sem
+    /// inerte** (o inerte dessa régua custa de −17 a −60 em ln FB).
+    pub por_posicao: EvidenciaIndice,
 }
 
 /// Por que a evidência do índice (B) não pôde ser calculada, e o que rodar.
@@ -1677,10 +1690,13 @@ pub fn evidencia_completa(
     Ok(EvidenciaCompleta { dezenas, indice })
 }
 
-/// Evidência do índice de força (B, `docs/PLANEJAMENTO.md`, Fase 1d): FB
+/// Evidência do índice de força (B, `docs/PLANEJAMENTO.md`, Fases 1d e 1e): FB
 /// prequencial do perfil `nome` contra o acaso nas dobras de teste 2 a 5 do
-/// walk-forward do `sync avaliar` ([`avaliacao::evidencia_do_indice`]), com o
-/// esperado de um índice inerte ([`avaliacao::esperado_indice_inerte`]). Não
+/// walk-forward do `sync avaliar`, com a calibração linear como régua
+/// principal ([`avaliacao::evidencia_do_indice_com`]) e o esperado de um
+/// índice inerte nela ([`avaliacao::esperado_indice_inerte`]); o FB com a
+/// calibração pela posição ([`avaliacao::evidencia_do_indice`]) vem como linha
+/// informativa, sem inerte. Não
 /// grava nada: lê numa transação desfeita no fim, e nada acima do corte da
 /// busca entra no cálculo (o trancado só passa pela leitura do índice, que a
 /// função pura descarta antes de calibrar).
@@ -1725,12 +1741,17 @@ pub fn evidencia_do_indice_no_banco(
         }
     };
 
-    let evidencia = match avaliacao::evidencia_do_indice(cfg, &lidas.observacoes) {
-        Ok(b) => b,
-        // Histórico curto demais para as 5 dobras do walk-forward.
-        Err(e @ SpiderError::AvaliacaoSemConcursos(_)) => return Ok(indisponivel(e, Vec::new())),
-        Err(e) => return Err(e),
-    };
+    let evidencia =
+        match avaliacao::evidencia_do_indice_com(cfg, &lidas.observacoes, avaliacao::Regua::Linear)
+        {
+            Ok(b) => b,
+            // Histórico curto demais para as 5 dobras do walk-forward.
+            Err(e @ SpiderError::AvaliacaoSemConcursos(_)) => {
+                return Ok(indisponivel(e, Vec::new()))
+            }
+            Err(e) => return Err(e),
+        };
+    let por_posicao = avaliacao::evidencia_do_indice(cfg, &lidas.observacoes)?;
     let inerte = avaliacao::esperado_indice_inerte(
         cfg,
         &lidas.observacoes,
@@ -1749,6 +1770,7 @@ pub fn evidencia_do_indice_no_banco(
         ultimo_concurso: lidas.ultimo,
         evidencia,
         inerte,
+        por_posicao,
     })))
 }
 

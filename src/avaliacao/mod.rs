@@ -43,6 +43,10 @@
 //! Calibração linear na posição (1e.1, [`calibrar_linear`]): um parâmetro em
 //! vez de *N*, para uma régua que distingue "sem sinal" de "sinal fraco".
 //! A calibração por posição da 1c ([`calibrar`]) não muda.
+//!
+//! Régua sensível (1e.2, [`Regua`]): B e o índice inerte passam a usar a
+//! calibração linear; o `sync avaliar` ganha uma linha só informativa de log
+//! loss com ela ([`log_loss_linear_da_busca`]).
 
 mod aleatoriedade;
 mod bootstrap;
@@ -71,7 +75,7 @@ pub use bootstrap::{
     REAMOSTRAGENS_BOOTSTRAP, SEMENTE_BOOTSTRAP,
 };
 pub use calibracao::{
-    calibrar, calibrar_linear, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS,
+    calibrar, calibrar_linear, Observacao, ProbabilidadeDezena, Regua, CONCURSOS_FICTICIOS,
 };
 pub use evidencia::{
     classificar, esperado_sob_o_acaso, evidencia_por_dezena, ln_gamma, log10_fator_bayes,
@@ -80,9 +84,9 @@ pub use evidencia::{
     REPLICAS_ESPERADO, SEMENTE_ESPERADO,
 };
 pub use evidencia_indice::{
-    classificar_indice, esperado_indice_inerte, evidencia_do_indice, DirecaoIndice,
-    DobraEvidenciaIndice, EvidenciaIndice, IndiceInerte, PRIMEIRA_DOBRA_DE_TESTE, REPLICAS_INERTE,
-    SEMENTE_INERTE,
+    classificar_indice, esperado_indice_inerte, evidencia_do_indice, evidencia_do_indice_com,
+    DirecaoIndice, DobraEvidenciaIndice, EvidenciaIndice, IndiceInerte, PRIMEIRA_DOBRA_DE_TESTE,
+    REPLICAS_INERTE, SEMENTE_INERTE,
 };
 pub use metricas::{
     brier, log_loss, metricas_por_concurso, resumir, Comparacao, Intervalo, MetricasConcurso,
@@ -93,8 +97,9 @@ pub use topk::{
     FaixaAcertos, Hipergeometrica, ResumoTopK,
 };
 pub use walk_forward::{
-    dividir_em_dobras, dobras_da_busca, faixa_da_busca, veredito_da_busca, walk_forward,
-    AvaliacaoFaixa, BootstrapTrecho, FaixaConcursos, VereditoTrecho, WalkForward, QTD_DOBRAS,
+    dividir_em_dobras, dobras_da_busca, faixa_da_busca, log_loss_linear_da_busca,
+    veredito_da_busca, walk_forward, AvaliacaoFaixa, BootstrapTrecho, FaixaConcursos,
+    LogLossLinear, VereditoTrecho, WalkForward, QTD_DOBRAS,
 };
 // O trancado só é avaliado pela orquestração, que passa pelo registro de uso
 // único (`registros`); fora do crate não há como avaliá-lo sem o registro.

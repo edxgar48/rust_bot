@@ -1718,14 +1718,18 @@ fn escrever_relatorio(
         s,
         "Log loss (menor é melhor; diferença < 0 = perfil melhor que o acaso):"
     );
-    escrever_tabela_metrica(s, &linhas, |a| &a.metricas.log_loss);
+    escrever_tabela_metrica(s, &linhas_da_metrica(&linhas, |a| &a.metricas.log_loss));
     linha!(s);
     linha!(
         s,
         "Brier (menor é melhor; diferença < 0 = perfil melhor que o acaso):"
     );
-    escrever_tabela_metrica(s, &linhas, |a| &a.metricas.brier);
+    escrever_tabela_metrica(s, &linhas_da_metrica(&linhas, |a| &a.metricas.brier));
     linha!(s);
+    if let Some(linear) = &r.linear {
+        escrever_log_loss_linear(s, linear);
+        linha!(s);
+    }
     let topk = &r.veredito.avaliacao.topk;
     linha!(
         s,
@@ -1798,12 +1802,67 @@ fn escrever_relatorio(
     }
 }
 
-/// Uma tabela de log loss ou Brier: uma linha por dobra (ou o trancado).
-fn escrever_tabela_metrica(
-    s: &mut String,
-    linhas: &[(String, &AvaliacaoFaixa)],
+/// Uma linha de tabela de log loss ou Brier: rótulo, faixa de concursos, T e
+/// a comparação perfil × acaso.
+struct LinhaMetrica<'a> {
+    rotulo: String,
+    faixa: avaliacao::FaixaConcursos,
+    concursos: usize,
+    comparacao: &'a Comparacao,
+}
+
+fn linhas_da_metrica<'a>(
+    linhas: &[(String, &'a AvaliacaoFaixa)],
     metrica: fn(&AvaliacaoFaixa) -> &Comparacao,
-) {
+) -> Vec<LinhaMetrica<'a>> {
+    linhas
+        .iter()
+        .map(|(rotulo, a)| LinhaMetrica {
+            rotulo: rotulo.clone(),
+            faixa: a.faixa,
+            concursos: a.metricas.concursos_avaliados,
+            comparacao: metrica(a),
+        })
+        .collect()
+}
+
+/// Log loss com a calibração linear (1e): mesmas dobras e mesmo total do
+/// walk-forward. Só informativo.
+fn escrever_log_loss_linear(s: &mut String, linear: &avaliacao::LogLossLinear) {
+    linha!(
+        s,
+        "Log loss com a calibração linear na posição (só informativo: o veredito, o \
+         bootstrap, o top-k e as tabelas acima seguem com a calibração pela \
+         posição; diferença < 0 = perfil melhor que o acaso):"
+    );
+    let linhas: Vec<LinhaMetrica> = linear
+        .dobras
+        .iter()
+        .enumerate()
+        .map(|(i, d)| ((i + 1).to_string(), d))
+        .chain(std::iter::once(("total".to_string(), &linear.total)))
+        .map(|(rotulo, d)| LinhaMetrica {
+            rotulo,
+            faixa: avaliacao::FaixaConcursos {
+                primeiro: d.primeiro_concurso,
+                ultimo: d.ultimo_concurso,
+            },
+            concursos: d.concursos_avaliados,
+            comparacao: &d.log_loss,
+        })
+        .collect();
+    escrever_tabela_metrica(s, &linhas);
+    linha!(
+        s,
+        "  Calibração linear: p = K/N + b·z(posição), um parâmetro b estimado só com o \
+         passado (m = {} concursos fictícios com b = 0); ln FB de B no \
+         `sync evidencia` = −pares × a diferença das dobras 2 a 5.",
+        avaliacao::CONCURSOS_FICTICIOS
+    );
+}
+
+/// Uma tabela de log loss ou Brier: uma linha por dobra (ou o trancado).
+fn escrever_tabela_metrica(s: &mut String, linhas: &[LinhaMetrica]) {
     linha!(
         s,
         "  {:>8}  {:>11}  {:>5}  {:>10}  {:>10}  {:>11}  {:>10}  IC 95% (normal)",
@@ -1815,14 +1874,14 @@ fn escrever_tabela_metrica(
         "diferença",
         "EP"
     );
-    for (rotulo, a) in linhas {
-        let c = metrica(a);
+    for l in linhas {
+        let c = l.comparacao;
         linha!(
             s,
             "  {:>8}  {:>11}  {:>5}  {:>10.6}  {:>10.6}  {:>11}  {:>10}  {}",
-            rotulo,
-            descrever_faixa(a.faixa.primeiro, a.faixa.ultimo),
-            a.metricas.concursos_avaliados,
+            l.rotulo,
+            descrever_faixa(l.faixa.primeiro, l.faixa.ultimo),
+            l.concursos,
             c.perfil,
             c.acaso,
             format!("{:+.3e}", c.diferenca),
@@ -2220,39 +2279,43 @@ fn formatar_evidencia_indice(secao: &orquestracao::SecaoIndice, explicito: bool)
                 u64::from(c.corte) + 1
             ));
             linha(format!(
-                "  Probabilidades: calibradas pela posição do índice (m = {} concursos \
-                 fictícios, só com o passado) contra o acaso K/N, ambas com p limitado a \
-                 [{:e}, 1 − {:e}] como no log loss.",
+                "  Probabilidades (régua principal): calibração LINEAR na posição do \
+                 índice, p = K/N + b·z(posição), um parâmetro b estimado só com o \
+                 passado (m = {} concursos fictícios com b = 0), contra o acaso K/N, \
+                 ambas com p limitado a [{:e}, 1 − {:e}] como no log loss.",
                 avaliacao::CONCURSOS_FICTICIOS,
                 avaliacao::LIMITE_PROBABILIDADE,
                 avaliacao::LIMITE_PROBABILIDADE
             ));
             linha(String::new());
             linha(format!(
-                "  log10 FB (índice contra o acaso, prequencial): {:+.3}  →  grau {}, {}.",
+                "  log10 FB (índice contra o acaso, prequencial, calibração linear): {:+.3}  →  grau {}, {}.",
                 b.log10_fb,
                 b.grau.nome(),
                 b.direcao.nome()
             ));
             linha(format!(
-                "  ln FB = {:+.6}; equivale a uma diferença de log loss de {:+.3e} por par \
-                 (perfil − acaso; < 0 = perfil melhor), a mesma do `sync avaliar` nas dobras \
-                 2 a 5, em outra escala.",
+                "  ln FB = {:+.6}; equivale a uma diferença de log loss de {:+.3e} \
+                 por par (perfil − acaso; < 0 = perfil melhor), a mesma da linha de \
+                 log loss com a calibração linear do `sync avaliar` nas dobras 2 a 5, \
+                 em outra escala.",
                 b.ln_fb,
                 -b.ln_fb / b.pares as f64
             ));
             linha(
-                "  FB > 1: a favor do índice; FB ≤ 1 (FB = 1 exato inclusive): a favor do acaso. \
-                 Graus como em A. Ao contrário de A, aqui a favor do acaso não há teto: o índice \
-                 calibrado é um modelo concreto, que pode perder para o acaso por muito."
+                "  FB > 1: a favor do índice; FB ≤ 1 (FB = 1 exato inclusive): a \
+                 favor do acaso. Graus como em A. Ao contrário de A, aqui a favor do \
+                 acaso não há teto: o índice calibrado é um modelo concreto, que pode \
+                 perder para o acaso por muito."
                     .to_string(),
             );
             let inerte = &c.inerte;
             linha(String::new());
             linha(format!(
-                "  Esperado de um índice inerte (as mesmas posições diante de {} históricos \
-                 sorteados ao acaso, semente {}): log10 FB médio {:+.3}; 95 % das réplicas entre \
-                 {:+.3} e {:+.3}.",
+                "  Esperado de um índice inerte, na mesma calibração linear (as \
+                 mesmas posições diante de {} históricos sorteados ao acaso, semente \
+                 {}): log10 FB médio {:+.3}; 95 % das réplicas entre {:+.3} e \
+                 {:+.3}.",
                 inerte.replicas,
                 inerte.semente,
                 inerte.media_log10,
@@ -2260,41 +2323,73 @@ fn formatar_evidencia_indice(secao: &orquestracao::SecaoIndice, explicito: bool)
                 inerte.p975_log10
             ));
             linha(format!(
-                "  Observado contra o inerte: {:+.3} ({:+.3} em relação à média); {} de {} \
-                 réplicas inertes deram log10 FB igual ou maior.",
+                "  Observado contra o inerte: {:+.3} ({:+.3} em relação à média); {} \
+                 de {} réplicas inertes deram log10 FB igual ou maior.",
                 b.log10_fb,
                 b.log10_fb - inerte.media_log10,
                 inerte.replicas_iguais_ou_acima,
                 inerte.replicas
             ));
             linha(
-                "  ATENÇÃO: a calibração estima uma taxa por posição, e isso custa evidência \
-                 mesmo quando o índice não carrega informação nenhuma: um índice inerte já sai \
-                 \"a favor do acaso\" com grau alto. O grau acima não quer dizer, sozinho, que o \
-                 índice atrapalha; o que mostra se ele carrega informação é o observado ficar \
-                 acima da faixa dos inertes."
+                "  ATENÇÃO: mesmo um índice sem informação paga um custo para \
+                 aprender a calibração. Na régua linear (um parâmetro) esse custo é \
+                 pequeno, da ordem de ½·ln T; mesmo assim o grau acima não quer \
+                 dizer, sozinho, que o índice atrapalha: o que mostra se ele carrega \
+                 informação é o observado ficar acima da faixa dos inertes."
+                    .to_string(),
+            );
+            let por_posicao = &c.por_posicao;
+            linha(String::new());
+            linha(format!(
+                "  Informativo, sem inerte — calibração pela posição da 1c (uma taxa \
+                 por posição, m = {} concursos fictícios): log10 FB {:+.3}  →  grau \
+                 {}, {}.",
+                avaliacao::CONCURSOS_FICTICIOS,
+                por_posicao.log10_fb,
+                por_posicao.grau.nome(),
+                por_posicao.direcao.nome()
+            ));
+            linha(
+                "  Essa régua estima N taxas e paga um custo de aprendizado grande \
+                 mesmo para um índice inerte (medido na 1d.3: ln FB médio de cerca de \
+                 −17, −40 e −60 na Lotofácil, Mega-Sena e Quina), então o seu grau \
+                 não decide nada; a linha existe para comparar com a do `sync \
+                 avaliar` e com a edição anterior deste relatório."
                     .to_string(),
             );
             linha(String::new());
             linha("  Por dobra (só informativo; o grau sai do total):".to_string());
             linha(format!(
-                "    {:>5}  {:>11}  {:>9}  {:>8}  {:>10}  {:>14}",
-                "dobra", "concursos", "avaliados", "pares", "log10 FB", "Δ log loss/par"
+                "    {:>5}  {:>11}  {:>9}  {:>8}  {:>10}  {:>14}  {:>10}  {:>14}",
+                "dobra",
+                "concursos",
+                "avaliados",
+                "pares",
+                "log10 FB",
+                "Δ log loss/par",
+                "FB posição",
+                "Δ posição/par"
             ));
-            for d in &b.por_dobra {
+            for (d, p) in b.por_dobra.iter().zip(&por_posicao.por_dobra) {
                 linha(format!(
-                    "    {:>5}  {:>11}  {:>9}  {:>8}  {:>+10.3}  {:>+14.3e}",
+                    "    {:>5}  {:>11}  {:>9}  {:>8}  {:>+10.3}  {:>+14.3e}  {:>+10.3}  {:>+14.3e}",
                     d.dobra,
                     descrever_faixa(d.faixa.primeiro, d.faixa.ultimo),
                     d.concursos,
                     d.pares,
                     d.log10_fb,
-                    -d.ln_fb / d.pares as f64
+                    -d.ln_fb / d.pares as f64,
+                    p.log10_fb,
+                    -p.ln_fb / p.pares as f64
                 ));
             }
             linha(
-                "    Δ log loss/par: log loss do perfil − log loss do acaso na dobra (< 0 = perfil \
-                 melhor), a mesma diferença que o `sync avaliar` mostra por dobra."
+                "    log10 FB e Δ log loss/par: calibração linear (a régua \
+                 principal). Δ log loss/par = log loss do perfil − log loss do acaso \
+                 na dobra (< 0 = perfil melhor), a mesma diferença que o `sync \
+                 avaliar` mostra por dobra na linha linear. FB posição e Δ \
+                 posição/par: o mesmo com a calibração pela posição, que bate com as \
+                 tabelas de log loss do `sync avaliar`."
                     .to_string(),
             );
             linha(String::new());

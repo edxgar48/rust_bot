@@ -433,6 +433,98 @@ fn busca_veredito_cobre_a_uniao_das_dobras() {
 }
 
 #[test]
+fn busca_traz_a_linha_linear_nas_mesmas_dobras_e_no_mesmo_total() {
+    // 1e.2: log loss (perfil − acaso) com a calibração linear, só informativo,
+    // nas mesmas 5 dobras e no mesmo total do walk-forward.
+    let cfg = cfg_corte(CORTE_BAIXO);
+    let p = perfil_teste();
+    let mut conn = preparado(&cfg, &historico(&cfg, 330, SEMENTE), &p);
+
+    let r = busca(&mut conn, &cfg, &p);
+    let wf = walk_forward_de(&r);
+    let linear = r.linear.as_ref().expect("a busca traz a linha linear");
+
+    assert_eq!(linear.dobras.len(), wf.dobras.len());
+    for (l, d) in linear.dobras.iter().zip(&wf.dobras) {
+        assert_eq!(
+            (l.primeiro_concurso, l.ultimo_concurso),
+            (d.faixa.primeiro, d.faixa.ultimo)
+        );
+        assert_eq!(l.concursos_avaliados, d.metricas.concursos_avaliados);
+        // O acaso é o mesmo número, bit a bit; o perfil é outra calibração.
+        assert_eq!(
+            l.log_loss.acaso.to_bits(),
+            d.metricas.log_loss.acaso.to_bits()
+        );
+        assert_ne!(
+            l.log_loss.perfil.to_bits(),
+            d.metricas.log_loss.perfil.to_bits()
+        );
+        // A diferença é média por concurso de perfil − acaso.
+        assert!((l.log_loss.diferenca - (l.log_loss.perfil - l.log_loss.acaso)).abs() < 1e-12);
+    }
+    let total = &r.veredito.avaliacao.metricas;
+    assert_eq!(
+        (
+            linear.total.primeiro_concurso,
+            linear.total.ultimo_concurso,
+            linear.total.concursos_avaliados
+        ),
+        (
+            total.primeiro_concurso,
+            total.ultimo_concurso,
+            total.concursos_avaliados
+        )
+    );
+    assert_eq!(
+        linear.total.log_loss.acaso.to_bits(),
+        total.log_loss.acaso.to_bits()
+    );
+    // O total é a média das dobras ponderada pelos concursos (T ≠ igual).
+    let ponderada: f64 = linear
+        .dobras
+        .iter()
+        .map(|d| d.log_loss.perfil * d.concursos_avaliados as f64)
+        .sum::<f64>()
+        / linear.total.concursos_avaliados as f64;
+    assert!((linear.total.log_loss.perfil - ponderada).abs() < 1e-12);
+}
+
+#[test]
+fn a_linha_linear_nao_muda_o_veredito_nem_o_walk_forward() {
+    // O veredito, o bootstrap, o top-k e a calibração pela posição não dependem
+    // da linha extra: mesmos números que `avaliacao::walk_forward` e
+    // `veredito_da_busca` dão sozinhos, sobre as mesmas observações.
+    let cfg = cfg_corte(CORTE_BAIXO);
+    let p = perfil_teste();
+    let mut conn = preparado(&cfg, &historico(&cfg, 330, SEMENTE), &p);
+    let r = busca(&mut conn, &cfg, &p);
+    let faixa = r.veredito.avaliacao.faixa;
+    let bootstrap = r.veredito.bootstrap.as_ref().expect("199 concursos");
+    assert_eq!(bootstrap.log_loss.concursos, 199);
+    assert_eq!((faixa.primeiro, faixa.ultimo), (2, 200));
+    // Sem a linha linear o relatório seria o mesmo: o veredito vem do
+    // trecho `Busca` e do `bonferroni`, nunca de `linear`.
+    let sem_linear = RelatorioAvaliacao {
+        linear: None,
+        ..r.clone()
+    };
+    assert_eq!(sem_linear.veredito, r.veredito);
+    assert_eq!(sem_linear.trecho, r.trecho);
+    assert_eq!(sem_linear.bonferroni, r.bonferroni);
+}
+
+#[test]
+fn trancado_nao_ganha_linha_linear() {
+    let (cfg, p, mut conn) = cenario_trancado();
+    let pasta = Pasta::nova("trancado_sem_linear");
+
+    let r = avaliar(&mut conn, &cfg, &p, &opcoes_trancado(), &pasta.registros()).expect("trancado");
+
+    assert!(r.linear.is_none());
+}
+
+#[test]
 fn busca_com_199_concursos_tem_bootstrap_com_parametros_fixos() {
     let cfg = cfg_corte(CORTE_BAIXO);
     let p = perfil_teste();
@@ -2112,12 +2204,13 @@ fn cli_avaliar_busca_imprime_o_relatorio_completo() {
     );
     assert!(saida.stdout.contains(&format!("Hash do perfil: {hash}")));
     assert!(saida.stdout.contains("Corte da busca: concurso 3416"));
-    // Cada tabela (log loss, Brier e top-k) tem 5 dobras e a linha "total".
+    // Cada tabela (log loss, Brier, log loss linear e top-k) tem 5 dobras e a
+    // linha "total".
     for rotulo in ["1", "2", "3", "4", "5", "total"] {
         let prefixo = format!("  {rotulo:>8}  ");
         assert_eq!(
             saida.linha_que_comeca_com(&prefixo).len(),
-            3,
+            4,
             "linhas da dobra `{rotulo}`:\n{}",
             saida.stdout
         );
@@ -2138,6 +2231,66 @@ fn cli_avaliar_busca_imprime_o_relatorio_completo() {
     // Nada criado nem alterado.
     assert!(!amb.registros.exists(), "a busca não cria registros/");
     assert_eq!(std::fs::read(&amb.db).expect("banco lido"), banco_antes);
+}
+
+/// O relatório da busca sem o bloco da linha linear (1e.2): do título
+/// "Log loss com a calibração linear na posição" até a linha em branco que o
+/// fecha.
+fn sem_o_bloco_linear(stdout: &str) -> String {
+    let inicio = stdout
+        .find("Log loss com a calibração linear na posição")
+        .expect("bloco da linha linear");
+    let fim = inicio
+        + stdout[inicio..]
+            .find("\n\n")
+            .expect("o bloco termina em linha em branco")
+        + 2;
+    format!("{}{}", &stdout[..inicio], &stdout[fim..])
+}
+
+#[test]
+fn cli_avaliar_busca_com_a_linha_linear_e_a_parte_antiga_byte_a_byte_igual() {
+    // A fixture é a saída do `sync avaliar` do commit anterior à 1e.2 (HEAD
+    // 8dd9d95), gerada com este mesmo cenário (300 concursos, semente fixa,
+    // perfil teste_v1). Tirado o bloco novo, o resto do relatório (veredito,
+    // bootstrap, top-k, calibração pela posição, avisos) sai idêntico.
+    let amb = ambiente("cli_golden", 300, true);
+
+    let saida = avaliar_cli(&amb, &[]);
+
+    assert!(saida.sucesso, "stderr: {}", saida.stderr);
+    let antigo = include_str!("fixtures/avaliar_busca_sem_linha_linear.txt").replace("\r\n", "\n");
+    assert_eq!(sem_o_bloco_linear(&saida.stdout), antigo);
+
+    // O bloco novo: título, tabela com 5 dobras e o total, e a nota.
+    let inicio = saida
+        .stdout
+        .find("Log loss com a calibração linear na posição")
+        .expect("bloco");
+    let bloco = &saida.stdout[inicio..];
+    let bloco = &bloco[..bloco.find("\n\n").expect("fim do bloco")];
+    assert!(bloco.contains("só informativo"), "{bloco}");
+    assert!(bloco.contains("diferença < 0 = perfil melhor que o acaso"));
+    assert!(
+        bloco.contains("dobra    concursos      T      perfil"),
+        "{bloco}"
+    );
+    assert!(bloco.contains("Calibração linear: p = K/N + b·z(posição)"));
+    assert!(bloco.contains("ln FB de B no `sync evidencia`"));
+    let linhas: Vec<&str> = bloco.lines().collect();
+    // título + cabeçalho + 5 dobras + total + nota (2 linhas)
+    assert!(linhas.len() >= 9, "{bloco}");
+    for (i, rotulo) in ["1", "2", "3", "4", "5", "total"].iter().enumerate() {
+        assert!(
+            linhas[i + 2].starts_with(&format!("  {rotulo:>8}  ")),
+            "{}",
+            linhas[i + 2]
+        );
+    }
+    // Ordem: Brier, depois a linha linear, depois o top-k.
+    let pos = |t: &str| saida.stdout.find(t).expect(t);
+    assert!(pos("Brier (menor") < inicio);
+    assert!(inicio < pos("Top-15 (acertos por concurso"));
 }
 
 #[test]
