@@ -125,7 +125,8 @@ Recusas comuns:
 
 `avaliar <lot> --perfil padrao_v1 [--k K] [--testados N]` só lê o banco. Ela
 usa só a **parte de busca**: até o concurso 3416 na Lotofácil, 2759 na
-Mega-Sena e 6421 na Quina.
+Mega-Sena e 6421 na Quina. Além do log loss, do Brier e do top-k, imprime uma
+**linha extra e só informativa**, o log loss com a calibração linear (seção 3).
 
 `--trancado` avalia o **conjunto trancado**, isto é, os concursos depois do
 corte. **É de uso único por perfil** e fica registrado em
@@ -136,9 +137,11 @@ Também só lê o banco.
 
 `evidencia <lot> [--perfil padrao_v1] [--perfis pasta]` mostra **quanta
 evidência os dados dão**, em cinco graus, de que cada dezena tem uma chance
-diferente da esperada e de que o índice de força prevê melhor que o acaso.
-Também só lê o banco, e vale para uma loteria por vez (não aceita `todas`).
-Como ler a saída: seção 5.
+diferente da esperada e de que o índice de força prevê melhor que o acaso. O
+índice é medido com a calibração linear (um parâmetro), ao lado de um índice
+inerte de comparação; a calibração por posição da 1c sai numa linha só
+informativa. Também só lê o banco, e vale para uma loteria por vez (não aceita
+`todas`). Como ler a saída: seção 5.
 
 ### Tabela geral em CSV
 
@@ -228,6 +231,40 @@ atribui. Menor é melhor.
 
 **Brier.** Lê-se do mesmo jeito que o log loss e serve só como informação.
 
+**Log loss com a calibração linear (linha extra, só informativa).** Vem logo
+depois do Brier, com a mesma tabela (cinco dobras e total) e a mesma leitura:
+diferença = perfil − acaso, **negativa = perfil melhor**.
+
+```
+Log loss com a calibração linear na posição (só informativo: ...):
+     dobra    concursos      T      perfil       acaso    diferença   (EP e IC 95% ...)
+         2     685–1367    683    0.673067    0.673012    +5.523e-5   ...
+     total       2–3416   3415    0.672961    0.673012    -5.022e-5   ...
+```
+
+- **Por que existe.** A calibração das tabelas acima (a da 1c) estima uma taxa
+  de acerto por posição: 25, 60 ou 80 números aprendidos só com o passado.
+  Esse aprendizado custa log loss mesmo para um índice sem informação, e é
+  um dos motivos de a diferença dela sair positiva nas três loterias. A calibração
+  linear usa **um parâmetro só**, `p = K/N + b·z(posição)`, com a posição 1
+  valendo +1 e a posição N valendo −1. O custo de aprender é bem menor e a
+  linha enxerga um sinal fraco que a régua por posição afogaria.
+- **Não muda o veredito.** O bootstrap, o "SUPERA/NÃO supera", as tabelas de
+  log loss e Brier, o top-k e o trancado seguem exatamente como eram, com a
+  calibração por posição. A linha linear não tem bootstrap, e o trancado não
+  ganha linha linear.
+- **Como ler.** Uma diferença negativa aqui não é "supera o acaso". O IC normal
+  é otimista (a calibração acumulada gera correlação serial), e o total desta
+  linha inclui a dobra 1, que o `evidencia` não usa. Quem decide se o índice
+  carrega informação é o `evidencia` (seção 5), que põe essa mesma diferença
+  ao lado do que um índice inerte produziria.
+- **Como casa com a parte B do `evidencia`.** Nas dobras 2 a 5, dobra a dobra,
+  `ln FB de B = −pares × diferença desta linha`, com `pares` = concursos
+  avaliados × N. Na Lotofácil, dobra 2: 17 075 pares × +5,523e-5 = +0,943, ou
+  seja, ln FB = −0,943 e log10 FB = −0,410, o número da tabela por dobra do
+  `evidencia`. O total desta linha (dobras 1 a 5) não se compara com o B
+  inteiro, que cobre só as dobras 2 a 5.
+
 **Top-k.** Quantas das k dezenas mais bem posicionadas saíram, em média por
 concurso. Maior é melhor.
 
@@ -268,6 +305,22 @@ Top-6 (...; ao acaso k·K/N = 0.6000):
 | Lotofácil | não supera (p 0,9999) | 0,0014 | top-k acima do acaso: coincide com o desvio de frequência da 1c.4, então investigar os dados antes de concluir |
 | Mega-Sena | não supera (p 1,0) | 0,55 | comportamento de acaso |
 | Quina | não supera (p 1,0) | 0,010 | igual à Lotofácil |
+
+**Linha linear com `padrao_v1` em 2026-10-10** (diferença perfil − acaso do log
+loss; o veredito acima não mudou nas três):
+
+| Loteria | Total (dobras 1–5) | Dobras 1 / 2 / 3 / 4 / 5 |
+|---|---|---|
+| Lotofácil | −5,02e-5 | −2,67e-4 / +5,5e-5 / +6,1e-5 / −2,7e-5 / −7,3e-5 |
+| Mega-Sena | +9,86e-6 | +2,4e-6 / +3,1e-5 / −5,7e-6 / +1,3e-5 / +8,4e-6 |
+| Quina | +3,63e-6 | +1,2e-5 / +3,1e-6 / +2,2e-6 / +1,1e-6 / −4,4e-7 |
+
+Os sinais se misturam nas dobras (Lotofácil), o zero cabe no IC (Mega-Sena) ou a
+diferença é minúscula (Quina, em que o IC normal, otimista, mal exclui o zero,
+do lado positivo: perfil um pouco pior que o acaso). Em vez de +3,5e-4
+(Lotofácil) ou +2,5e-4 (Quina) da régua por posição, as
+diferenças ficam pequenas e, em boa parte, de sinal misto: o custo de
+aprendizado quase sumiu e o que sobra está perto de zero.
 
 ## 4. Como interpretar o `aleatoriedade`
 
@@ -338,9 +391,9 @@ duas partes:
   Lotofácil, 6/60 na Mega-Sena, 5/80 na Quina)? Usa só `resultados` e vale
   para o próximo concurso.
 - **B. Do índice de força:** o índice de um perfil prevê melhor que o acaso?
-  É a mesma diferença de log loss do `avaliar`, traduzida em graus. Se o
-  índice ou as features não estiverem em dia, a parte A sai do mesmo jeito e a
-  B mostra o motivo e os comandos a rodar.
+  É a diferença de log loss da **linha linear** do `avaliar` (seção 3),
+  traduzida em graus. Se o índice ou as features não estiverem em dia, a
+  parte A sai do mesmo jeito e a B mostra o motivo e os comandos a rodar.
 
 ### O fator de Bayes e os cinco graus
 
@@ -421,28 +474,77 @@ concurso a concurso só nas **dobras de teste 2 a 5** do mesmo walk-forward do
 (FB > 1) ou `a favor do acaso`, e **não há teto** a favor do acaso, porque o
 índice é um modelo concreto, que pode perder muito para o acaso.
 
-**Cuidado com o grau sozinho.** Com `padrao_v1`, a parte B sai "muito forte, a
-favor do acaso" nas três loterias (log10 FB de −7,3 na Lotofácil, −13,6 na
-Mega-Sena e −25,0 na Quina). Isso **não quer dizer que o índice atrapalha**: a
-calibração estima uma taxa de acerto para cada posição (25, 60 ou 80 taxas), e
-essa estimativa custa evidência mesmo quando o índice não carrega informação
-nenhuma. Um índice **inerte** já sai "muito forte, a favor do acaso".
+**A régua principal é a calibração linear.** Ela transforma a posição do
+índice em probabilidade com um parâmetro só, `p = K/N + b·z(posição)`, e o
+`b` é aprendido só com o passado. **O grau e a direção da parte B saem dela.**
+É a mesma calibração da linha extra do `avaliar` (seção 3), e o relatório
+confere os dois: `ln FB = −pares × diferença de log loss` da linha linear,
+dobra a dobra. Como aprender um `b` custa pouco (da ordem de ½·ln T, contra
+(N−1)/2·ln T de uma taxa por posição), a régua distingue melhor "sem sinal" de
+"sinal fraco". O que ela não enxerga é sinal que não seja monotônico na
+posição (por exemplo, só a posição 7 boa), o que num índice ordenado por força
+não faz sentido.
 
-Por isso o relatório imprime, ao lado, o esperado de um índice inerte: as
-mesmas posições do perfil diante de 200 históricos simulados ao acaso (semente
-20261010), com a média, a faixa de 95 % e quantas réplicas igualaram ou
-superaram o observado. **O índice só mostra informação se o observado ficar
-acima da faixa dos inertes.** Resultado em 2026-10-10:
+**O índice inerte também é medido na régua linear.** Mesmo um índice sem
+informação paga um custo para aprender o `b`: o relatório imprime um
+`ATENÇÃO` dizendo isso, e o custo, embora pequeno, não é zero (por isso o
+`log10 FB` de um inerte fica em torno de −0,3, e não em 0). Então o grau
+sozinho não diz se o índice atrapalha ou ajuda. O relatório imprime, ao lado,
+o esperado de um índice inerte: as mesmas posições do perfil diante de 200
+históricos simulados ao acaso (semente 20261010), com a média, a faixa de 95 %
+e quantas réplicas igualaram ou superaram o observado. **O índice só mostra
+informação se o observado ficar acima da faixa dos inertes.** Resultado em
+2026-10-10 (`padrao_v1`):
 
 | Loteria | log10 FB observado | Média do inerte | Faixa de 95 % do inerte | Réplicas ≥ observado |
 |---|---|---|---|---|
-| Lotofácil | −7,31 | −7,48 | de −11,67 a −3,93 | 91 de 200 |
-| Mega-Sena | −13,59 | −17,58 | de −22,42 a −12,75 | 12 de 200 |
-| Quina | −25,00 | −26,18 | de −32,39 a −19,71 | 72 de 200 |
+| Lotofácil | −0,121 | −0,291 | de −1,019 a +0,554 | 38 de 200 |
+| Mega-Sena | −0,674 | −0,295 | de −1,172 a +0,310 | 181 de 200 |
+| Quina | −0,268 | −0,330 | de −1,046 a +0,226 | 65 de 200 |
 
-Nas três loterias o observado cai dentro da faixa: **o índice é
+Grau e direção do observado: "muito fraca, a favor do acaso" na Lotofácil,
+"fraca, a favor do acaso" na Mega-Sena e "muito fraca, a favor do acaso" na
+Quina. Nas três loterias o observado cai dentro da faixa: **o índice é
 indistinguível de um índice sem informação**, o mesmo que o `avaliar` já
-mostrava na seção 3.
+mostrava na seção 3. Dentro da faixa, a posição não importa: a Lotofácil e a
+Quina ficam um pouco acima da média dos inertes (38 e 65 réplicas de 200 foram
+iguais ou melhores) e a Mega-Sena um pouco abaixo (181 de 200), mas nenhuma das
+três é um resultado que um inerte não produza com frequência. Um "fraca, a
+favor do acaso" na Mega-Sena, portanto, não quer dizer que o índice atrapalha.
+As 200 réplicas dão uma contagem aproximada, com resolução de 0,5 ponto
+percentual.
+
+**Por dobra (só informativo; o grau sai do total).** A tabela do relatório
+traz, para cada dobra 2 a 5, o `log10 FB` e a `Δ log loss/par` (perfil − acaso,
+negativa = perfil melhor) da régua linear. É a mesma diferença que o `avaliar`
+mostra por dobra na linha linear, e a conferência acima vale para cada linha.
+Exemplo da Lotofácil:
+
+```
+    dobra    concursos  avaliados     pares    log10 FB  Δ log loss/par  FB posição   Δ posição/par
+        2     685–1367        683     17075      -0.410       +5.523e-5      -3.238       +4.366e-4
+        5    2734–3416        683     17075      +0.539       -7.273e-5      -0.209       +2.818e-5
+```
+
+Se o sinal das dobras muda (aqui, dobras 2 e 3 contra 4 e 5), o resultado não
+é estável ao longo do tempo, o mesmo critério do `avaliar`.
+
+**A calibração por posição da 1c virou uma linha informativa, sem inerte.**
+O relatório ainda mostra o log10 FB com a régua antiga (uma taxa por posição),
+nas colunas `FB posição` e `Δ posição/par` e numa linha à parte:
+
+| Loteria | log10 FB, calibração por posição |
+|---|---|
+| Lotofácil | −7,313 |
+| Mega-Sena | −13,587 |
+| Quina | −24,998 |
+
+Esse grau é "muito forte, a favor do acaso" nas três, e **não decide nada**:
+estimar 25, 60 ou 80 taxas custa de −17 a −60 em ln FB mesmo para um índice
+inerte (medido na 1d.3), e por isso não há inerte nesta linha. Ela existe só
+para comparar com as tabelas de log loss do `avaliar` (que continuam por
+posição) e com a edição anterior do relatório. Quem lê "muito forte, a favor do
+acaso" nesta linha não deve concluir que o índice atrapalha.
 
 Ressalvas que o relatório também imprime: as dezenas de um concurso são
 tratadas como independentes (na verdade, elas somam exatamente K), então o FB é
@@ -452,8 +554,12 @@ para isso).
 
 ### Resumo: o que a evidência não diz
 
-- Um grau alto **a favor do acaso** em B não prova que o índice atrapalha;
-  compare com a faixa do inerte.
+- Um grau **a favor do acaso** em B não prova que o índice atrapalha;
+  compare com a faixa do inerte, que a régua linear também imprime. O grau
+  "muito forte, a favor do acaso" da linha por posição não decide nada.
+- Um observado dentro da faixa do inerte quer dizer "sem sinal detectável",
+  não "sinal zero": a régua linear é mais sensível que a por posição, mas ainda
+  só vê sinal monotônico na posição.
 - Um "muito fraca, a favor do acaso" em A é o melhor que o acaso pode obter,
   não falta de dados.
 - Uma dezena destacada em A precisa ser lida contra o esperado sob o acaso para
@@ -519,7 +625,10 @@ Rotina depois de cada sorteio, para cada loteria:
    contagem observada de dezenas "moderada" ou mais bate com a seção 5 (e se
    continua perto do esperado sob o acaso), se o máximo atingível a favor do
    acaso é o da tabela da seção 5 e se, na parte B, o observado ainda está
-   dentro da faixa do índice inerte. Depois abra o CSV do `tabela`: o grau e a
+   dentro da faixa do índice inerte da régua linear (e se a linha por posição,
+   informativa, continua em −7,3, −13,6 e −25,0). Confira também, em qualquer
+   dobra de B, que `ln FB = −pares × Δ log loss/par` e que o Δ é o da linha
+   linear do `avaliar` (a conta da seção 3). Depois abra o CSV do `tabela`: o grau e a
    direção da dezena devem ser os mesmos da primeira janela do `evidencia`.
 
 ## 8. Cuidados

@@ -93,7 +93,9 @@ cargo run --bin sync -- features quina --completo   # ignora o estado salvo e re
 cargo run --bin sync -- indice quina --perfil padrao_v1
 cargo run --bin sync -- indice quina --perfil padrao_v1 --perfis outra/pasta   # perfis fora de `perfis/`
 
-# avalia o índice de um perfil contra o acaso no trecho de busca (rode `indice` antes; só lê o banco)
+# avalia o índice de um perfil contra o acaso no trecho de busca (rode `indice` antes; só lê o
+# banco). Além do log loss/Brier/top-k, imprime uma linha extra, só informativa: o log loss com a
+# calibração linear na posição (perfil − acaso, no total e por dobra), que não muda o veredito
 cargo run --bin sync -- avaliar quina --perfil padrao_v1
 cargo run --bin sync -- avaliar quina --perfil padrao_v1 --k 10 --testados 3   # outro k; Bonferroni por 3 testados
 cargo run --bin sync -- avaliar quina --perfil padrao_v1 --trancado            # conjunto TRANCADO: uso único por perfil
@@ -106,15 +108,22 @@ cargo run --bin sync -- aleatoriedade todas
 #     de K/N com sensibilidade de 2,5 % e 10 %, a contagem de dezenas por grau ao lado da esperada
 #     sob o acaso (simulação, semente fixa) e, por janela e priori, o máximo atingível a favor do
 #     acaso (`log10 √(1 + Var_priori/Var_amostral)`: a favor do acaso a evidência tem teto).
-#  B) do índice de força de um perfil: FB prequencial (soma, par a par, de ln p_índice − ln p_acaso
-#     com a calibração pela posição da 1c) nas dobras de teste 2 a 5 do walk-forward do `avaliar`,
-#     com grau, direção ("a favor do índice" se FB > 1, senão "a favor do acaso") e o log10 FB por
-#     dobra (com a Δ log loss por par). É a diferença de log loss do `avaliar` em outra escala:
-#     ln FB = −pares × (log loss do perfil − log loss do acaso). O trancado não entra no cálculo
-#     (nada acima do corte da busca). Ao lado, o esperado de um ÍNDICE INERTE (as mesmas posições
-#     diante de 200 históricos sorteados ao acaso, semente 20261010): a calibração por posição custa
-#     evidência mesmo sem informação nenhuma, então um inerte já sai "muito forte, a favor do
-#     acaso". O índice só mostra algo se o observado ficar acima da faixa de 95 % dos inertes.
+#  B) do índice de força de um perfil: FB prequencial (soma, par a par, de ln p_índice − ln p_acaso)
+#     nas dobras de teste 2 a 5 do walk-forward do `avaliar`, com grau, direção ("a favor do índice"
+#     se FB > 1, senão "a favor do acaso") e o log10 FB por dobra (com a Δ log loss por par). A
+#     régua PRINCIPAL é a calibração LINEAR na posição da 1e (`p = K/N + b·z(posição)`, um parâmetro
+#     `b` aprendido só com o passado, m = 100 concursos fictícios): grau e direção saem dela. É a
+#     diferença de log loss da linha linear do `avaliar` em outra escala: ln FB = −pares × (log loss
+#     do perfil − log loss do acaso), dobra a dobra (pares = concursos avaliados × N). O trancado
+#     não entra no cálculo (nada acima do corte da busca). Ao lado, o esperado de um ÍNDICE INERTE
+#     na mesma régua linear (as mesmas posições diante de 200 históricos sorteados ao acaso, semente
+#     20261010), com média, faixa de 95 % e quantas réplicas deram log10 FB igual ou maior que o
+#     observado. ATENÇÃO: mesmo um índice sem informação paga um custo para aprender a calibração
+#     (na linear é pequeno, da ordem de ½·ln T), então o grau sozinho não diz se o índice atrapalha:
+#     o índice só mostra algo se o observado ficar ACIMA da faixa de 95 % dos inertes. A calibração
+#     por posição da 1c (uma taxa por posição) sai numa linha INFORMATIVA, sem inerte: o custo de
+#     aprender N taxas (−17 a −60 em ln FB mesmo para um inerte) faz o seu grau "muito forte, a
+#     favor do acaso" não decidir nada.
 #  `--perfil` escolhe o perfil de B (padrão: o perfil ativo da loteria, `padrao_v1`); `--perfis`
 #  muda a pasta dos perfis (padrão `perfis`). B tem as mesmas pré-condições do `avaliar` (perfil
 #  registrado com o hash do `.toml`, `features` e `indice` em dia). Se B não puder ser calculada, A
@@ -265,9 +274,17 @@ em 5 dobras de walk-forward no trecho de busca (até o corte fixo da loteria,
 (10 000 reamostragens, semente fixa) sobre as diferenças perfil − acaso do log
 loss por concurso: p-valor unilateral e IC 95% percentil, α = 5% (o Brier
 passa pelo mesmo bootstrap só como informação). Trecho com menos de 100
-concursos fica sem veredito. Os p-valores só valem se o perfil e o k foram
-escolhidos sem ver o trecho: quem testou vários informa quantos com
-`--testados N` (Bonferroni, p·N limitado a 1). Só lê o banco (aberto só para
+concursos fica sem veredito. Entre o Brier e o top-k vai uma **linha extra,
+só informativa**: o log loss (perfil − acaso, no total e nas 5 dobras) com a
+**calibração linear na posição** (Fase 1e: `p = K/N + b·z(posição)`, um único
+parâmetro `b` estimado só com o passado, com m = 100 concursos fictícios com
+b = 0, que custa muito menos para aprender que as N taxas da calibração por
+posição). Ela não tem bootstrap nem veredito, o trancado não ganha linha
+linear, e o resto do relatório (tabelas, veredito, top-k) sai igual ao de
+antes; é a mesma diferença que a parte B do `sync evidencia` converte em fator
+de Bayes (ln FB = −pares × diferença, nas dobras 2 a 5). Os p-valores só valem
+se o perfil e o k foram escolhidos sem ver o trecho: quem testou vários informa
+quantos com `--testados N` (Bonferroni, p·N limitado a 1). Só lê o banco (aberto só para
 leitura) e recusa, sem avaliar: `todas`; perfil de outra loteria, fora de
 `perfis` ou com hash diferente do `.toml` em disco; resultados com buraco ou
 erro de integridade; features desatualizadas (como no `indice`); índice que

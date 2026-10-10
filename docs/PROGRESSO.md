@@ -56,7 +56,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1e.1 `calibrar_linear` (um parâmetro, encolhimento m = 100) + testes
 - [x] 1e.2 B e índice inerte na calibração linear; linha extra no `sync avaliar`
-- [ ] 1e.3 `docs/GUIA.md` e README com a leitura nova; números das três loterias
+- [x] 1e.3 `docs/GUIA.md` e README com a leitura nova; números das três loterias
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
@@ -1426,3 +1426,27 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   checagem de tamanho; README:110 ainda descreve B pela posição (entra na 1e.3, junto do novo ATENÇÃO do
   inerte e da frase de que o custo da régua por posição não decide nada). `cargo doc -D warnings` já falha
   por links a itens privados (pré-existente, fora da tarefa).
+- 2026-10-10 — 1e.3 concluída (engenheiro-avaliacao). Só documentação: `docs/GUIA.md` (seção 2, avaliar e
+  evidencia; seção 3, subseção nova da linha linear com exemplo, tabela por dobra e a conta
+  ln FB = −pares × Δ log loss nas dobras 2–5; seção 5, "Parte B" reescrita com a régua linear como
+  principal, ATENÇÃO do inerte, faixa de 95 % e a régua por posição como informativa, cujo custo de
+  −17 a −60 em ln FB "não decide nada"; Resumo e roteiro da seção 7 ajustados) e `README.md` (comentários
+  do `avaliar` e do bloco B do `evidencia`, parágrafo do `avaliar`). Fecha a pendência BAIXA de README:110
+  da 1e.2. Números (`padrao_v1`, cópias, release; iguais aos da 1e.2) — Lotofácil / Mega-Sena / Quina:
+  - B linear, log10 FB observado: −0,121 / −0,674 / −0,268 → muito fraca / fraca / muito fraca, a favor
+    do acaso; média do inerte −0,291 / −0,295 / −0,330; faixa 95 % [−1,019; +0,554] / [−1,172; +0,310] /
+    [−1,046; +0,226]; réplicas ≥ observado 38 / 181 / 65 de 200 — nas três, dentro da faixa do inerte;
+  - B por posição (informativa): −7,313 / −13,587 / −24,998;
+  - linha linear do `avaliar`, Δ log loss total (dobras 1–5): −5,02e-5 / +9,86e-6 / +3,63e-6; por dobra
+    (1 a 5) Lotofácil −2,67e-4, +5,52e-5, +6,12e-5, −2,75e-5, −7,27e-5; Mega-Sena +2,4e-6, +3,11e-5,
+    −5,7e-6, +1,31e-5, +8,4e-6; Quina +1,21e-5, +3,09e-6, +2,23e-6, +1,14e-6, −4,4e-7; Δ por par nas
+    dobras 2–5 (base de B) +4,063e-6 / +1,171e-5 / +1,503e-6;
+  - linha por posição do `avaliar`, Δ total: Lotofácil +3,51e-4, Quina +2,53e-4; veredito "NÃO supera o acaso"
+    nas três (p 0,9999 / 1,0000 / 1,0000), inalterado.
+  O Δ total negativo da Lotofácil vem quase todo da dobra 1 e o GUIA avisa que não é "supera o acaso".
+  Revisão: aprovada com ressalvas (1 MÉDIA: Δ por posição da Quina citado como +2,9e-5, que era o EP —
+  corrigido para +2,5e-4; 2 BAIXA: lado do IC da linha linear da Quina e nove linhas novas do README
+  acima de 100 colunas), corrigidas numa rodada e conferidas pelo orquestrador. Gate: fmt ok, clippy ok,
+  cargo test verde (lib 547, 3 ignorados; sync 32, avaliar 89, conformidade 4, dataset 25, evidencia 20,
+  features 56, indice 57, parser 10, tabela 13), pytest 175, `validar todas` ok. **Fase 1e concluída.**
+  **Nota:** `docs/GUIA.md` está em CRLF na cópia de trabalho (`core.autocrlf=true`); no índice é LF.
