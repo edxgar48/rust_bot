@@ -123,8 +123,11 @@ cargo run --bin sync -- aleatoriedade todas
 cargo run --bin sync -- evidencia quina
 cargo run --bin sync -- evidencia quina --perfil busca_v1 --perfis outra/pasta
 
-# tabela geral em CSV (Excel: `;` e vírgula decimal), um arquivo por concurso
+# tabela geral em CSV (Excel: `;`, vírgula decimal, UTF-8 com BOM), um arquivo por concurso
 # em tabelas/<loteria>/tabela_<loteria>_<perfil>_<concurso>.csv
+# 21 colunas; as duas últimas, `evidencia_grau` e `evidencia_direcao`, trazem a evidência por dezena
+# (A do `evidencia`: histórico inteiro, priori de 5 %) no ponto no tempo do concurso — só concursos até
+# o anterior —, com os mesmos rótulos do `evidencia`; vazias no concurso 1. Como ler: docs/GUIA.md.
 cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
 cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concurso já sorteado (com `saiu`)
 

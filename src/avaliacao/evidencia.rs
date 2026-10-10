@@ -464,7 +464,9 @@ fn chance_e_prioris(cfg: &LoteriaConfig) -> Result<(f64, [Priori; QTD_PRIORIS])>
 /// concursos entram (e só eles são conferidos).
 ///
 /// Os concursos usados precisam ser seguidos (sem buraco nem repetição) e
-/// válidos como no `sync validar`; senão, [`SpiderError::EvidenciaEntradaInvalida`].
+/// válidos como no `sync validar`, e o histórico precisa chegar até `t−1`
+/// (`t` acima de "último + 1" é recusado, não vira o snapshot do último);
+/// senão, [`SpiderError::EvidenciaEntradaInvalida`].
 /// Nenhum concurso antes de `t` é [`SpiderError::AvaliacaoSemConcursos`].
 pub fn evidencia_por_dezena(
     cfg: &LoteriaConfig,
@@ -479,6 +481,20 @@ pub fn evidencia_por_dezena(
 
     let mut anteriores: Vec<&Resultado> = resultados.iter().filter(|r| r.concurso < t).collect();
     anteriores.sort_by_key(|r| r.concurso);
+    // O snapshot de `t` precisa terminar em `t−1`. Sem isso, um `t` acima de
+    // "último + 1" devolveria em silêncio o snapshot do último concurso como se
+    // fosse o de `t` (e um concurso `t−1` ausente passaria despercebido).
+    // Só olha concursos `< t`, então o ponto no tempo se mantém.
+    if let Some(ultimo_anterior) = anteriores.last().map(|r| r.concurso) {
+        if ultimo_anterior != t - 1 {
+            return Err(invalida(format!(
+                "o concurso {} não está nos resultados (o último antes do {t} é o \
+                 {ultimo_anterior}): a evidência de {t} exige o histórico até {}",
+                t - 1,
+                t - 1
+            )));
+        }
+    }
     let usados: &[&Resultado] = match janela {
         Janela::Inteira => &anteriores,
         Janela::Ultimos(j) => &anteriores[anteriores.len().saturating_sub(j)..],

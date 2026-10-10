@@ -50,7 +50,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1d.1 Conferir os desvios de frequência da 1c.4 contra fonte independente
 - [x] 1d.2 Evidência por dezena (fator de Bayes, cinco graus) + `sync evidencia`
 - [x] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
-- [ ] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
+- [x] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
@@ -1333,3 +1333,36 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   lido"); README ("o trancado não entra no cálculo"); função da orquestração renomeada para
   `evidencia_do_indice_no_banco`. 1d.4 passa a incluir a ressalva do inerte no GUIA. Gate: fmt,
   clippy, cargo test verde (lib 506, evidencia 19, ...), pytest 175.
+- 2026-10-10 — 1d.4: interpretação adotada pelo orquestrador (revisável; sem como perguntar ao
+  usuário nesta execução): duas colunas no fim do CSV do `sync tabela` (`evidencia_grau`,
+  `evidencia_direcao`), mesmos rótulos do `sync evidencia`, sem log10 FB; evidência A, histórico
+  inteiro, priori 5 %, ponto no tempo (CSV do concurso t usa concursos ≤ t−1; padrão = último + 1);
+  calculada sob demanda, sem tabela nova; `todas` continua valendo.
+- 2026-10-10 — 1d.4 concluída (engenheiro-avaliacao). `src/tabela.rs` (21 colunas; `BOM` UTF-8 no
+  início do CSV), `src/orquestracao.rs` (`LinhaTabela.evidencia: Option<Classificacao>`, vazia no
+  concurso 1, invariante com `debug_assert`), `src/avaliacao/evidencia.rs` (pendência BAIXA da 1d.2
+  resolvida: `evidencia_por_dezena` recusa com `EvidenciaEntradaInvalida` se o último concurso < t não
+  for t−1, o que cobre t > último + 1), testes em `src/tabela.rs`, `src/avaliacao/evidencia/tests.rs` e
+  `tests/tabela.rs` (conferência contra `evidencia_por_dezena` nos concursos 2, 120 e próximo; ponto no
+  tempo; concurso 1 vazio; BOM; 10 pares de rótulos). `docs/GUIA.md`: seção nova 5 "Como interpretar o
+  `evidencia`" (graus, direção, priori, teto a favor do acaso por loteria/janela, esperado sob o acaso,
+  B e a ressalva do índice inerte), seções 5–7 renumeradas para 6–8, seção do CSV com as colunas novas,
+  seção 4 corrigida com a conclusão da 1d.1 (concentração 1899–3796 refutada; cobertura real das
+  fontes), preâmbulo sem data fixa. README atualizado. Pendência "O(t) por chamada" fica sem versão
+  incremental (uma chamada por CSV, ~0,3 s em release). Itens de carona de `tests/evidencia.rs` já
+  estavam resolvidos.
+  **Desvio a confirmar:** o CSV do `sync tabela` passa a ser **UTF-8 com BOM** (achado MÉDIA da 1ª
+  revisão: "a favor de viés" é o primeiro texto não ASCII, e o Excel pt-BR sem BOM mostraria
+  "viÃ©s"). O CSV do `sync dataset` segue sem BOM. Registrar no PLANEJAMENTO.md (1b, `sync tabela`:
+  "UTF-8 com BOM, `;`, vírgula decimal") depende de aprovação do usuário.
+  Revisão: 1ª aprovada com ressalvas (1 MÉDIA, 3 BAIXA), corrigidas numa rodada; 2ª aprovada com
+  ressalvas, só BAIXA. Gate: fmt ok, clippy ok, cargo test verde (lib 510, sync 32, avaliar 85,
+  conformidade 4, dataset 25, evidencia 19, features 56, indice 57, parser 10, tabela 13), pytest 175,
+  `validar todas` ok. **Fase 1d concluída.**
+  **Pendências BAIXA:** `docs/GUIA.md:160` com linha de 102 colunas (quebra do parágrafo "Formato");
+  CSVs antigos em `tabelas/` (19 colunas, sem BOM) convivem com os novos — regeneráveis com
+  `--concurso N`.
+- 2026-10-10 — Decisões do usuário sobre a 1d.4 ("aceito todas as sugestões"): BOM UTF-8 no CSV do
+  `sync tabela` aprovado e registrado no plano (Fase 1b); o CSV do `sync dataset` segue sem BOM.
+  Linha longa de `docs/GUIA.md:160` requebrada. CSVs antigos em `tabelas/` (fora do git, 19 colunas,
+  sem BOM) ficam como estão; regerar com `sync tabela <loteria> --concurso N` quando precisar.

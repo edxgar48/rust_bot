@@ -558,6 +558,28 @@ fn evidencia_primeiro_concurso_sem_historico_e_erro() {
     assert_eq!(e.concursos, 1);
 }
 
+#[test]
+fn evidencia_de_t_acima_de_ultimo_mais_um_e_recusada() {
+    let c = cfg("lotofacil");
+    let h = historico(c, 1, 30, 4);
+    // t = último + 1 vale; t = último + 2 e acima não viram o snapshot do último.
+    assert!(evidencia_por_dezena(c, &h, 31, Janela::Inteira).is_ok());
+    for t in [32, 33, 1000, u32::MAX] {
+        for janela in [Janela::Inteira, Janela::Ultimos(10)] {
+            let m = detalhe(evidencia_por_dezena(c, &h, t, janela));
+            assert!(m.contains("o concurso") && m.contains("não está"), "{m}");
+        }
+    }
+    let m = detalhe(evidencia_por_dezena(c, &h, 33, Janela::Inteira));
+    assert!(m.contains("o concurso 32 não está"), "{m}");
+    assert!(m.contains("o último antes do 33 é o 30"), "{m}");
+
+    // Falta o t−1 mesmo havendo concursos adiante: o passado não chega a t−1.
+    let mut sem_ultimo = h.clone();
+    sem_ultimo.remove(29); // sem o concurso 30
+    assert!(evidencia_por_dezena(c, &sem_ultimo, 31, Janela::Inteira).is_err());
+}
+
 fn detalhe(r: Result<EvidenciaJanela>) -> String {
     match r {
         Err(SpiderError::EvidenciaEntradaInvalida(m)) => m,

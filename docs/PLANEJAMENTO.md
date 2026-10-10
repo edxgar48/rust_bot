@@ -258,7 +258,9 @@ da fase que a tarefa toca. Regras que as fases seguintes usam:
 - **1b — Índice**: perfis `.toml`, normalização, posição e variação;
   `sync indice <loteria> --perfil X` (recusa features desatualizadas, de
   outros resultados ou de outra `feature_version`) e `sync tabela` (CSV por
-  concurso para o Excel, pasta `tabelas/` fora do git).
+  concurso para o Excel, pasta `tabelas/` fora do git; UTF-8 com BOM, `;`,
+  vírgula decimal — o BOM faz o Excel em português ler os acentos; decisão
+  de 2026-10-10, na 1d.4. O CSV do `sync dataset` segue sem BOM).
 - **1c — Avaliação**: `sync avaliar` e `sync aleatoriedade`.
   - **Probabilidade** pela posição no índice, só com o passado:
     `p_t(r) = (saídas da posição r antes de t + m·K/N) / (concursos antes de t + m)`,

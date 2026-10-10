@@ -28,8 +28,8 @@
 //! ([`classificar_atualizacao`], tarefa 0.8).
 
 use crate::avaliacao::{
-    self, Cauda, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte, Observacao,
-    ResumoAleatoriedade, VereditoTrecho, WalkForward,
+    self, Cauda, Classificacao, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte,
+    Observacao, ResumoAleatoriedade, VereditoTrecho, WalkForward,
 };
 use crate::config::LoteriaConfig;
 use crate::dataset::{ConcursoDataset, Dataset, ImpressoesResultados};
@@ -1290,6 +1290,10 @@ pub struct LinhaTabela {
     pub saiu: Option<bool>,
     /// Features da dezena na janela do perfil, antes do concurso.
     pub features: FeaturesDezena,
+    /// Grau e direção da evidência por dezena (A, 1d), janela principal
+    /// (histórico inteiro) e priori principal (5 %), **no ponto no tempo**:
+    /// só concursos até `concurso − 1`. `None` no concurso 1 (sem histórico).
+    pub evidencia: Option<Classificacao>,
 }
 
 /// Tabela geral de um concurso com um perfil: as *N* dezenas em ordem de
@@ -1352,9 +1356,35 @@ pub fn tabela_do_concurso(
             variacao_posicao: i.variacao_posicao,
             saiu: f.saiu,
             features: f.clone(),
+            evidencia: None,
         })
         .collect();
     linhas.sort_by_key(|l| l.posicao);
+
+    // Evidência A no ponto no tempo do concurso: só os concursos `< concurso`
+    // (no padrão, o próximo, é o histórico inteiro, igual ao `sync evidencia`).
+    // Descritiva do sorteio, por isso lê também o trancado. Sob demanda: sem
+    // tabela nova, uma chamada por CSV.
+    if concurso > 1 {
+        let evidencia = avaliacao::evidencia_por_dezena(
+            cfg,
+            &conferido.resultados,
+            concurso,
+            avaliacao::Janela::Inteira,
+        )?;
+        // Invariante: `evidencia_por_dezena` devolve as N dezenas da loteria,
+        // as mesmas do índice. Sem isto uma dezena faltante viraria célula
+        // vazia em silêncio (indistinguível do concurso 1).
+        debug_assert_eq!(evidencia.dezenas.len(), linhas.len());
+        for l in &mut linhas {
+            l.evidencia = evidencia
+                .dezenas
+                .iter()
+                .find(|d| d.dezena == l.dezena)
+                .map(|d| d.classificacao[0]);
+            debug_assert!(l.evidencia.is_some(), "dezena {} sem evidência", l.dezena);
+        }
+    }
 
     Ok(TabelaConcurso {
         loteria: cfg.slug.to_string(),

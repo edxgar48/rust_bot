@@ -2,8 +2,8 @@
 
 Como usar cada comando, como ler as respostas e um roteiro para conferir à mão
 o que o projeto produz. As saídas de exemplo são reais (Mega-Sena, perfil
-`padrao_v1`); os números da seção de resultados refletem o estado de
-2026-10-05 e mudam a cada sorteio.
+`padrao_v1`); os números das seções de resultados têm a data no próprio
+subtítulo e mudam a cada sorteio.
 
 Definições completas (features, índice, avaliação): `docs/PLANEJAMENTO.md`
 e, para as Fases 1 e 1.5, `docs/decisoes/fases-1-e-1.5.md`.
@@ -26,6 +26,8 @@ e, para as Fases 1 e 1.5, `docs/decisoes/fases-1-e-1.5.md`.
  relatório no terminal (não grava nada; só --trancado grava em registros/)
 
  aleatoriedade  → lê só resultados, independente de perfil
+ evidencia      → lê resultados (parte A) e, para a parte B, o índice do perfil
+ tabela         → CSV do concurso, com grau e direção da evidência por dezena
 ```
 
 Cada loteria tem o próprio banco (`resultados_<loteria>.db`). As tabelas
@@ -132,13 +134,20 @@ corte. **É de uso único por perfil** e fica registrado em
 `aleatoriedade <lot|todas>` testa se o próprio histórico parece aleatório.
 Também só lê o banco.
 
+`evidencia <lot> [--perfil padrao_v1] [--perfis pasta]` mostra **quanta
+evidência os dados dão**, em cinco graus, de que cada dezena tem uma chance
+diferente da esperada e de que o índice de força prevê melhor que o acaso.
+Também só lê o banco, e vale para uma loteria por vez (não aceita `todas`).
+Como ler a saída: seção 5.
+
 ### Tabela geral em CSV
 
 `tabela <lot|todas> --perfil padrao_v1 [--concurso N] [--saida tabelas]` grava
 a tabela geral de um concurso num CSV para abrir no Excel: uma linha por
-dezena, em ordem de posição, com total, variação de posição, `saiu` e as 9
-features da janela do perfil. Só lê o banco e faz as mesmas conferências do
-`avaliar` (índice e features em dia).
+dezena, em ordem de posição, com total, variação de posição, `saiu`, as 9
+features da janela do perfil e, nas duas últimas colunas, o grau e a direção
+da evidência da dezena (ver abaixo). Só lê o banco e faz as mesmas
+conferências do `avaliar` (índice e features em dia).
 
 - **Arquivo:** `tabelas/<lot>/tabela_<lot>_<perfil>_<concurso>.csv`. Um
   arquivo por concurso: rodando depois de cada sorteio, a pasta acumula a
@@ -146,11 +155,34 @@ features da janela do perfil. Só lê o banco e faz as mesmas conferências do
 - **Padrão:** o próximo concurso, ainda não sorteado (`data_sorteio` e
   `saiu` vazios). Com `--concurso N`, um concurso já sorteado, com `saiu`
   preenchido (1 = saiu): dá para ver onde estavam as dezenas sorteadas.
-- **Formato:** separador `;` e vírgula decimal (Excel em português); célula
-  vazia = sem valor (por exemplo, `soma_variacoes` com menos de 3 aparições
-  na janela).
+- **Formato:** separador `;`, vírgula decimal e UTF-8 com BOM, para o Excel
+  em português reconhecer os acentos (sem o BOM, "a favor de viés" apareceria
+  como "viÃ©s"); célula vazia = sem valor (por exemplo, `soma_variacoes`
+  com menos de 3 aparições na janela).
 - **Saída no terminal:** onde gravou e o top 10 (`*` = saiu, quando o
   concurso já foi sorteado).
+- **Colunas `evidencia_grau` e `evidencia_direcao`** (as duas últimas, depois
+  de `repeticao_atual`): a evidência bayesiana da dezena, com os mesmos
+  rótulos do comando `evidencia`. Grau: `muito fraca`, `fraca`, `moderada`,
+  `forte` ou `muito forte`. Direção: `a favor de viés` ou `a favor do acaso`.
+  Como ler: seção 5, **antes de tirar conclusão de uma linha só**.
+  - Usa o **histórico inteiro** (não a `janela` do perfil) e a priori
+    principal de 5 %.
+  - **Ponto no tempo:** a tabela do concurso N usa só os concursos até N−1.
+    Em `--concurso 30`, a evidência é a que se tinha antes do sorteio 30, não
+    a de hoje. No padrão (o próximo concurso), é a mesma da primeira janela do
+    `evidencia`. No concurso 1 não há histórico e as duas colunas ficam vazias.
+  - Como o `evidencia`, lê todos os concursos já sorteados, inclusive os do
+    conjunto trancado: descreve o sorteio, não avalia perfil.
+
+  Exemplo (Lotofácil, concurso 3800, o próximo; colunas `dezena`, `posicao` e
+  as duas últimas):
+
+  ```
+  16;3;...;forte;a favor de viés
+  20;25;...;moderada;a favor de viés
+  21;12;...;fraca;a favor do acaso
+  ```
 
 ### Dataset para o Python
 
@@ -264,15 +296,171 @@ Qui-quadrado de frequência (...): estatística 89.4686 com 59 graus de liberdad
 - **Se houver rejeição,** confira primeiro os dados (erro de planilha), e só
   depois desconfie do sorteio.
 
-**Resultado em 2026-10-05:**
+**Resultado em 2026-10-05, com a conferência da tarefa 1d.1 (2026-10-09):**
 
 - **Qui-quadrado:** rejeita a uniformidade nas três loterias. Na Lotofácil,
-  o p é 0,00015, com o desvio concentrado nos concursos 1899 a 3796.
-- **Runs test:** só a **dezena 25 da Quina** é rejeitada depois do Holm.
-- **Próximo passo:** tudo isso está no Backlog do `PLANEJAMENTO.md`, para
-  conferir contra uma fonte independente.
+  o p é 0,00015. **Não é erro de dado:** os concursos foram conferidos contra
+  duas fontes externas ao nosso pipeline. A API da Caixa cobriu todos os
+  concursos da Mega-Sena e da Quina, mas só 1912 dos 3799 da Lotofácil; um
+  espelho com o histórico completo cobriu todos nas três loterias. Só a data
+  do concurso 380 da Quina diverge, o que já está corrigido no programa. As
+  fontes são independentes do nosso pipeline, **não da Caixa**: se o erro
+  estivesse na origem, as duas repetiriam o mesmo erro.
+- **Não é um desvio concentrado em um trecho.** Uma leitura anterior dizia que
+  o desvio da Lotofácil estava nos concursos 1899 a 3796. Isso foi refutado: o
+  corte em 1899 foi escolhido depois de olhar os dados, não coincide com
+  nenhuma mudança de regra, de local ou de equipamento, e as duas metades do
+  histórico têm o **mesmo padrão** (a diferença entre elas não é
+  significativa, p ≈ 0,55). Quem puxa o desvio são poucas dezenas: a 16 sai
+  menos que o esperado, e a 20, a 25 e a 10 saem mais.
+- **Mega-Sena e Quina:** também sem erro de dado. O desvio da Mega-Sena
+  continua significativo depois de corrigir por testar três loterias
+  (p ≈ 0,018); o da Quina (p ≈ 0,044) vira p ≈ 0,13 e é compatível com o
+  acaso.
+- **Runs test:** só a **dezena 25 da Quina** é rejeitada depois do Holm. Não é
+  erro de dado e não coincide com mudança de local ou equipamento; depois de
+  corrigir por testar 80 dezenas (ou as 165 das três loterias) fica marginal
+  (p entre 0,02 e 0,09).
+- **Conclusão:** sem explicação conhecida. Pode ser acaso, ou um viés pequeno
+  e persistente. Para medir *quanta* evidência existe, em vez de só rejeitar
+  ou não, use o `evidencia` (seção 5).
 
-## 5. Rotina e problemas
+## 5. Como interpretar o `evidencia`
+
+```bash
+./target/release/sync evidencia <lot> [--perfil padrao_v1] [--perfis pasta] [--db arquivo]
+```
+
+Em vez de "prever", o `evidencia` diz **quanta evidência os dados dão**. São
+duas partes:
+
+- **A. Por dezena:** a dezena sai com chance diferente de K/N (15/25 na
+  Lotofácil, 6/60 na Mega-Sena, 5/80 na Quina)? Usa só `resultados` e vale
+  para o próximo concurso.
+- **B. Do índice de força:** o índice de um perfil prevê melhor que o acaso?
+  É a mesma diferença de log loss do `avaliar`, traduzida em graus. Se o
+  índice ou as features não estiverem em dia, a parte A sai do mesmo jeito e a
+  B mostra o motivo e os comandos a rodar.
+
+### O fator de Bayes e os cinco graus
+
+O **fator de Bayes (FB)** diz quantas vezes os dados são mais prováveis sob uma
+hipótese do que sob a outra. Na parte A, as hipóteses são "a chance é
+exatamente K/N" (acaso) e "a chance é um pouco diferente" (viés). O FB aparece
+em `log10`: +1 quer dizer FB = 10 (dados 10 vezes mais prováveis com viés),
+−1 quer dizer FB = 1/10 (10 vezes mais prováveis com o acaso).
+
+O grau vem do tamanho de F = o maior entre FB e 1/FB, sem olhar o lado:
+
+| Grau | F | módulo de log10 FB |
+|---|---|---|
+| muito fraca | menor que 3 | menor que 0,48 |
+| fraca | de 3 a 10 | de 0,48 a 1 |
+| moderada | de 10 a 30 | de 1 a 1,48 |
+| forte | de 30 a 100 | de 1,48 a 2 |
+| muito forte | 100 ou mais | 2 ou mais |
+
+- **Direção:** vem junto do grau, sempre. `a favor de viés` quando FB > 1 e
+  `a favor do acaso` quando FB < 1 (FB = 1 exato também conta como acaso).
+  Leia os dois: "forte, a favor de viés" é bem diferente de "forte, a favor do
+  acaso". A evidência contra o viés aparece com o mesmo destaque que a a favor.
+- **Grau não é tamanho do viés.** Mede o quanto os dados convencem. Com
+  milhares de concursos, até um viés pequeno pode ser "forte".
+- **Priori.** O FB depende de quão grande se imagina o viés possível. O
+  principal usa um desvio de 5 % de K/N; o relatório mostra também 2,5 % e
+  10 %. Uma conclusão que só aparece com uma das três merece desconfiança.
+- **Janelas.** A principal usa o histórico inteiro; a secundária, os últimos
+  500 concursos (pega um viés que mude com o equipamento).
+
+### A favor do acaso, a evidência tem teto
+
+"Mesmo destaque" quer dizer a mesma *apresentação*, não a mesma *escala
+atingível*. Como o acaso é uma chance exata dentro de uma priori estreita, os
+dados nunca conseguem dar muita evidência a favor dele: o FB a favor do acaso
+tem um máximo, que ocorre quando a frequência é exatamente K/N. A favor de
+viés não há máximo. O relatório imprime esse máximo em cada janela. Com a
+priori de 5 % (módulo de log10 FB máximo a favor do acaso):
+
+| Loteria | Histórico inteiro | Últimos 500 |
+|---|---|---|
+| Lotofácil | 0,59 (fraca) | 0,23 (muito fraca) |
+| Mega-Sena | 0,13 (muito fraca) | 0,03 (muito fraca) |
+| Quina | 0,17 (muito fraca) | 0,02 (muito fraca) |
+
+Como ler: **"muito fraca, a favor do acaso" é o máximo que os dados podem dizer
+a favor do acaso** na Mega-Sena e na Quina (e nos últimos 500 da Lotofácil).
+Não significa "faltam dados" nem "evidência inconclusiva". Por isso, não
+compare as duas direções só pela etiqueta: na Lotofácil inteira, "fraca, a
+favor do acaso" já é o melhor resultado que o acaso consegue.
+
+### Muitas dezenas: algumas saem destacadas por acaso
+
+Com 25, 60 ou 80 dezenas, algumas saem "moderada" ou mais só por sorte. Por
+isso o relatório mostra, ao lado da contagem observada em cada grau, a
+contagem **esperada sob o acaso** (média de 1000 históricos simulados,
+semente 20261008). Só um excesso sobre o esperado indica algo além do acaso.
+
+Resultado em 2026-10-10 (priori de 5 %, histórico inteiro; dezenas "moderada"
+ou mais, observadas contra esperadas sob o acaso):
+
+| Loteria | Observadas | Esperadas | Quais |
+|---|---|---|---|
+| Lotofácil | 2 | 0,14 | dezena 16 (forte, log10 FB +1,9) e dezena 20 (moderada, +1,2), as duas a favor de viés |
+| Mega-Sena | 1 | 0,04 | uma dezena moderada |
+| Quina | 0 | 0,14 | nenhuma |
+
+Nos últimos 500 concursos, nenhuma das três tem dezena "moderada" ou mais. O
+quadro combina com o qui-quadrado da seção 4: o desvio da Lotofácil vem de
+poucas dezenas, e nada indica erro de dado.
+
+### Parte B: o índice de força e o "índice inerte"
+
+O relatório da parte B traz o log10 FB do índice contra o acaso, somado
+concurso a concurso só nas **dobras de teste 2 a 5** do mesmo walk-forward do
+`avaliar`. O conjunto trancado não entra. Aqui a direção é `a favor do índice`
+(FB > 1) ou `a favor do acaso`, e **não há teto** a favor do acaso, porque o
+índice é um modelo concreto, que pode perder muito para o acaso.
+
+**Cuidado com o grau sozinho.** Com `padrao_v1`, a parte B sai "muito forte, a
+favor do acaso" nas três loterias (log10 FB de −7,3 na Lotofácil, −13,6 na
+Mega-Sena e −25,0 na Quina). Isso **não quer dizer que o índice atrapalha**: a
+calibração estima uma taxa de acerto para cada posição (25, 60 ou 80 taxas), e
+essa estimativa custa evidência mesmo quando o índice não carrega informação
+nenhuma. Um índice **inerte** já sai "muito forte, a favor do acaso".
+
+Por isso o relatório imprime, ao lado, o esperado de um índice inerte: as
+mesmas posições do perfil diante de 200 históricos simulados ao acaso (semente
+20261010), com a média, a faixa de 95 % e quantas réplicas igualaram ou
+superaram o observado. **O índice só mostra informação se o observado ficar
+acima da faixa dos inertes.** Resultado em 2026-10-10:
+
+| Loteria | log10 FB observado | Média do inerte | Faixa de 95 % do inerte | Réplicas ≥ observado |
+|---|---|---|---|---|
+| Lotofácil | −7,31 | −7,48 | de −11,67 a −3,93 | 91 de 200 |
+| Mega-Sena | −13,59 | −17,58 | de −22,42 a −12,75 | 12 de 200 |
+| Quina | −25,00 | −26,18 | de −32,39 a −19,71 | 72 de 200 |
+
+Nas três loterias o observado cai dentro da faixa: **o índice é
+indistinguível de um índice sem informação**, o mesmo que o `avaliar` já
+mostrava na seção 3.
+
+Ressalvas que o relatório também imprime: as dezenas de um concurso são
+tratadas como independentes (na verdade, elas somam exatamente K), então o FB é
+uma régua de evidência, não a probabilidade exata do sorteio; e, se o perfil
+foi escolhido vendo esses concursos, o resultado sai otimista (o trancado existe
+para isso).
+
+### Resumo: o que a evidência não diz
+
+- Um grau alto **a favor do acaso** em B não prova que o índice atrapalha;
+  compare com a faixa do inerte.
+- Um "muito fraca, a favor do acaso" em A é o melhor que o acaso pode obter,
+  não falta de dados.
+- Uma dezena destacada em A precisa ser lida contra o esperado sob o acaso para
+  o número de dezenas da loteria.
+- Nada disso é uma previsão do próximo sorteio.
+
+## 6. Rotina e problemas
 
 Rotina depois de cada sorteio, para cada loteria:
 
@@ -283,6 +471,7 @@ Rotina depois de cada sorteio, para cada loteria:
 ./target/release/sync indice <lot> --perfil padrao_v1
 ./target/release/sync tabela todas --perfil padrao_v1        # CSV do próximo concurso
 ./target/release/sync avaliar <lot> --perfil padrao_v1      # opcional
+./target/release/sync evidencia <lot>                        # opcional: graus de evidência
 ./target/release/sync dataset <lot>                          # opcional: dataset do Python
 ```
 
@@ -294,7 +483,7 @@ Rotina depois de cada sorteio, para cada loteria:
 | `avaliar` diz "índice desatualizado ou incoerente" | o índice não foi refeito | rode `indice` |
 | `indice` diz "perfil alterado" | o `.toml` foi editado | desfaça a edição ou crie `_v2` |
 
-## 6. Roteiro de avaliação manual
+## 7. Roteiro de avaliação manual
 
 1. **Coleta.** Compare os 3 últimos concursos de cada loteria com o site da
    Caixa:
@@ -326,8 +515,14 @@ Rotina depois de cada sorteio, para cada loteria:
    termina no corte e se o veredito bate com a tabela da seção 3.
 6. **Aleatoriedade.** Rode `aleatoriedade todas` e confira se o resultado
    bate com o da seção 4.
+7. **Evidência.** Rode `evidencia <lot>` nas três loterias. Confira se a
+   contagem observada de dezenas "moderada" ou mais bate com a seção 5 (e se
+   continua perto do esperado sob o acaso), se o máximo atingível a favor do
+   acaso é o da tabela da seção 5 e se, na parte B, o observado ainda está
+   dentro da faixa do índice inerte. Depois abra o CSV do `tabela`: o grau e a
+   direção da dezena devem ser os mesmos da primeira janela do `evidencia`.
 
-## 7. Cuidados
+## 8. Cuidados
 
 - **Conjunto trancado:** é de uso único. Não rode `avaliar --trancado` para
   testar; reserve para o perfil campeão, depois de investigar os dados.
