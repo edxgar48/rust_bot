@@ -384,23 +384,9 @@ viés em cada dezena e de que o índice de força prevê — em cinco graus.
   (grau e direção de A, janela principal) e, na Fase 2, no contrato do app.
 
 Tarefas:
-- **1d.1** — Conferir os desvios de frequência da 1c.4 contra uma fonte
-  independente e levantar mudanças de regra/equipamento nos trechos
-  apontados (sai do Backlog): uniformidade rejeitada na Lotofácil,
-  p ≈ 1,5e-4, concentrada nos concursos 1899–3796 (concentração refutada na
-  1d.1: mesmo padrão nas duas metades); Mega-Sena, p ≈ 6,4e-3;
-  Quina, p ≈ 0,042; runs da dezena 25 da Quina. Se o desvio for erro de dado, corrigir a base
-  antes da 1d.2. **Pronto quando:** cada trecho apontado tem conclusão
-  escrita em `PROGRESSO.md`. Resultado: sem erro de dado; nenhuma mudança de
-  local explica os desvios.
-  - **Locais de sorteio** (contexto para leitura da evidência; campo `local`
-    do espelho de terceiros, demais datas pela Wikipédia): Caminhão da Sorte
-    desde 2000; Estúdio de TV (2014-08-27); Espaço Caixa Loterias, Terminal
-    Tietê (2015-12 — Lotofácil 1300, Mega-Sena 1772, Quina 3963); fim do
-    Caminhão (2019-06); Espaço da Sorte, Av. Paulista (2021-11-17 —
-    Lotofácil 2374, Mega-Sena 2429, Quina 5707). Globo de acrílico na
-    Mega-Sena em 2009-12-31 (concurso 1140, sem fonte primária). Nenhuma
-    troca de globos ou bolas datada depois de 2009.
+- **1d.1** — Conferência dos desvios de frequência da 1c.4 contra fonte
+  independente. Resultado: sem erro de dado (detalhes em `PROGRESSO.md`);
+  não é mais usada no plano.
 - **1d.2** — Evidência por dezena (A): módulo `src/avaliacao/evidencia.rs`
   (função pura, sem banco), comando `sync evidencia`, testes (FB contra
   valores calculados à mão, simetria, graus nos limites, ponto no tempo,
@@ -414,6 +400,54 @@ Tarefas:
   atualizado com a leitura dos graus, o teto a favor do acaso, a ressalva
   do índice inerte em B e a correção do trecho que ainda dá a Lotofácil
   como "concentrada em 1899–3796".
+
+### Fase 1e — Régua sensível (calibração linear na posição)
+
+Decisão de 2026-10-10, depois da 1d.3: a calibração pela posição da 1c estima
+uma taxa por posição (N parâmetros), e esse aprendizado custa de −17 a −60 em
+ln FB mesmo para um índice sem informação. Com isso a régua quase não
+distingue "sem sinal" de "sinal fraco". A 1e acrescenta uma calibração de **um
+parâmetro**, cujo custo de aprendizado é da ordem de ½·ln T em vez de
+(N−1)/2·ln T. Não muda a conclusão esperada (sorteios independentes: nenhum
+perfil deve superar o acaso), só a nitidez dela.
+
+- **Modelo**: `p_t(r) = K/N + b_t·z(r)`, com `z(r) = ((N+1) − 2r)/(N−1)`
+  (posição 1 = +1, posição N = −1, média zero entre as N dezenas). Como
+  `Σ z = 0`, as N probabilidades somam exatamente K.
+- **Estimativa, só com o passado**: mínimos quadrados com encolhimento para
+  zero, com **m = 100 concursos fictícios com b = 0** (o mesmo m da 1c):
+  `b_t = Σ_(s<t) Σ_r z(r)·saiu(s, r) / ((c + m)·Σ_r z(r)²)`, c = concursos
+  sorteados antes de t. O primeiro concurso recebe K/N. Contas em inteiros
+  (`w(r) = (N+1) − 2r`) e uma divisão no fim, como na 1c. `b_t` é limitado a
+  `±min(K/N, 1 − K/N)`, o que mantém todo *p* em [0, 1] sem quebrar a soma K;
+  o limite do log loss (1e-15) vale igual.
+- **O que se perde**: sinal que não é monotônico na posição (por exemplo, só
+  a posição 7 boa). Num índice ordenado por força isso não tem sentido.
+- **Onde entra** (alcance decidido em 2026-10-10):
+  - **B do `sync evidencia`** passa a usar a calibração linear como régua
+    principal (grau e direção saem dela), com o índice inerte também na
+    linear. O FB com a calibração pela posição da 1c fica numa linha
+    informativa, sem inerte.
+  - **`sync avaliar`** ganha uma linha extra: log loss (perfil − acaso) com a
+    calibração linear, no total e por dobra, só informativa (o veredito, o
+    bootstrap e o top-k continuam como estão).
+  - **Não muda**: a calibração pela posição (m = 100), o veredito da 1c, o
+    Python (`ml/`, busca de pesos), as fixtures de conformidade e os registros
+    do trancado.
+- **Conferência**: ln FB de B (linear) = −pares × (log loss linear − log loss
+  do acaso) da linha nova do `avaliar`, dobra a dobra, como na 1d.3.
+
+Tarefas:
+- **1e.1** — `calibrar_linear` em `src/avaliacao/calibracao.rs` (função pura,
+  mesma saída `ProbabilidadeDezena`), com testes: soma K por concurso,
+  ponto no tempo, valores à mão na MINI, limite de `b_t`, inerte com custo
+  pequeno, índice que acerta sempre detectado. **Pronto quando:** testes
+  verdes e referência independente nos testes.
+- **1e.2** — B e índice inerte na calibração linear (linha informativa com a
+  da 1c); linha extra no `sync avaliar`; conferência B × `avaliar`. **Pronto
+  quando:** roda nas três loterias e a conferência passa.
+- **1e.3** — `docs/GUIA.md` e README com a leitura nova de B e da linha extra
+  do `avaliar`; números das três loterias em `PROGRESSO.md`.
 
 ### Fase 2 — Exportação para o app
 
@@ -452,7 +486,7 @@ novo publicado no mesmo dia, e uma falha simulada dispara o alerta.
 
 ## Ordem e dependências
 
-0 → 1a → 1b → 1c → 1.5 → 1d → 2 → 3. O contrato da Fase 2 é o ponto de encontro
+0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 2 → 3. O contrato da Fase 2 é o ponto de encontro
 com o planejamento do front-end.
 
 ## Decisões em aberto

@@ -28,12 +28,13 @@ arquivos que você edita são `docs/PROGRESSO.md` e, com aprovação do usuário
 | 1c.x | `engenheiro-avaliacao` |
 | 1.5.x | `cientista-ml` |
 | 1d.x | `engenheiro-avaliacao` |
+| 1e.x | `engenheiro-avaliacao` |
 | 2.x | `engenheiro-publicacao` |
 | 3.x | `engenheiro-operacao` |
 | revisão de toda entrega | `revisor-arquitetura` |
 
 ## Ciclo por tarefa
-1. **Selecionar.** Próxima `[ ]` elegível: ordem 0 → 1a → 1b → 1c → 1.5 → 1d → 2 → 3,
+1. **Selecionar.** Próxima `[ ]` elegível: ordem 0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 2 → 3,
    fase anterior concluída, sem decisão em aberto bloqueando. Se o usuário
    indicou um id, verifique as dependências e avise se faltar algo.
 2. **Decisões.** Se a tarefa depende de decisão em aberto ou de definição

@@ -24,7 +24,7 @@ orquestrador (opus) ─ coordena, não programa; único que edita docs/PROGRESSO
 ├── engenheiro-dados ──────── Fase 0 ──── └─ escritor-testes
 ├── engenheiro-motor ──────── Fase 1a/1b ─ ├─ escritor-testes
 │                                          └─ verificador-vazamento
-├── engenheiro-avaliacao ──── Fase 1c/1d ─ ├─ escritor-testes
+├── engenheiro-avaliacao ──── Fase 1c–1e ─ ├─ escritor-testes
 │                                          └─ verificador-vazamento
 ├── cientista-ml ──────────── Fase 1.5 ─── ├─ verificador-conformidade
 │                                          └─ verificador-vazamento
