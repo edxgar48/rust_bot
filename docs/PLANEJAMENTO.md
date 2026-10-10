@@ -247,7 +247,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 
 **Pronto quando:** `sync validar todas` passa nos três bancos e `cargo test` está verde.
 
-### Fases 1 e 1.5 — concluídas (exceto 1.5.4)
+### Fases 1 e 1.5 — concluídas
 
 Decisões detalhadas, com a especificação de cada comando, em
 [`docs/decisoes/fases-1-e-1.5.md`](decisoes/fases-1-e-1.5.md). Leia a parte
@@ -281,9 +281,32 @@ da fase que a tarefa toca. Regras que as fases seguintes usam:
   (venv, só pyarrow/numpy/pytest, leitura sempre pelo manifesto); busca de
   pesos com walk-forward gerando `perfis/<loteria>/busca_v1.toml` (nenhum
   supera o acaso; o perfil ativo não mudou).
-- **1.5.4, pendente — Vetores de conformidade**
+- **1.5.4, concluída — Vetores de conformidade**
   (`testes/conformidade/*.json`): entrada → features/índice esperados,
-  verificados por `cargo test` **e** `pytest`.
+  verificados por `cargo test` **e** `pytest`. Regras (decisões de
+  2026-10-09):
+  - **alcance**: o Python ganha uma implementação de referência das
+    features (só para conformidade, fora da produção) e a
+    `variacao_posicao` no índice; o pytest confere resultados → features e
+    features → índice (total, posição, variação);
+  - **formato**: um JSON por caso — `versao_formato`, `descricao`, loteria
+    (K, N, faixa), `feature_version`, entrada (resultados ou features),
+    perfil (janela, normalização, pesos) e esperado (features e índice);
+    `NULL` como `null`, floats com 17 dígitos significativos;
+  - **casos à mão, esperado gerado pelo Rust**: golden do plano, bordas de
+    `NULL`, janelas 10/50/100 e fronteiras, componente constante, todo
+    `NULL`, empate exato e quase empate a 1e-9, zscore e minmax, variação no
+    primeiro concurso. Ferramenta `examples/gerar_conformidade.rs`; casos
+    pequenos conferidos à mão; o `cargo test` falha se o JSON versionado
+    divergir do que o Rust calcula (nada é regerado em silêncio);
+  - **comparação**: inteiros e posição exatos; `total` igual bit a bit;
+  - **local**: `testes/conformidade/` na raiz, com
+    `testes/conformidade/** -text` no `.gitattributes`;
+  - **tamanho**: só dados sintéticos, até ~150 concursos por caso, dezenas
+    de KB no total;
+  - **fora do escopo**: calibração, log loss e top-k (já conferidos pela
+    fixture da 1.5.2). **Entra de carona** o achado baixo da 1.5.3: fixar
+    `set_statistics_enabled` em `src/dataset.rs`, com teste.
 
 ### Fase 1d — Índice de evidência bayesiano
 
