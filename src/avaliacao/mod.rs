@@ -39,6 +39,10 @@
 //! mesmo número da diferença de log loss do walk-forward (dobras de teste 2 a
 //! 5), em outra escala e em graus, ao lado do esperado de um índice inerte
 //! ([`esperado_indice_inerte`]).
+//!
+//! Calibração linear na posição (1e.1, [`calibrar_linear`]): um parâmetro em
+//! vez de *N*, para uma régua que distingue "sem sinal" de "sinal fraco".
+//! A calibração por posição da 1c ([`calibrar`]) não muda.
 
 mod aleatoriedade;
 mod bootstrap;
@@ -66,7 +70,9 @@ pub use bootstrap::{
     bootstrap_circular, concursos_minimos, Bootstrap, SplitMix64, BLOCO_BOOTSTRAP,
     REAMOSTRAGENS_BOOTSTRAP, SEMENTE_BOOTSTRAP,
 };
-pub use calibracao::{calibrar, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS};
+pub use calibracao::{
+    calibrar, calibrar_linear, Observacao, ProbabilidadeDezena, CONCURSOS_FICTICIOS,
+};
 pub use evidencia::{
     classificar, esperado_sob_o_acaso, evidencia_por_dezena, ln_gamma, log10_fator_bayes,
     teto_a_favor_do_acaso, Classificacao, Direcao, EsperadoAcaso, EsperadoPriori, EvidenciaDezena,

@@ -1012,3 +1012,579 @@ fn entrada_so_com_o_snapshot_calibra_com_o_acaso_e_nao_avalia() {
         "{erro}"
     );
 }
+
+// ------------------------------------------- calibração linear (1e.1)
+
+/// Série em que o índice acerta sempre: a dezena `d` fica na posição
+/// `d − dezena_min + 1` e saem exatamente as posições 1..=K.
+fn serie_perfeita(cfg: &LoteriaConfig, concursos: u32, com_snapshot: bool) -> Vec<Observacao> {
+    serie_de_posicao_fixa(cfg, concursos, com_snapshot, |posicao| {
+        posicao as usize <= cfg.qtd_dezenas
+    })
+}
+
+/// Posição fixa (`d − dezena_min + 1`) e `saiu = sai(posição)` em todo
+/// concurso sorteado; o último fica sem resultado se `com_snapshot`.
+fn serie_de_posicao_fixa(
+    cfg: &LoteriaConfig,
+    concursos: u32,
+    com_snapshot: bool,
+    sai: impl Fn(u32) -> bool,
+) -> Vec<Observacao> {
+    let mut saida = Vec::new();
+    for c in 1..=concursos {
+        let sorteado = !(com_snapshot && c == concursos);
+        for d in cfg.dezenas() {
+            let posicao = d - cfg.dezena_min + 1;
+            saida.push(obs(c, d, posicao, sorteado.then(|| sai(posicao))));
+        }
+    }
+    saida
+}
+
+/// Série com sinal monotônico na posição: posições embaralhadas a cada
+/// concurso e as K dezenas sorteadas uma a uma, sem reposição, com peso
+/// `1 + forca·z(posição)` (`z` = +1 na posição 1 e −1 na posição N).
+fn serie_com_sinal(
+    cfg: &LoteriaConfig,
+    concursos: u32,
+    semente: u64,
+    forca: f64,
+) -> Vec<Observacao> {
+    let mut g = Gerador(semente);
+    let n = cfg.qtd_dezenas_possiveis();
+    let mut saida = Vec::new();
+    for c in 1..=concursos {
+        let mut posicoes: Vec<u32> = (1..=n).collect();
+        g.embaralhar(&mut posicoes);
+        let pesos: Vec<f64> = posicoes
+            .iter()
+            .map(|&r| 1.0 + forca * (f64::from(n + 1) - 2.0 * f64::from(r)) / f64::from(n - 1))
+            .collect();
+        let mut sorteada = vec![false; n as usize];
+        for _ in 0..cfg.qtd_dezenas {
+            let livres: Vec<usize> = (0..n as usize).filter(|&i| !sorteada[i]).collect();
+            let total: f64 = livres.iter().map(|&i| pesos[i]).sum();
+            let mut alvo = (g.proximo() >> 11) as f64 / (1_u64 << 53) as f64 * total;
+            let mut escolhida = livres[livres.len() - 1];
+            for &i in &livres {
+                if alvo < pesos[i] {
+                    escolhida = i;
+                    break;
+                }
+                alvo -= pesos[i];
+            }
+            sorteada[escolhida] = true;
+        }
+        for (i, d) in cfg.dezenas().enumerate() {
+            saida.push(obs(c, d, posicoes[i], Some(sorteada[i])));
+        }
+    }
+    saida
+}
+
+/// Σ ln p − ln p_acaso nos pares já sorteados (Bernoulli): o ln do fator de
+/// Bayes prequencial do índice contra o acaso. Usa `ln` direto, sem o
+/// limite do `log_loss`; só vale para p estritamente entre 0 e 1.
+fn ln_fb(cfg: &LoteriaConfig, probs: &[ProbabilidadeDezena]) -> f64 {
+    let acaso = taxa_do_acaso(cfg);
+    probs
+        .iter()
+        .filter_map(|x| x.saiu.map(|saiu| (x.probabilidade, saiu)))
+        .map(|(p, saiu)| {
+            if saiu {
+                p.ln() - acaso.ln()
+            } else {
+                (1.0 - p).ln() - (1.0 - acaso).ln()
+            }
+        })
+        .sum()
+}
+
+/// Como `ln_fb`, mas com o limite do `log_loss` (p pode ser exatamente 0
+/// ou 1 na saturação de um índice perfeito).
+fn ln_fb_com_limite(cfg: &LoteriaConfig, probs: &[ProbabilidadeDezena]) -> f64 {
+    let acaso = taxa_do_acaso(cfg);
+    probs
+        .iter()
+        .filter_map(|x| x.saiu.map(|saiu| (x.probabilidade, saiu)))
+        .map(|(p, saiu)| log_loss(acaso, saiu) - log_loss(p, saiu))
+        .sum()
+}
+
+/// Oráculo independente: a fórmula do plano em ponto flutuante, direto, sem
+/// pesos inteiros nem a comparação exata do limite. `serie` já vem ordenada
+/// por (concurso, dezena) e válida.
+fn oraculo_linear(cfg: &LoteriaConfig, serie: &[Observacao]) -> Vec<f64> {
+    let n = f64::from(cfg.qtd_dezenas_possiveis());
+    let k = cfg.qtd_dezenas as f64;
+    let m = f64::from(CONCURSOS_FICTICIOS);
+    let limite = (k / n).min(1.0 - k / n);
+    let z = |r: u32| (n + 1.0 - 2.0 * f64::from(r)) / (n - 1.0);
+    let soma_z2: f64 = (1..=cfg.qtd_dezenas_possiveis()).map(|r| z(r) * z(r)).sum();
+
+    let mut acumulado = 0.0; // Σ_(s<t) Σ_r z(r)·saiu(s, r)
+    let mut c = 0.0; // concursos sorteados antes de t
+    let mut saida = Vec::new();
+    for grupo in serie.chunk_by(|a, b| a.concurso == b.concurso) {
+        let b = (acumulado / ((c + m) * soma_z2)).clamp(-limite, limite);
+        saida.extend(grupo.iter().map(|o| k / n + b * z(o.posicao)));
+        if grupo[0].saiu.is_some() {
+            acumulado += grupo
+                .iter()
+                .filter(|o| o.saiu == Some(true))
+                .map(|o| z(o.posicao))
+                .sum::<f64>();
+            c += 1.0;
+        }
+    }
+    saida
+}
+
+fn soma_por_concurso(probs: &[ProbabilidadeDezena]) -> Vec<(u32, f64)> {
+    probs
+        .chunk_by(|a, b| a.concurso == b.concurso)
+        .map(|g| (g[0].concurso, g.iter().map(|x| x.probabilidade).sum()))
+        .collect()
+}
+
+fn bits(probs: &[ProbabilidadeDezena]) -> Vec<u64> {
+    probs.iter().map(|x| x.probabilidade.to_bits()).collect()
+}
+
+#[test]
+fn linear_confere_com_a_conta_a_mao_na_mini() {
+    let probs = calibrar_linear(&MINI, &serie_mini()).expect("série válida");
+    assert_eq!(probs.len(), 16);
+
+    // N = 4, K = 2, m = 100: w(r) = 5 − 2r = (3, 1, −1, −3), W2 = Σw² = 20.
+    // p = K/N + S·w/D, com S = Σ w(posição que saiu) e D = (c + m)·W2.
+    // Concurso 1 (c = 0, S = 0): 1/2, o acaso.
+    for d in 1..=4 {
+        assert_eq!(p(&probs, 1, d), 0.5, "concurso 1, dezena {d}");
+    }
+    // Saíram as posições 1 e 2 no concurso 1: S = 3 + 1 = 4.
+    // Concurso 2: c = 1, D = 101·20 = 2020, S·w/D = 4w/2020 = w/505:
+    //   w = 3, 1, −1, −3 → 1/2 + w/505 = 511/1010, 507/1010, 503/1010, 499/1010.
+    // Posições do 2: dezena 1 → 2 (w = 1), 2 → 1 (w = 3), 3 → 3, 4 → 4.
+    assert_perto!(p(&probs, 2, 1), 507.0 / 1010.0);
+    assert_perto!(p(&probs, 2, 2), 511.0 / 1010.0);
+    assert_perto!(p(&probs, 2, 3), 503.0 / 1010.0);
+    assert_perto!(p(&probs, 2, 4), 499.0 / 1010.0);
+    // Saíram as posições 1 e 3 no concurso 2: w = 3 + (−1) = 2, S = 6.
+    // Concurso 3: c = 2, D = 102·20 = 2040, S·w/D = 6w/2040 = w/340:
+    //   posições 1..4 (dezena d na posição d) → 173/340, 171/340, 169/340, 167/340.
+    assert_perto!(p(&probs, 3, 1), 173.0 / 340.0);
+    assert_perto!(p(&probs, 3, 2), 171.0 / 340.0);
+    assert_perto!(p(&probs, 3, 3), 169.0 / 340.0);
+    assert_perto!(p(&probs, 3, 4), 167.0 / 340.0);
+    // Saíram as posições 1 e 4 no concurso 3: w = 3 + (−3) = 0, S continua 6.
+    // Concurso 4 (snapshot): c = 3, D = 103·20 = 2060, S·w/D = 6w/2060 = 3w/1030:
+    //   1/2 + 3w/1030 = (515 + 3w)/1030. Posições do 4: dezena 1 → 4 (w = −3),
+    //   2 → 3 (w = −1), 3 → 2 (w = 1), 4 → 1 (w = 3):
+    //   506/1030 = 253/515, 512/1030 = 256/515, 518/1030 = 259/515, 524/1030 = 262/515.
+    assert_perto!(p(&probs, 4, 1), 253.0 / 515.0);
+    assert_perto!(p(&probs, 4, 2), 256.0 / 515.0);
+    assert_perto!(p(&probs, 4, 3), 259.0 / 515.0);
+    assert_perto!(p(&probs, 4, 4), 262.0 / 515.0);
+    // Nenhum chega perto do limite |b| ≤ 1/2 (b = S·(N−1)/D ≈ 0,009).
+    // `saiu` copiado, snapshot incluído.
+    assert!(probs
+        .iter()
+        .filter(|x| x.concurso == 4)
+        .all(|x| x.saiu.is_none()));
+    assert_eq!(probs[0].saiu, Some(true));
+    assert_eq!(probs[1].saiu, Some(true));
+}
+
+#[test]
+fn linear_soma_k_por_concurso_inclusive_no_snapshot() {
+    for (i, cfg) in config::LOTERIAS.iter().chain([&MINI]).enumerate() {
+        let serie = serie_aleatoria(cfg, 300, 21 + i as u64, true);
+        let probs = calibrar_linear(cfg, &serie).expect("série válida");
+        let somas = soma_por_concurso(&probs);
+        assert_eq!(somas.len(), 300);
+        for (concurso, soma) in somas {
+            assert!(
+                (soma - cfg.qtd_dezenas as f64).abs() < 1e-9,
+                "{} concurso {concurso}: soma {soma}",
+                cfg.slug
+            );
+        }
+        assert!(probs.last().is_some_and(|x| x.saiu.is_none()));
+        assert!(probs.iter().all(|x| (0.0..=1.0).contains(&x.probabilidade)));
+    }
+}
+
+#[test]
+fn linear_primeiro_concurso_recebe_o_acaso_exato() {
+    for cfg in config::LOTERIAS.iter().chain([&MINI]) {
+        // Com e sem snapshot, e com o primeiro já sendo o snapshot.
+        for (concursos, com_snapshot) in [(3_u32, false), (3, true), (1, true)] {
+            let serie = serie_aleatoria(cfg, concursos, 7, com_snapshot);
+            let probs = calibrar_linear(cfg, &serie).expect("série válida");
+            for x in probs.iter().filter(|x| x.concurso == 1) {
+                assert_eq!(
+                    x.probabilidade,
+                    taxa_do_acaso(cfg),
+                    "{} {}",
+                    cfg.slug,
+                    x.dezena
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn linear_ponto_no_tempo_alterar_t_e_seguintes_nao_muda_o_passado() {
+    for (slug, semente) in [("lotofacil", 42_u64), ("megasena", 43), ("quina", 44)] {
+        let cfg = config::buscar(slug).expect("loteria configurada");
+        let original = serie_aleatoria(cfg, 60, semente, true);
+        let base = calibrar_linear(cfg, &original).expect("série válida");
+        for t in [1_u32, 2, 30, 59, 60] {
+            // Troca posições e saídas de t em diante por outra série válida.
+            let outra = serie_aleatoria(cfg, 60, 4242 + u64::from(t), true);
+            let alterada: Vec<Observacao> = original
+                .iter()
+                .filter(|o| o.concurso < t)
+                .chain(outra.iter().filter(|o| o.concurso >= t))
+                .copied()
+                .collect();
+            assert_ne!(alterada, original);
+            let novo = calibrar_linear(cfg, &alterada).expect("série válida");
+
+            // Concursos < t: linhas idênticas (inclusive os bits de p).
+            let antes = |probs: &[ProbabilidadeDezena]| -> Vec<ProbabilidadeDezena> {
+                probs.iter().filter(|x| x.concurso < t).cloned().collect()
+            };
+            assert_eq!(antes(&base), antes(&novo), "{slug}, t = {t}");
+
+            // Concurso t: p como função da posição não depende do que
+            // aconteceu em t (nem das posições de t).
+            let por_posicao = |probs: &[ProbabilidadeDezena]| {
+                let mut v: Vec<(u32, u64)> = probs
+                    .iter()
+                    .filter(|x| x.concurso == t)
+                    .map(|x| (x.posicao, x.probabilidade.to_bits()))
+                    .collect();
+                v.sort_unstable();
+                v
+            };
+            assert_eq!(por_posicao(&base), por_posicao(&novo), "{slug}, t = {t}");
+        }
+    }
+}
+
+#[test]
+fn linear_mudar_o_resultado_de_t_muda_t_mais_um_e_nao_o_passado() {
+    // Contraprova: o teste acima passaria com uma função cega a `saiu`.
+    // Mudar `saiu` de t tem de mudar p de t+1 e não mudar p ≤ t.
+    let cfg = config::buscar("quina").expect("loteria configurada");
+    let original = serie_aleatoria(cfg, 40, 9, true);
+    let base = calibrar_linear(cfg, &original).expect("série válida");
+    let t = 20_u32;
+    let mut alterada = original.clone();
+    // Troca uma dezena sorteada de t por uma que não saiu.
+    let saiu = alterada
+        .iter()
+        .position(|o| o.concurso == t && o.saiu == Some(true))
+        .expect("há sorteada");
+    let nao_saiu = alterada
+        .iter()
+        .position(|o| o.concurso == t && o.saiu == Some(false))
+        .expect("há não sorteada");
+    alterada[saiu].saiu = Some(false);
+    alterada[nao_saiu].saiu = Some(true);
+    let novo = calibrar_linear(cfg, &alterada).expect("série válida");
+
+    let ate_t = base.iter().take_while(|x| x.concurso <= t).count();
+    assert_eq!(bits(&base[..ate_t]), bits(&novo[..ate_t]));
+    let em_t_mais_um = |probs: &[ProbabilidadeDezena]| -> Vec<u64> {
+        bits(&probs[ate_t..ate_t + cfg.qtd_dezenas_possiveis() as usize])
+    };
+    assert_ne!(em_t_mais_um(&base), em_t_mais_um(&novo));
+}
+
+#[test]
+fn linear_truncar_a_serie_nao_muda_o_passado() {
+    let cfg = config::buscar("lotofacil").expect("loteria configurada");
+    let serie = serie_aleatoria(cfg, 80, 3, true);
+    let completo = calibrar_linear(cfg, &serie).expect("série válida");
+    for corte in [1_u32, 40, 79] {
+        let parcial: Vec<Observacao> = serie
+            .iter()
+            .filter(|o| o.concurso <= corte)
+            .copied()
+            .collect();
+        let truncado = calibrar_linear(cfg, &parcial).expect("série válida");
+        assert_eq!(&completo[..truncado.len()], &truncado[..], "corte {corte}");
+    }
+}
+
+#[test]
+fn linear_snapshot_sem_resultado_nao_entra_nas_somas() {
+    let sem_snapshot: Vec<Observacao> = serie_mini()
+        .into_iter()
+        .filter(|o| o.concurso < 4)
+        .collect();
+    let com = calibrar_linear(&MINI, &serie_mini()).expect("série válida");
+    let sem = calibrar_linear(&MINI, &sem_snapshot).expect("série válida");
+    assert_eq!(&com[..12], &sem[..]);
+
+    // O snapshot é sempre o último concurso, então a igualdade acima não
+    // pegaria um snapshot que entrasse nas somas; o que garante isso é a
+    // validação, que recusa `saiu` NULL no meio da série.
+    let mut meio = serie_mini();
+    meio.iter_mut()
+        .filter(|o| o.concurso == 2)
+        .for_each(|o| o.saiu = None);
+    match calibrar_linear(&MINI, &meio) {
+        Err(SpiderError::AvaliacaoEntradaInvalida(d)) => assert!(d.contains("no meio da série")),
+        outro => panic!("esperado AvaliacaoEntradaInvalida, veio {outro:?}"),
+    }
+}
+
+#[test]
+fn linear_indice_que_acerta_sempre_satura_o_limite_de_b() {
+    // O limite de b é min(K/N, 1 − K/N): MINI 1/2; Lotofácil 2/5; Mega-Sena
+    // 1/10; Quina 1/16. Acertando sempre as posições 1..=K, S por concurso
+    // vale 4, 150, 324 e 375 contra W2 = 20, 5200, 71980 e 170640, então
+    // b → S·(N−1)/W2 = 0,6; 0,692; 0,266; 0,174, todos acima do limite. A
+    // saturação vem em poucas centenas de concursos (c ≥ 500 na MINI, onde o
+    // encolhimento pesa mais); com 700 concursos todas saturam.
+    for cfg in config::LOTERIAS.iter().chain([&MINI]) {
+        let concursos = 700;
+        let serie = serie_perfeita(cfg, concursos, true);
+        let probs = calibrar_linear(cfg, &serie).expect("série válida");
+        let n = f64::from(cfg.qtd_dezenas_possiveis());
+        let k = cfg.qtd_dezenas as f64;
+        let limite = (k / n).min(1.0 - k / n);
+
+        for x in &probs {
+            assert!(
+                (0.0..=1.0).contains(&x.probabilidade),
+                "{} concurso {}: p = {}",
+                cfg.slug,
+                x.concurso,
+                x.probabilidade
+            );
+        }
+        for (concurso, soma) in soma_por_concurso(&probs) {
+            assert!(
+                (soma - k).abs() < 1e-9,
+                "{} concurso {concurso}: {soma}",
+                cfg.slug
+            );
+        }
+
+        // No fim (saturado): p = K/N + limite·z(r), com z(r) = (N+1−2r)/(N−1);
+        // a posição 1 no teto do intervalo e a N no piso.
+        let z = |r: u32| (n + 1.0 - 2.0 * f64::from(r)) / (n - 1.0);
+        for x in probs.iter().filter(|x| x.concurso == concursos) {
+            assert_perto!(x.probabilidade, k / n + limite * z(x.posicao));
+        }
+        let na_posicao = |c: u32, r: u32| {
+            probs
+                .iter()
+                .find(|x| x.concurso == c && x.posicao == r)
+                .expect("posição presente")
+                .probabilidade
+        };
+        assert_perto!(na_posicao(concursos, 1), k / n + limite);
+        assert_perto!(na_posicao(concursos, n as u32), k / n - limite);
+
+        // Saturado de fato: b_t não cresce mais (p igual ao do concurso
+        // anterior); antes da saturação ele cresce.
+        assert_eq!(
+            na_posicao(concursos, 1),
+            na_posicao(concursos - 1, 1),
+            "{}",
+            cfg.slug
+        );
+        assert!(na_posicao(10, 1) > na_posicao(2, 1), "{}", cfg.slug);
+        assert!(na_posicao(10, 1) < k / n + limite, "{}", cfg.slug);
+    }
+}
+
+#[test]
+fn linear_limite_exato_na_fronteira_da_mini() {
+    // Fronteira na MINI: S·(N−1)·N = D·min(K, N−K), isto é 12·S = 2·D com
+    // D = (c + 100)·20. Posições 1 e 2 saindo sempre dão S = 4c:
+    // 48c = 40(c + 100) → c = 500. Com c = 500 as duas fórmulas coincidem
+    // (b = 1/2): p = 1/2 + w/6 para w = 3, 1, −1, −3 → 1, 2/3, 1/3, 0.
+    let mut serie: Vec<Observacao> = (1..=500)
+        .flat_map(|c| concurso_mini(c, [1, 2, 3, 4], Some([1, 2])))
+        .collect();
+    serie.extend(concurso_mini(501, [1, 2, 3, 4], None));
+    let probs = calibrar_linear(&MINI, &serie).expect("série válida");
+    assert_eq!(p(&probs, 501, 1), 1.0);
+    assert_perto!(p(&probs, 501, 2), 2.0 / 3.0);
+    assert_perto!(p(&probs, 501, 3), 1.0 / 3.0);
+    assert_eq!(p(&probs, 501, 4), 0.0);
+    // Um concurso antes (c = 499, S = 1996, D = 599·20 = 11980) ainda não
+    // satura (23952 < 23960): p(pos 1) = 1/2 + 1996·3/11980.
+    assert_perto!(p(&probs, 500, 1), 0.5 + 5988.0 / 11980.0);
+    assert!(p(&probs, 500, 1) < 1.0);
+}
+
+#[test]
+fn linear_limite_tambem_no_sentido_contrario() {
+    // Índice invertido: as K piores posições saem sempre → b negativo,
+    // saturado em −limite; a posição 1 recebe o piso e a N o teto.
+    let cfg = config::buscar("quina").expect("loteria configurada");
+    let n = cfg.qtd_dezenas_possiveis();
+    let serie = serie_de_posicao_fixa(cfg, 400, true, |posicao| {
+        posicao > n - cfg.qtd_dezenas as u32
+    });
+    let probs = calibrar_linear(cfg, &serie).expect("série válida");
+    assert!(probs.iter().all(|x| (0.0..=1.0).contains(&x.probabilidade)));
+    for (concurso, soma) in soma_por_concurso(&probs) {
+        assert!((soma - 5.0).abs() < 1e-9, "concurso {concurso}: {soma}");
+    }
+    // limite = 5/80: p(pos 1) = 5/80 − 5/80 = 0 e p(pos 80) = 5/80 + 5/80.
+    assert_eq!(p(&probs, 400, 1), 0.0);
+    assert_perto!(p(&probs, 400, n), 10.0 / 80.0);
+}
+
+#[test]
+fn linear_confere_com_oraculo_em_ponto_flutuante() {
+    // Oráculo: a fórmula do plano em f64 (z real, b real, clamp real), sem
+    // nenhum código de produção. As séries aleatórias não saturam; as
+    // perfeitas e as de sinal forte saturam e cobrem o ramo do limite.
+    for (i, cfg) in config::LOTERIAS.iter().chain([&MINI]).enumerate() {
+        let semente = 1000 + i as u64;
+        let series = [
+            serie_aleatoria(cfg, 400, semente, true),
+            serie_aleatoria(cfg, 250, semente + 10, false),
+            serie_com_sinal(cfg, 300, semente + 20, 0.9),
+            serie_perfeita(cfg, 600, true),
+        ];
+        for (j, serie) in series.iter().enumerate() {
+            let probs = calibrar_linear(cfg, serie).expect("série válida");
+            let esperado = oraculo_linear(cfg, serie);
+            assert_eq!(probs.len(), esperado.len());
+            for (x, e) in probs.iter().zip(&esperado) {
+                assert!(
+                    (x.probabilidade - e).abs() <= 1e-12,
+                    "{} série {j} concurso {} dezena {}: {} × oráculo {e}",
+                    cfg.slug,
+                    x.concurso,
+                    x.dezena,
+                    x.probabilidade
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn linear_indice_inerte_custa_pouco_e_bem_menos_que_a_calibracao_por_posicao() {
+    // Posições sem relação com o resultado: ln FB (Σ ln p − ln p_acaso) é o
+    // custo de aprender. Um parâmetro custa da ordem de ½·ln(1 + T/m)
+    // (m = 100 encolhe) mais flutuação de ordem 1; a calibração por posição,
+    // da ordem de (N−1)/2·ln(1 + T/m). Limites folgados, com semente fixa:
+    //   |ln FB linear| ≤ ½·ln T             (T = 1500: ≈ 3,66)
+    //   |ln FB linear| ≤ ¼ do da calibrar
+    // Observado (9 séries): linear de −0,67 a −1,43; por posição de −20 a
+    // −77. O limite tem folga de 2,5× sobre o pior linear e é ½·ln T, a ordem
+    // do custo de um parâmetro; também sai no `--nocapture`.
+    let concursos = 1500_u32;
+    let teto_linear = 0.5 * f64::from(concursos).ln();
+    for (i, cfg) in config::LOTERIAS.iter().enumerate() {
+        for semente in [101_u64, 202, 303] {
+            let semente = semente + i as u64;
+            let serie = serie_aleatoria(cfg, concursos, semente, false);
+            let linear = ln_fb(cfg, &calibrar_linear(cfg, &serie).expect("série válida"));
+            let por_posicao = ln_fb(cfg, &calibrar(cfg, &serie).expect("série válida"));
+            eprintln!(
+                "inerte {} semente {semente}: ln FB linear = {linear:.3}, por posição = {por_posicao:.3}",
+                cfg.slug
+            );
+            assert!(
+                linear.abs() <= teto_linear,
+                "{}: ln FB linear {linear} fora de ±{teto_linear}",
+                cfg.slug
+            );
+            assert!(
+                linear.abs() <= por_posicao.abs() / 4.0,
+                "{}: linear {linear} não é bem menor que por posição {por_posicao}",
+                cfg.slug
+            );
+        }
+    }
+}
+
+#[test]
+fn linear_indice_que_acerta_sempre_e_detectado() {
+    for cfg in config::LOTERIAS.iter().chain([&MINI]) {
+        let serie = serie_perfeita(cfg, 300, false);
+        let linear = ln_fb_com_limite(cfg, &calibrar_linear(cfg, &serie).expect("série válida"));
+        eprintln!("perfeito {}: ln FB linear = {linear:.1}", cfg.slug);
+        assert!(linear > 50.0, "{}: ln FB {linear}", cfg.slug);
+    }
+}
+
+#[test]
+fn linear_sinal_monotonico_moderado_e_detectado() {
+    let concursos = 1500;
+    for (i, cfg) in config::LOTERIAS.iter().enumerate() {
+        let serie = serie_com_sinal(cfg, concursos, 77 + i as u64, 0.3);
+        let linear = ln_fb(cfg, &calibrar_linear(cfg, &serie).expect("série válida"));
+        let por_posicao = ln_fb(cfg, &calibrar(cfg, &serie).expect("série válida"));
+        eprintln!(
+            "sinal {}: ln FB linear = {linear:.2}, por posição = {por_posicao:.2}",
+            cfg.slug
+        );
+        assert!(linear > 5.0, "{}: ln FB linear {linear}", cfg.slug);
+        assert!(
+            linear > por_posicao,
+            "{}: {linear} × {por_posicao}",
+            cfg.slug
+        );
+    }
+}
+
+#[test]
+fn linear_erros_de_entrada_sao_os_mesmos_da_calibracao() {
+    let buraco = [
+        concurso_mini(1, [1, 2, 3, 4], Some([1, 2])),
+        concurso_mini(3, [1, 2, 3, 4], Some([1, 2])),
+    ]
+    .concat();
+    let mut tres = serie_mini();
+    tres.iter_mut()
+        .filter(|o| o.concurso == 2 && o.dezena == 4)
+        .for_each(|o| o.saiu = Some(true));
+    let posicao_repetida = [concurso_mini(1, [1, 1, 3, 4], Some([1, 2]))].concat();
+    for serie in [buraco, tres, posicao_repetida] {
+        let esperado = calibrar(&MINI, &serie).expect_err("série inválida");
+        let obtido = calibrar_linear(&MINI, &serie).expect_err("série inválida");
+        assert!(matches!(obtido, SpiderError::AvaliacaoEntradaInvalida(_)));
+        assert_eq!(obtido.to_string(), esperado.to_string());
+    }
+}
+
+#[test]
+fn linear_entrada_vazia_devolve_vazio() {
+    assert!(calibrar_linear(&MINI, &[])
+        .expect("vazio é válido")
+        .is_empty());
+}
+
+#[test]
+fn linear_e_deterministica_e_nao_depende_da_ordem_da_entrada() {
+    let cfg = config::buscar("megasena").expect("loteria configurada");
+    let serie = serie_aleatoria(cfg, 50, 99, true);
+    let a = calibrar_linear(cfg, &serie).expect("série válida");
+    assert_eq!(a, calibrar_linear(cfg, &serie).expect("série válida"));
+
+    let mut embaralhada = serie.clone();
+    Gerador(5).embaralhar(&mut embaralhada);
+    let c = calibrar_linear(cfg, &embaralhada).expect("série válida");
+    assert_eq!(bits(&a), bits(&c));
+    assert_eq!(a, c);
+    assert!(a
+        .windows(2)
+        .all(|w| (w[0].concurso, w[0].dezena) < (w[1].concurso, w[1].dezena)));
+}

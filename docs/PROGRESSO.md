@@ -52,6 +52,12 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1d.3 Evidência do índice de força (FB prequencial) no `sync evidencia`
 - [x] 1d.4 Grau e direção no CSV do `sync tabela` + `docs/GUIA.md`
 
+## Fase 1e — Régua sensível (calibração linear) · `engenheiro-avaliacao`
+
+- [x] 1e.1 `calibrar_linear` (um parâmetro, encolhimento m = 100) + testes
+- [ ] 1e.2 B e índice inerte na calibração linear; linha extra no `sync avaliar`
+- [ ] 1e.3 `docs/GUIA.md` e README com a leitura nova; números das três loterias
+
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
 - [ ] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
@@ -1366,3 +1372,22 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `sync tabela` aprovado e registrado no plano (Fase 1b); o CSV do `sync dataset` segue sem BOM.
   Linha longa de `docs/GUIA.md:160` requebrada. CSVs antigos em `tabelas/` (fora do git, 19 colunas,
   sem BOM) ficam como estão; regerar com `sync tabela <loteria> --concurso N` quando precisar.
+- 2026-10-10 — 1e.1 concluída (engenheiro-avaliacao). `src/avaliacao/calibracao.rs`: `calibrar_linear(cfg,
+  observacoes) -> Result<Vec<ProbabilidadeDezena>>`, mesma entrada, validação e ordem do laço de `calibrar`
+  (intacta). Contas em i128 com w = N+1−2r, W2 = Σw², S = Σ w das posições que saíram antes de t,
+  D = (c+m)·W2: p = (K·D + N·S·w)/(N·D); limite exato |S|(N−1)N > D·min(K, N−K) → p = (K(N−1) ±
+  min(K, N−K)·w)/(N(N−1)) (p pode valer 0 ou 1 na saturação; o 1e-15 fica no `log_loss`). Reexport em
+  `src/avaliacao/mod.rs`. 17 testes `linear_*` em `src/avaliacao/tests.rs` (conta à mão na MINI, soma K,
+  primeiro = K/N exato, ponto no tempo, limite nos dois sentidos e na fronteira c = 500 da MINI, oráculo f64
+  independente a 1e-12 nas três loterias + MINI, erros iguais aos de `calibrar`, determinismo).
+  Desvio pequeno: guarda N < 2 → `AvaliacaoEntradaInvalida` (evita dividir por N−1 = 0; inalcançável nas
+  loterias reais). Inerte (T = 1500, sorteio e posições ao acaso, 3 sementes): ln FB linear Lotofácil
+  −1,43/−0,98/−1,20, Mega-Sena −1,07/−0,67/−1,42, Quina −1,17/−1,10/−1,38, contra −20 a −77 da `calibrar`
+  (custo ≈ ½·ln(1+T/m)). Sinal moderado (peso 1+0,3·z): linear 350,6/136,1/117,2 × posição 332,3/81,9/46,1.
+  Índice perfeito satura o limite só depois de c ≈ 56–137 concursos. verificador-vazamento: sem vazamento.
+  Revisão: aprovada com ressalvas, só BAIXA. Gate: fmt ok, clippy ok, cargo test verde (lib 527, 3
+  ignorados; sync 32, avaliar 85, conformidade 4, dataset 25, evidencia 19, features 56, indice 57,
+  parser 10, tabela 13), pytest 175, `validar todas` ok.
+  **Pendências BAIXA:** guarda N < 2 sem teste; falta em `calibrar_linear` o comentário de que N·D < 2^53
+  (por isso o f64 sai exato), como em `calibrar`; o teste da fronteira não distingue `>` de `>=` (correto
+  por construção).

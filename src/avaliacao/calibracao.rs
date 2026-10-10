@@ -1,13 +1,17 @@
-//! Índice → probabilidade: calibração pela posição, só com o passado.
+//! Índice → probabilidade: duas calibrações pela posição, só com o passado.
 //!
-//! `p_t(r) = (saídas da posição r antes de t + m·K/N) / (concursos antes de t + m)`
+//! - [`calibrar`] (1c): uma taxa por posição, *N* parâmetros.
+//! - [`calibrar_linear`] (1e): um único parâmetro, `p_t(r) = K/N + b_t·z(r)`,
+//!   com `z` linear na posição; ver a documentação da função.
+//!
+//! Calibração por posição: `p_t(r) = (saídas da posição r antes de t + m·K/N) / (concursos antes de t + m)`
 //! com `m` = [`CONCURSOS_FICTICIOS`] e o histórico inteiro, sem janela
 //! (`docs/PLANEJAMENTO.md`, 1c, decisões de 2026-10-05). Os `m` concursos
 //! fictícios puxam a taxa observada para o acaso, então o primeiro concurso
 //! recebe exatamente *K/N* e as *N* probabilidades de cada concurso somam *K*
 //! (cada concurso sorteado soma *K* saídas às contagens).
 //!
-//! Ordem do laço, como no motor: probabilidades de `t` → só então `t` entra
+//! Ordem do laço (a mesma nas duas): probabilidades de `t` → só então `t` entra
 //! nas contagens. Nada de `t` (nem `saiu`, nem posições) nem de concursos
 //! posteriores influencia `p_t(r)`.
 
@@ -91,6 +95,97 @@ pub fn calibrar(
             for o in grupo.iter().filter(|o| o.saiu == Some(true)) {
                 saidas_por_posicao[(o.posicao - 1) as usize] += 1;
             }
+            concursos_sorteados += 1;
+        }
+    }
+    Ok(saida)
+}
+
+/// Calibração linear na posição (1e): um parâmetro em vez de *N*.
+///
+/// Modelo (`docs/PLANEJAMENTO.md`, Fase 1e): `p_t(r) = K/N + b_t·z(r)`, com
+/// `z(r) = ((N+1) − 2r)/(N−1)` (posição 1 = +1, posição *N* = −1; `Σ z = 0`,
+/// então as *N* probabilidades de cada concurso somam exatamente *K*).
+/// `b_t` é de mínimos quadrados com encolhimento para zero, só com o passado:
+///
+/// `b_t = Σ_(s<t) Σ_r z(r)·saiu(s,r) / ((c + m)·Σ_r z(r)²)`
+///
+/// com `c` = concursos sorteados antes de `t` na entrada e `m` =
+/// [`CONCURSOS_FICTICIOS`] concursos fictícios com `b = 0`. O primeiro
+/// concurso da entrada recebe exatamente *K/N*.
+///
+/// Contas em inteiros e uma única divisão no fim. Com `w(r) = (N+1) − 2r`,
+/// `W2 = Σ w²`, `S = Σ_(s<t) Σ_r w(r)·saiu(s,r)` e `D = (c + m)·W2`:
+///
+/// - `b_t = S·(N−1)/D` e `b_t·z(r) = S·w(r)/D` (o `N−1` do `z` cancela);
+/// - `p = (K·D + N·S·w(r)) / (N·D)`.
+///
+/// Limite de `b_t`: `|b_t| ≤ B = min(K, N−K)/N`, o que mantém todo *p* em
+/// [0, 1]. A comparação é exata, sem ponto flutuante:
+/// `|S|·(N−1)·N > D·min(K, N−K)`. Se for verdadeira, `b_t = ±B` e
+/// `p = (K·(N−1) ± min(K, N−K)·w(r)) / (N·(N−1))`, também uma única divisão
+/// de inteiros. Com isso o numerador nunca é negativo nem passa do
+/// denominador. O limite do log loss (1e-15) continua sendo de
+/// `log_loss`; aqui *p* pode valer exatamente 0 ou 1 na saturação.
+///
+/// Mesma entrada, validação, saída e ordem do laço de [`calibrar`]: o
+/// snapshot sem `saiu` recebe probabilidade e não entra nas somas.
+pub fn calibrar_linear(
+    cfg: &LoteriaConfig,
+    observacoes: &[Observacao],
+) -> Result<Vec<ProbabilidadeDezena>> {
+    let linhas = ordenar_e_validar(cfg, observacoes)?;
+
+    let n = i128::from(cfg.qtd_dezenas_possiveis());
+    if n < 2 {
+        // z(r) divide por N − 1; uma loteria de uma dezena não tem posição.
+        return Err(invalida(format!(
+            "calibração linear exige ao menos 2 dezenas possíveis, a {} tem {n}",
+            cfg.nome_exibicao
+        )));
+    }
+    let k = cfg.qtd_dezenas as i128;
+    let m = i128::from(CONCURSOS_FICTICIOS);
+    let menor_lado = k.min(n - k);
+    let peso = |posicao: u32| (n + 1) - 2 * i128::from(posicao);
+    let w2: i128 = (1..=cfg.qtd_dezenas_possiveis())
+        .map(|r| peso(r) * peso(r))
+        .sum();
+
+    // S: soma dos pesos das posições que saíram, nos concursos já sorteados.
+    let mut soma_pesos = 0_i128;
+    let mut concursos_sorteados = 0_i128;
+
+    let mut saida = Vec::with_capacity(linhas.len());
+    for grupo in linhas.chunk_by(|a, b| a.concurso == b.concurso) {
+        let d = (concursos_sorteados + m) * w2;
+        let saturado = soma_pesos.abs() * (n - 1) * n > d * menor_lado;
+        for o in grupo {
+            // `ordenar_e_validar` garante posicao em 1..=N.
+            let w = peso(o.posicao);
+            let (numerador, denominador) = if saturado {
+                (
+                    k * (n - 1) + soma_pesos.signum() * menor_lado * w,
+                    n * (n - 1),
+                )
+            } else {
+                (k * d + n * soma_pesos * w, n * d)
+            };
+            saida.push(ProbabilidadeDezena {
+                concurso: o.concurso,
+                dezena: o.dezena,
+                posicao: o.posicao,
+                probabilidade: numerador as f64 / denominador as f64,
+                saiu: o.saiu,
+            });
+        }
+        // Só agora o concurso entra nas somas.
+        if grupo[0].saiu.is_some() {
+            soma_pesos += grupo
+                .iter()
+                .filter(|o| o.saiu == Some(true))
+                .map(|o| peso(o.posicao))
+                .sum::<i128>();
             concursos_sorteados += 1;
         }
     }
