@@ -524,6 +524,31 @@ Tarefas:
     `docs/contrato-v1.md`;
   - "por enquanto": o destino fica atrás da interface, para trocar por
     R2/Pages/S3 sem mudar o `sync exportar` nem o contrato (só a URL base).
+- **Regras do `sync publicar`** (decisões de 2026-10-12):
+  - **clone**: padrão `../rust_spider_dados`, trocável com `--repo <pasta>`;
+    se não existir, erro com o `git clone` a rodar (não clona sozinho);
+  - **antes de copiar**: `git fetch` e confere que o clone está limpo, em
+    `main` e sem divergir de `origin/main`; se não estiver, recusa sem
+    tocar em nada (nunca `reset --hard`);
+  - **o que entra**: só copia o `publico/v1/` já exportado, sem chamar o
+    `exportar` (quem encadeia é o `sync ciclo`, 3.1); publica o `v1/`
+    inteiro, sem argumento de loteria; aceita `--saida publico`;
+  - **integridade**: confere `sha256` e `bytes` do `index.json` contra os
+    arquivos no disco e recusa se não baterem;
+  - **o que conta como mudança**: algum hash, ou a lista de loterias e
+    arquivos, diferente do `index.json` do clone; se só `gerado_em` mudou,
+    "nada a publicar" e sai com sucesso, sem copiar nem commitar;
+  - **espelho**: `v1/` do clone fica idêntico a `publico/v1/`, apagando o
+    que sumiu da saída; fora de `v1/` nada é tocado;
+  - **commit**: um por publicação, mensagem fixa com o último concurso de
+    cada loteria (ex.: "Dados: lotofacil 3802, megasena 3069, quina
+    7140"), autor = git configurado na máquina;
+  - **push que falha**: o commit fica local e o comando termina com erro; a
+    próxima execução tenta o push de novo, mesmo sem mudança;
+  - **implementação**: chama o `git` da máquina (sem crate nova, SSH já
+    configurado); destino atrás de uma interface `Destino` em
+    `src/publicacao/`; testes com um repositório "remoto" local, sem rede, e
+    só quando o git estiver instalado.
 
 ### Fase 3 — Automação e operação
 

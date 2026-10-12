@@ -1564,3 +1564,9 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   (10) implementação: chamar o binário `git` com `std::process::Command` (sem crate nova, usa o SSH
   já configurado), atrás de um trait `Destino` em módulo novo da lib (ex. `src/publicacao/`);
   testes de integração com um repositório "remoto" bare local (sem rede) e git presente na máquina.
+- 2026-10-12 — Usuário aceitou as dez sugestões da 2.4; regras registradas em `PLANEJAMENTO.md` (Fase
+  2, "Regras do `sync publicar`"). Antes da 2.4, bancos atualizados: `atualizar todas` (salto nas três:
+  planilha completa com backup em `backups/`) → Lotofácil 3802, Mega-Sena 3069, Quina 7140 (sorteios de
+  2026-10-11); `validar todas` ok; `features` e `indice --perfil padrao_v1` nas três (snapshot do
+  próximo: 3803, 3070, 7141); `exportar todas` ok em `publico/v1/` (10 arquivos, 0,98 s). Na Mega-Sena e
+  na Quina a 1ª tentativa de ler a página falhou (`#tituloResultadoConcurso`), e a 2ª passou.
