@@ -62,7 +62,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
 - [x] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
-- [ ] 2.3 `docs/contrato-v1.md`
+- [x] 2.3 `docs/contrato-v1.md`
 - [ ] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 
 ## Fase 3 — Automação · `engenheiro-operacao`
@@ -1522,3 +1522,45 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   hashes do `index.json` contra o disco). Pendente para a 3.1: tudo ou nada do `todas` na biblioteca.
   Plano (Fase 2) e README atualizados. Gate: fmt, clippy, cargo test verde (lib 556, exportar 25, …).
   Correção feita direto, sem nova rodada do revisor. **2.1 e 2.2 concluídas.**
+- 2026-10-12 — 2.3 entregue pelo `engenheiro-publicacao`. `docs/contrato-v1.md` ganha a seção "JSON
+  público do app (`sync exportar`)", antes da seção do dataset de ML (que não muda): URL base
+  `https://raw.githubusercontent.com/edxgar48/rust_spider_dados/main/v1/` (a publicação, 2.4, ainda
+  não existe), uso do `index.json` pelo app (comparar `sha256`), tabela campo a campo dos quatro
+  arquivos (tipo, nulidade, significado, origem no código, ordem real das chaves), valores
+  enumerados com a leitura do `docs/GUIA.md`, formatação e garantias (inclusive a limitação das
+  renomeações), compatibilidade v1 e exemplo real (cópias dos bancos: Lotofácil 3799, Mega-Sena
+  3067, Quina 7137; `index.json` inteiro e trechos da Quina). README só aponta para o contrato.
+  Teste novo em `tests/exportar.rs`: toda chave dos quatro JSON gerados aparece como célula de
+  tabela na seção do app do contrato. Nenhuma mudança em `src/`. Revisão: aprovada com ressalvas,
+  sem ALTA; uma rodada de correções resolveu os 2 MÉDIA (regra de ausência: as chaves do v1
+  inicial estão sempre presentes, campo opcional acrescentado depois "pode faltar ou ser `null`";
+  teste restrito à seção do app, o que revelou e fechou a falta da tabela das chaves de `arquivos`)
+  e os 5 BAIXA (sem promessas não decididas sobre a 2.4 e a evidência B, `<base><caminho>`, neutro
+  0 no zscore e 0,5 no minmax, teto da Lotofácil, texto do diff do histórico). Gate: fmt, clippy,
+  cargo test verde (lib 556, exportar 26, …), pytest 175, `validar todas` ok. **2.3 concluída.**
+- 2026-10-12 — 2.4 não iniciada. (a) A 2.3 está concluída, mas ainda não foi commitada (`README.md`,
+  `docs/contrato-v1.md`, `tests/exportar.rs`, `docs/PROGRESSO.md`). O usuário precisa autorizar o
+  commit antes, para a 2.4 não se misturar ao mesmo diff. (b) O plano não define pontos que mudam o
+  comportamento do `sync publicar`. Perguntas devolvidas ao usuário, com sugestões:
+  (1) caminho do clone: flag `--repo <pasta>` obrigatória ou com padrão (`../rust_spider_dados`)?
+  sugestão: padrão `../rust_spider_dados`, trocável pela flag;
+  (2) clone inexistente: erro com a instrução do `git clone`, sem clonar sozinho (sugestão) ou
+  clonar automaticamente?
+  (3) antes de copiar: `git fetch` + conferir que o clone está limpo e em `main`, sem divergir de
+  `origin/main` (senão recusa sem tocar em nada; sugestão) ou `reset --hard origin/main`?
+  (4) entrada: só copia `publico/v1/` já exportado, sem chamar `exportar` (o ciclo da 3.1 encadeia);
+  sem argumento de loteria (publica o `v1/` inteiro); flag `--saida publico` igual à do `exportar`;
+  (5) antes de copiar, conferir `sha256` e `bytes` do `index.json` contra o disco e recusar se não
+  baterem (pendência da 2.1/2.2);
+  (6) "mudou" = algum `sha256` (ou a lista de loterias/arquivos) do `index.json` novo difere do
+  `index.json` do clone; se só `gerado_em` mudou, não copia nada, não commita, sai com código 0 e
+  mensagem "nada a publicar";
+  (7) espelho: `v1/` do clone fica idêntico a `publico/v1/` (arquivo que sumiu da saída é apagado
+  no clone)? sugestão: sim, espelho, mexendo só em `v1/` (README do repositório de dados intocado);
+  (8) commit: mensagem fixa em português com o resumo, ex. "Dados: lotofacil 3799, megasena 3067,
+  quina 7137", autor = configuração git da máquina; um commit por publicação;
+  (9) push que falha: o commit fica local, o comando sai com erro, e a próxima execução tenta o push
+  de novo mesmo sem mudança (detecta commits à frente de `origin/main`);
+  (10) implementação: chamar o binário `git` com `std::process::Command` (sem crate nova, usa o SSH
+  já configurado), atrás de um trait `Destino` em módulo novo da lib (ex. `src/publicacao/`);
+  testes de integração com um repositório "remoto" bare local (sem rede) e git presente na máquina.

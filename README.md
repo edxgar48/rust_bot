@@ -428,8 +428,9 @@ cargo run --release --example referencia_avaliacao -- lotofacil padrao_v1 result
 ml/.venv/Scripts/python ml/experimentos/001_baseline.py datasets/lotofacil/manifesto_parquet.json --referencia ref_lotofacil.json
 ```
 
-O contrato do dataset e do manifesto que o Python lê (colunas, tipos, chaves
-do manifesto e o que muda entre versões) está em `docs/contrato-v1.md`.
+O contrato do JSON público do app (`sync exportar`: campos, URL base, exemplo
+real) e do dataset e do manifesto que o Python lê (colunas, tipos, chaves do
+manifesto e o que muda entre versões) está em `docs/contrato-v1.md`.
 
 ### Busca de pesos (experimento 002)
 

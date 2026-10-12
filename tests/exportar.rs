@@ -998,3 +998,61 @@ fn cli_db_com_todas_e_recusado() {
     assert!(stderr(&out).contains("--db"), "{}", stderr(&out));
     assert!(!p.saida().exists());
 }
+
+// ---------------------------------------------------------------------------
+// Documentação: toda chave gerada está em docs/contrato-v1.md.
+// ---------------------------------------------------------------------------
+
+/// Nomes de chave de todos os objetos, sem repetir. Em `loterias` as chaves
+/// são os slugs (dados, não campos do contrato): só os valores são percorridos.
+fn chaves_do_contrato(v: &Value, pai: &str, achadas: &mut std::collections::BTreeSet<String>) {
+    match v {
+        Value::Object(campos) => {
+            for (chave, valor) in campos {
+                if pai != "loterias" {
+                    achadas.insert(chave.clone());
+                }
+                chaves_do_contrato(valor, chave, achadas);
+            }
+        }
+        Value::Array(itens) => itens
+            .iter()
+            .for_each(|i| chaves_do_contrato(i, pai, achadas)),
+        _ => {}
+    }
+}
+
+#[test]
+fn toda_chave_dos_json_gerados_esta_documentada_no_contrato() {
+    let doc = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/contrato-v1.md"))
+        .expect("docs/contrato-v1.md");
+    let p = Pasta::nova("doc");
+    gravar_tudo(&p.saida(), &lotes_das_tres(), GERADO_EM);
+
+    let mut chaves = std::collections::BTreeSet::new();
+    chaves_do_contrato(&json(&ler(&p.saida(), "index.json")), "", &mut chaves);
+    for slug in SLUGS {
+        for nome in ["ultimo", "tabela_geral", "historico"] {
+            let bytes = ler(&p.saida(), &format!("{slug}/{nome}.json"));
+            chaves_do_contrato(&json(&bytes), "", &mut chaves);
+        }
+    }
+    assert!(chaves.len() > 30, "poucas chaves coletadas: {chaves:?}");
+    // Só a seção do app conta: nomes da seção do dataset de ML não valem.
+    let ini = doc
+        .find("## JSON público do app")
+        .expect("cabeçalho '## JSON público do app' não encontrado no contrato");
+    let fim = doc
+        .find("## Dataset para o Python")
+        .expect("cabeçalho '## Dataset para o Python' não encontrado no contrato");
+    assert!(ini < fim, "seção do app deve vir antes da do dataset");
+    let secao = &doc[ini..fim];
+    let faltando: Vec<&String> = chaves
+        .iter()
+        .filter(|c| !secao.contains(&format!("| `{c}` |")))
+        .collect();
+    assert!(
+        faltando.is_empty(),
+        "chaves sem documentação em docs/contrato-v1.md: {faltando:?}"
+    );
+}
