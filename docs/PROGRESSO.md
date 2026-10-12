@@ -1451,7 +1451,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   features 56, indice 57, parser 10, tabela 13), pytest 175, `validar todas` ok. **Fase 1e concluída.**
   **Nota:** `docs/GUIA.md` está em CRLF na cópia de trabalho (`core.autocrlf=true`); no índice é LF.
 - 2026-10-12 — Decisão do usuário: destino da publicação (2.4), por enquanto, é um **repositório git
-  separado e público**, só com os dados (`publico/v1/` na raiz; nome a definir na 2.4). `sync publicar`
+  separado e público**, só com os dados (`publico/v1/` na raiz; repositório `edxgar48/rust_spider_dados`, criado pelo usuário em 2026-10-12, branch `main`). `sync publicar`
   usa um clone local, só faz commit e push quando algum hash do `index.json` muda, com o SSH já
   configurado na máquina. O app lê por `raw.githubusercontent.com`; a URL base entra no
   `docs/contrato-v1.md` (2.3). O destino fica atrás de uma interface, para trocar depois por R2/Pages/S3.
