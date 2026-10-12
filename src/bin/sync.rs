@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
 use rust_spider::{
-    backup, config, correcoes, dataset, db, downloader, manuais, orquestracao, parser, perfil,
-    registros, tabela, tempo, validacao, SpiderError,
+    backup, config, correcoes, dataset, db, downloader, exportacao, manuais, orquestracao, parser,
+    perfil, registros, tabela, tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -221,6 +221,27 @@ enum Comando {
         concurso: Option<u32>,
         /// Pasta onde gravar os CSV (uma subpasta por loteria)
         #[arg(long, default_value = "tabelas")]
+        saida: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+    },
+    /// Exporta os JSON do contrato `v1` para o app: `<saida>/v1/index.json` e,
+    /// por loteria, `ultimo.json`, `tabela_geral.json` (snapshot do próximo
+    /// concurso com o perfil ativo) e `historico.json`, com `schema_version` e
+    /// SHA-256 de cada arquivo no índice. Só lê o banco; recusa, sem gravar
+    /// nada, se as features ou o índice do perfil não estiverem em dia. Com
+    /// `todas`, é tudo ou nada; com um slug, regrava só os arquivos dele e
+    /// refaz o índice com o que está no disco.
+    Exportar {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
+        loteria: String,
+        /// Pasta de saída (os arquivos vão em `<saida>/v1/`)
+        #[arg(long, default_value = "publico")]
         saida: PathBuf,
         /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
         /// não pode ser usado com `todas`
@@ -504,6 +525,15 @@ async fn main() -> anyhow::Result<()> {
                 execucao.registrar(cfg, r)?;
             }
             execucao.concluir()?;
+        }
+        Comando::Exportar {
+            loteria,
+            saida,
+            db,
+            perfis,
+        } => {
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            exportar(&alvos, &perfis, &saida)?;
         }
         Comando::Dataset {
             loteria,
@@ -1403,6 +1433,71 @@ fn gravar_dataset(
         inicio.elapsed().as_secs_f64()
     );
     Ok(())
+}
+
+/// `sync exportar`: gera os arquivos de todas as loterias pedidas na memória
+/// (só lê os bancos) e só então grava. Se uma loteria falhar, nada é gravado.
+fn exportar(
+    alvos: &Alvos,
+    raiz_perfis: &std::path::Path,
+    saida: &std::path::Path,
+) -> anyhow::Result<()> {
+    let inicio = std::time::Instant::now();
+    let mut lotes = Vec::new();
+    let mut falhas: Vec<(&'static str, anyhow::Error)> = Vec::new();
+    for (cfg, db_caminho) in &alvos.itens {
+        match gerar_exportacao(cfg, db_caminho, raiz_perfis) {
+            Ok(lote) => lotes.push(lote),
+            Err(e) => falhas.push((cfg.slug, e)),
+        }
+    }
+    if !falhas.is_empty() {
+        if !alvos.multiplas {
+            return Err(falhas.remove(0).1);
+        }
+        for (slug, e) in &falhas {
+            eprintln!("Erro em {slug}: {e:#}");
+        }
+        let nomes: Vec<&str> = falhas.iter().map(|(s, _)| *s).collect();
+        anyhow::bail!(
+            "exportação cancelada, nada foi gravado: falhou em {}",
+            nomes.join(", ")
+        );
+    }
+
+    let slugs: Vec<&str> = config::LOTERIAS.iter().map(|l| l.slug).collect();
+    let gravados = exportacao::disco::gravar(saida, &lotes, &slugs, &agora_iso8601_utc()?)?;
+    for g in &gravados {
+        println!(
+            "{} ({} bytes, SHA-256 {})",
+            absoluto(&g.caminho).display(),
+            g.impressao.bytes,
+            g.impressao.sha256
+        );
+    }
+    println!(
+        "Exportação concluída: {} arquivo(s) em {}. Tempo: {:.2} s.",
+        gravados.len(),
+        absoluto(&exportacao::disco::pasta_versao(saida)).display(),
+        inicio.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
+/// Lê e confere o banco de uma loteria com o perfil ativo e gera os três
+/// arquivos dela. Não grava nada. Banco inexistente é erro, sem criar arquivo.
+fn gerar_exportacao(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+) -> anyhow::Result<exportacao::ArquivosLoteria> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, cfg.perfil_ativo)?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let dados = orquestracao::dados_para_exportar(&mut conn, cfg, &carregado)?;
+    Ok(exportacao::gerar_loteria(&dados)?)
 }
 
 /// `sync tabela`: monta a tabela geral do concurso (conferências e leitura

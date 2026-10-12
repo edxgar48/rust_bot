@@ -257,6 +257,11 @@ pub enum SpiderError {
     #[error("dataset: falha ao serializar o manifesto em JSON: {0} — erro de programação em `Manifesto` (src/dataset.rs), não nos dados; nada foi gravado")]
     ManifestoJson(#[source] serde_json::Error),
 
+    /// Saída do `sync exportar` que não pode ser aproveitada ou dado que não
+    /// cabe no contrato `v1`. Nada foi gravado.
+    #[error("exportação: {0}; nada foi gravado")]
+    ExportacaoInvalida(String),
+
     #[error("erro ao montar o Parquet: {0}")]
     Parquet(#[from] parquet::errors::ParquetError),
 

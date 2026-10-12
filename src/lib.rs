@@ -9,6 +9,7 @@ pub mod dataset;
 pub mod db;
 pub mod downloader;
 pub mod error;
+pub mod exportacao;
 pub mod manuais;
 pub mod model;
 pub mod motor;

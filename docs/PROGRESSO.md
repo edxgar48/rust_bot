@@ -60,8 +60,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
-- [ ] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
-- [ ] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
+- [x] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
+- [x] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
 - [ ] 2.3 `docs/contrato-v1.md`
 - [ ] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 
@@ -1480,3 +1480,45 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - 2026-10-12 — Usuário aceitou as dez sugestões acima para a 2.1. Regras registradas em
   `PLANEJAMENTO.md` (Fase 2, "Regras do `sync exportar`"); 2.1 e 2.2 numa entrega só. A 2.1 fica
   pronta para delegar ao `engenheiro-publicacao`.
+- 2026-10-12 — 2.1 + 2.2 entregues pelo `engenheiro-publicacao`, **ficam `[~]`** à espera de uma
+  decisão de contrato. Entrega: `src/exportacao/` (`mod.rs` e `json.rs` puros, escritor JSON próprio
+  com árvore `Valor` em ordem de inserção, `total` com `{:.9}` e -0 normalizado; `disco.rs` com
+  gravação atômica em duas fases, temporários com `sync_all`, renomeações, `index.json` por último),
+  `orquestracao::dados_para_exportar` (`tabela_do_concurso` dividida em `montar_tabela`, sem mudar o
+  CSV do `sync tabela`; reaproveita `ler_indice_conferido`), `ExportacaoInvalida` em `src/error.rs`,
+  subcomando `exportar <loteria|todas> [--saida publico] [--db] [--perfis perfis]`, README,
+  `.gitignore` com `/publico/`, `tests/exportar.rs` (25 testes) e 8 testes unitários. Nenhuma crate nova.
+  Escolhas do implementador onde o plano não decidia (aceitas pela revisão): `janela` inteiro (0 =
+  total); `dezenas` crescentes numa linha; `index.json` com `loterias` como objeto por slug na ordem do
+  config, `data` = data do último concurso, `arquivos` = {ultimo, tabela_geral, historico} com
+  `caminho` relativo a `v1/`; loteria preservada só entra no index se os 3 arquivos existirem e
+  `ultimo.json` for coerente, senão erro antes de gravar; `todas` gera tudo em memória e só grava se
+  todas passarem. Ponta a ponta (cópias, release): `exportar todas` ~1,0 s; ultimo / tabela_geral /
+  historico em bytes — Lotofácil 165 / 11.596 / 312.870, Mega-Sena 132 / 27.600 / 155.705, Quina
+  125 / 36.899 / 337.525; index 2.162; duas execuções diferem só em `gerado_em`. auditor-contrato:
+  conforme ao plano; `tabela_geral` = CSV do `sync tabela` em todas as dezenas. Gate: fmt ok, clippy
+  ok, cargo test verde (lib 555, 3 ignorados; sync 32, avaliar 89, conformidade 4, dataset 25,
+  evidencia 20, exportar 25, features 56, indice 57, parser 10, tabela 13), pytest 175, `validar
+  todas` ok. Revisão: aprovada com ressalvas, sem ALTA.
+  **Pergunta ao usuário (achado MÉDIA):** os valores de `evidencia_grau`, `evidencia_direcao` e
+  `normalizacao` no JSON v1 vêm hoje dos rótulos de exibição (`Grau::nome`, `Direcao::nome`,
+  `Normalizacao::como_str`), também usados no CSV: "muito fraca", "a favor de viés", "zscore". Mudar
+  um rótulo do CSV mudaria o v1 em silêncio. Decidir: (a) manter os rótulos de exibição como valores
+  v1, ou (b) identificadores estáveis sem acento (`muito_fraca`…`muito_forte`, `vies`/`acaso`,
+  `zscore`/`minmax`). Nos dois casos, o mapeamento passa a ser próprio de `exportacao`, com teste
+  fixando os 5 graus, as 2 direções e as 2 normalizações.
+  **Pendências BAIXA:** comentário de `disco.rs:8-10` promete "deixa a saída como estava", mas uma
+  falha no meio das renomeações deixa a saída misturada (corrigir o texto; na 2.4, `publicar` recusa
+  se sha256/bytes do index não baterem com o disco); o tudo ou nada do `todas` está na CLI
+  (`sync.rs:1438-1466`), levar para `orquestracao` na 3.1; `unreachable!` em `disco.rs:153-155`
+  (cosmético).
+- 2026-10-12 — Decisão do usuário sobre a 2.1/2.2: opção (b), **JSON sem acento**. Valores de texto
+  do contrato com identificadores próprios em `src/exportacao/mod.rs` (`grau_no_contrato`,
+  `direcao_no_contrato`, `normalizacao_no_contrato`): `muito_fraca`…`muito_forte`, `vies`/`acaso`,
+  `zscore`/`minmax`, independentes dos rótulos do CSV; `DadosExportacao.normalizacao` passa a ser o
+  enum `Normalizacao`. Testes: tabela fixa dos 5 graus, 2 direções e 2 normalizações; JSON ASCII puro
+  (unitário e integração). Exportação real das três loterias: os 10 arquivos ASCII, ~1,1 s. Comentário
+  de `disco.rs` corrigido (falha no meio das renomeações mistura arquivos; a 2.4 deve conferir os
+  hashes do `index.json` contra o disco). Pendente para a 3.1: tudo ou nada do `todas` na biblioteca.
+  Plano (Fase 2) e README atualizados. Gate: fmt, clippy, cargo test verde (lib 556, exportar 25, …).
+  Correção feita direto, sem nova rodada do revisor. **2.1 e 2.2 concluídas.**

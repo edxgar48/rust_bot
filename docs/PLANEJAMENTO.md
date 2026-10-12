@@ -480,6 +480,12 @@ Tarefas:
     `evidencia_grau` e `evidencia_direcao` (evidência por dezena, A). A
     evidência do índice (B) fica fora por ora (custa 1 a 4 s) e entra depois
     como campo opcional;
+  - **textos sem acento**: os JSON `v1` são ASCII puro. Valores de texto do
+    contrato com identificadores próprios, que não seguem os rótulos de
+    exibição do CSV: `evidencia_grau` ∈ {`muito_fraca`, `fraca`,
+    `moderada`, `forte`, `muito_forte`}; `evidencia_direcao` ∈ {`vies`,
+    `acaso`}; `normalizacao` ∈ {`zscore`, `minmax`}. Um teste fixa a tabela
+    (decisão de 2026-10-12);
   - **números**: `total` como número JSON com 9 casas fixas;
   - **`ultimo.json`**: `schema_version`, `loteria`, `concurso`, `data`,
     `dezenas`;

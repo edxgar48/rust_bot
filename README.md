@@ -47,8 +47,9 @@ src/
 ├── avaliacao/     # índice contra o acaso (log loss, Brier, top-k, walk-forward, bootstrap), testes de aleatoriedade e evidência bayesiana (por dezena e do índice), puro
 ├── registros.rs   # registro de uso do conjunto trancado (`registros/trancado_<loteria>.json`, versionado)
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
-├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela` e `dataset`: validação + motor/avaliação + banco
+├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela`, `exportar` e `dataset`: validação + motor/avaliação + banco
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
+├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
@@ -139,6 +140,15 @@ cargo run --bin sync -- evidencia quina --perfil busca_v1 --perfis outra/pasta
 # o anterior —, com os mesmos rótulos do `evidencia`; vazias no concurso 1. Como ler: docs/GUIA.md.
 cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
 cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concurso já sorteado (com `saiu`)
+
+# JSON do contrato `v1` para o app, em publico/v1/ (fora do git): index.json (SHA-256 de cada arquivo)
+# e, por loteria, ultimo.json, tabela_geral.json (próximo concurso, perfil ativo da loteria) e
+# historico.json. Só lê o banco; recusa, sem gravar nada, se features ou índice não estiverem em dia.
+# `todas` é tudo ou nada; com um slug só os arquivos dele são regravados e o index.json é refeito.
+# JSON sem acento: evidencia_grau muito_fraca|fraca|moderada|forte|muito_forte, evidencia_direcao
+# vies|acaso, normalizacao zscore|minmax (identificadores do contrato, não os rótulos do CSV).
+cargo run --bin sync -- exportar todas
+cargo run --bin sync -- exportar quina --saida outra/pasta
 
 # dataset de ML para o Python (`ml/`): features por (concurso, dezena, janela) dos
 # concursos sorteados, em datasets/<loteria>/features_v<versão>.<parquet|csv>

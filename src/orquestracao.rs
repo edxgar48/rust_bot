@@ -1328,13 +1328,22 @@ pub fn tabela_do_concurso(
     carregado: &PerfilCarregado,
     concurso: Option<u32>,
 ) -> Result<TabelaConcurso> {
-    let perfil = &carregado.perfil;
-    conferir_loteria_do_perfil(cfg, perfil)?;
+    conferir_loteria_do_perfil(cfg, &carregado.perfil)?;
     // Só leitura: a transação nunca recebe `commit` (leitura consistente).
     let tx = db::iniciar_leitura(conn)?;
     let conferido = ler_indice_conferido(&tx, cfg, carregado)?;
     drop(tx);
+    montar_tabela(cfg, carregado, &conferido, concurso)
+}
 
+/// Monta a [`TabelaConcurso`] a partir do que [`ler_indice_conferido`] leu.
+fn montar_tabela(
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+    conferido: &IndiceConferido,
+    concurso: Option<u32>,
+) -> Result<TabelaConcurso> {
+    let perfil = &carregado.perfil;
     let proximo = conferido.ultimo + 1;
     let concurso = concurso.unwrap_or(proximo);
     if !(1..=proximo).contains(&concurso) {
@@ -1401,6 +1410,45 @@ pub fn tabela_do_concurso(
         ultimo_sorteado: conferido.ultimo,
         data_sorteio,
         linhas,
+    })
+}
+
+/// Tudo o que o `sync exportar` precisa de uma loteria, lido numa única
+/// transação de leitura e depois das conferências de [`ler_indice_conferido`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct DadosExportacao {
+    /// Tabela geral do próximo concurso (último + 1) com o perfil ativo.
+    pub tabela: TabelaConcurso,
+    /// Hash do `.toml` do perfil ativo.
+    pub hash_toml: String,
+    /// Normalização do perfil.
+    pub normalizacao: crate::motor::Normalizacao,
+    /// Versão das fórmulas das features (`FEATURE_VERSION`).
+    pub feature_version: u32,
+    /// Histórico inteiro, em ordem crescente de concurso.
+    pub resultados: Vec<Resultado>,
+}
+
+/// `sync exportar`: lê e confere (como o `sync tabela` e o `sync avaliar`)
+/// o que vai para o app, com o perfil `carregado` (o ativo da loteria). Só
+/// lê; features ou índice fora de dia são recusados antes de qualquer
+/// arquivo ser tocado.
+pub fn dados_para_exportar(
+    conn: &mut Connection,
+    cfg: &LoteriaConfig,
+    carregado: &PerfilCarregado,
+) -> Result<DadosExportacao> {
+    conferir_loteria_do_perfil(cfg, &carregado.perfil)?;
+    let tx = db::iniciar_leitura(conn)?;
+    let conferido = ler_indice_conferido(&tx, cfg, carregado)?;
+    drop(tx);
+    let tabela = montar_tabela(cfg, carregado, &conferido, None)?;
+    Ok(DadosExportacao {
+        tabela,
+        hash_toml: carregado.hash_toml.clone(),
+        normalizacao: carregado.perfil.normalizacao,
+        feature_version: FEATURE_VERSION,
+        resultados: conferido.resultados,
     })
 }
 
