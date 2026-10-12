@@ -61,7 +61,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
 - [ ] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
-- [ ] 2.2 Geração determinística + hash SHA-256 + `schema_version`
+- [ ] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
 - [ ] 2.3 `docs/contrato-v1.md`
 - [ ] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 
@@ -1456,3 +1456,27 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   configurado na máquina. O app lê por `raw.githubusercontent.com`; a URL base entra no
   `docs/contrato-v1.md` (2.3). O destino fica atrás de uma interface, para trocar depois por R2/Pages/S3.
   Registrado em `PLANEJAMENTO.md` (Fase 2); a 2.4 deixa de estar bloqueada.
+- 2026-10-12 — 2.1 não iniciada: o plano (Fase 2) dá só o esqueleto dos quatro arquivos; os campos são
+  o contrato do app e não dá para trocá-los dentro de `v1` depois (só acrescentar opcionais). Perguntas
+  devolvidas ao usuário, com sugestões: (1) pré-condições — `exportar` só lê o banco e recusa (como
+  `sync tabela`/`avaliar`, via `ler_indice_conferido`) se features ou índice do perfil não estiverem em
+  dia, sem calcular nada; (2) perfil — sempre `LoteriaConfig::perfil_ativo`, sem `--perfil`;
+  (3) `tabela_geral.json` — snapshot de último + 1 reaproveitando `orquestracao::tabela_do_concurso`:
+  cabeçalho (`schema_version`, `loteria`, `perfil`, `hash_toml`, `janela`, `normalizacao`,
+  `feature_version`, `concurso` = próximo, `ultimo_sorteado`) e uma entrada por dezena em ordem de
+  posição (`dezena`, `posicao`, `total`, `variacao_posicao`, os 9 componentes da janela do perfil com
+  `null` explícito, `evidencia_grau`, `evidencia_direcao` de A); B (evidência do índice) fica fora por
+  enquanto e entra depois como campo opcional; (4) `total` como número JSON com 9 casas fixas;
+  (5) `ultimo.json` = `schema_version`, `loteria`, `concurso`, `data`, `dezenas`; (6) `historico.json`
+  = objeto `{schema_version, loteria, concursos: [[concurso, "AAAA-MM-DD", [dezenas]], ...]}` em ordem
+  crescente, histórico inteiro; (7) `index.json` = `schema_version`, `gerado_em` (ISO-8601 UTC, único
+  campo não determinístico) e uma entrada por loteria do config (`ultimo_concurso`, `data`, e por
+  arquivo `caminho`, `sha256`, `bytes`); loteria sem arquivos na saída → `null`; `exportar <loteria>`
+  regrava só os arquivos dela e refaz o `index.json` com os hashes dos arquivos presentes no disco;
+  `exportar todas` é tudo ou nada; (8) formatação — UTF-8 sem BOM, `\n`, indentação de 2 espaços,
+  exceto `historico.json` (um concurso por linha); gravação atômica (arquivo temporário + renomear);
+  (9) `publico/` entra no `.gitignore` do repositório do código; (10) 2.1 e 2.2 numa entrega só
+  (os hashes e o `schema_version` já fazem parte dos arquivos da 2.1), com a 2.3 logo depois.
+- 2026-10-12 — Usuário aceitou as dez sugestões acima para a 2.1. Regras registradas em
+  `PLANEJAMENTO.md` (Fase 2, "Regras do `sync exportar`"); 2.1 e 2.2 numa entrega só. A 2.1 fica
+  pronta para delegar ao `engenheiro-publicacao`.

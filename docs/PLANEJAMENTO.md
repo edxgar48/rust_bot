@@ -464,6 +464,41 @@ Tarefas:
 
 - `schema_version` em cada arquivo, hash SHA-256 por arquivo, geração
   determinística (mesmos dados → mesmos bytes).
+- **Regras do `sync exportar`** (decisões de 2026-10-12; os campos são o
+  contrato `v1`: depois só se acrescenta campo opcional):
+  - **pré-condições**: só lê o banco, não calcula nada; recusa e não grava
+    nada se features ou índice do perfil não estiverem em dia (como o
+    `sync tabela` e o `sync avaliar`);
+  - **perfil**: sempre o perfil ativo da loteria (`perfil_ativo` do
+    `LoteriaConfig`), sem `--perfil`;
+  - **`tabela_geral.json`**: snapshot do próximo concurso (último + 1), pela
+    mesma função do `sync tabela`. Cabeçalho `schema_version`, `loteria`,
+    `perfil`, `hash_toml`, `janela`, `normalizacao`, `feature_version`,
+    `concurso` (o próximo), `ultimo_sorteado`. Uma entrada por dezena, em
+    ordem de posição: `dezena`, `posicao`, `total`, `variacao_posicao`, os 9
+    componentes da janela do perfil (`null` explícito quando faltar),
+    `evidencia_grau` e `evidencia_direcao` (evidência por dezena, A). A
+    evidência do índice (B) fica fora por ora (custa 1 a 4 s) e entra depois
+    como campo opcional;
+  - **números**: `total` como número JSON com 9 casas fixas;
+  - **`ultimo.json`**: `schema_version`, `loteria`, `concurso`, `data`,
+    `dezenas`;
+  - **`historico.json`**: `{schema_version, loteria, concursos: [[concurso,
+    "AAAA-MM-DD", [dezenas]], ...]}`, histórico inteiro em ordem crescente;
+  - **`index.json`**: `schema_version`, `gerado_em` (ISO-8601 UTC, o único
+    campo que muda a cada execução) e uma entrada por loteria do config com
+    `ultimo_concurso`, `data` e, por arquivo, `caminho`, `sha256`, `bytes`;
+    loteria sem arquivos na saída → `null`. `exportar <loteria>` regrava só
+    os arquivos dela e refaz o `index.json` com os hashes dos arquivos
+    presentes no disco; `exportar todas` é tudo ou nada (se uma loteria
+    falhar, nada é gravado);
+  - **formatação**: UTF-8 sem BOM, fim de linha `\n`, indentação de 2
+    espaços, exceto `historico.json` (um concurso por linha); cada arquivo é
+    gravado num temporário e renomeado (nunca fica pela metade);
+  - **`.gitignore`**: `publico/` fica fora do repositório do código (os dados
+    vão para o `rust_spider_dados`);
+  - **entrega**: 2.1 e 2.2 numa entrega só (hashes e `schema_version` já
+    fazem parte dos arquivos); a 2.3 (`docs/contrato-v1.md`) vem logo depois.
 - `docs/contrato-v1.md`: significado de cada campo + exemplo real. É a
   entrega para o planejamento do front-end.
 - Comando `sync publicar` atrás de uma interface simples (destino trocável).
