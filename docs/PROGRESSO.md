@@ -63,7 +63,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
 - [ ] 2.2 Geração determinística + hash SHA-256 + `schema_version`
 - [ ] 2.3 `docs/contrato-v1.md`
-- [ ] 2.4 Comando `sync publicar` (depende de decisão em aberto)
+- [ ] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
@@ -78,7 +78,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Decisões em aberto
 
-- [ ] Destino da publicação — bloqueia 2.4
+- [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
 - [ ] Canal de alerta — bloqueia 3.6
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
@@ -1450,3 +1450,9 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   cargo test verde (lib 547, 3 ignorados; sync 32, avaliar 89, conformidade 4, dataset 25, evidencia 20,
   features 56, indice 57, parser 10, tabela 13), pytest 175, `validar todas` ok. **Fase 1e concluída.**
   **Nota:** `docs/GUIA.md` está em CRLF na cópia de trabalho (`core.autocrlf=true`); no índice é LF.
+- 2026-10-12 — Decisão do usuário: destino da publicação (2.4), por enquanto, é um **repositório git
+  separado e público**, só com os dados (`publico/v1/` na raiz; nome a definir na 2.4). `sync publicar`
+  usa um clone local, só faz commit e push quando algum hash do `index.json` muda, com o SSH já
+  configurado na máquina. O app lê por `raw.githubusercontent.com`; a URL base entra no
+  `docs/contrato-v1.md` (2.3). O destino fica atrás de uma interface, para trocar depois por R2/Pages/S3.
+  Registrado em `PLANEJAMENTO.md` (Fase 2); a 2.4 deixa de estar bloqueada.

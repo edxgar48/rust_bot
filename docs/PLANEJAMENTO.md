@@ -467,6 +467,20 @@ Tarefas:
 - `docs/contrato-v1.md`: significado de cada campo + exemplo real. É a
   entrega para o planejamento do front-end.
 - Comando `sync publicar` atrás de uma interface simples (destino trocável).
+  **Destino, por enquanto, um repositório git separado** (decisão de
+  2026-10-12):
+  - repositório próprio só para os dados (nome a definir na 2.4, por exemplo
+    `edxgar48/rust_spider_dados`), **público**, fora do repositório do
+    código; `publico/v1/` vai para a raiz dele;
+  - `sync publicar` usa um clone local do repositório (caminho configurável),
+    copia `publico/v1/`, e só faz commit e push se algum hash do
+    `index.json` mudou — sem commit vazio; push via SSH, com as credenciais
+    git já configuradas na máquina (nenhum segredo no projeto);
+  - o app lê pelas URLs `https://raw.githubusercontent.com/<dono>/<repo>/<branch>/v1/...`
+    (cache de alguns minutos no GitHub); a URL base entra no
+    `docs/contrato-v1.md`;
+  - "por enquanto": o destino fica atrás da interface, para trocar por
+    R2/Pages/S3 sem mudar o `sync exportar` nem o contrato (só a URL base).
 
 ### Fase 3 — Automação e operação
 
@@ -491,7 +505,6 @@ com o planejamento do front-end.
 
 ## Decisões em aberto
 
-- Destino da publicação (Cloudflare R2/Pages, GitHub Pages, S3, …) — Fase 2.
 - Canal de alerta (Telegram, Discord, e-mail) — Fase 3.
 
 ## Backlog
