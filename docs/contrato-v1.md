@@ -35,9 +35,10 @@ de dados `edxgar48/rust_spider_dados` (público, branch `main`).
 - A URL base é a **única** coisa que muda se o destino trocar no futuro
   (R2, Pages, S3...): caminhos e conteúdo dos arquivos são os mesmos. Mantenha
   a URL base numa configuração do app, não espalhada pelo código.
-- **Estado atual**: `sync publicar` (tarefa 2.4) **ainda não existe**. Hoje o
-  `sync exportar` só grava em `publico/v1/` na máquina do projeto; a URL acima
-  só passa a responder depois da 2.4.
+- **Estado atual**: `sync publicar` (tarefa 2.4) copia o `publico/v1/` já
+  exportado para o clone do repositório de dados e faz o push; a URL acima
+  responde depois da primeira publicação. A publicação não muda nenhum campo
+  ou caminho do contrato.
 
 ### Estrutura de pastas
 

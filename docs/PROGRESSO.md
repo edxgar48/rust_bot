@@ -63,7 +63,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
 - [x] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
 - [x] 2.3 `docs/contrato-v1.md`
-- [ ] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
+- [x] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
@@ -1570,3 +1570,35 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   2026-10-11); `validar todas` ok; `features` e `indice --perfil padrao_v1` nas três (snapshot do
   próximo: 3803, 3070, 7141); `exportar todas` ok em `publico/v1/` (10 arquivos, 0,98 s). Na Mega-Sena e
   na Quina a 1ª tentativa de ler a página falhou (`#tituloResultadoConcurso`), e a 2ª passou.
+- 2026-10-12 — 2.4 entregue pelo `engenheiro-publicacao`. `src/publicacao/` novo: `mod.rs` (trait
+  `Destino` com `preparar`/`espelhar`/`registrar`/`enviar`, `publicar()`, `Desfecho` = `Publicado` |
+  `EnvioRetomado` | `NadaAPublicar`), `indice.rs` (puro: leitura e comparação do `index.json` ignorando
+  `gerado_em`, mensagem do commit, `caminho_seguro`), `saida.rs` (confere `publico/v1/` contra o próprio
+  index: sha256, bytes, ausente, sobrando), `git.rs` (`DestinoGit`, `git` via `std::process::Command`,
+  sempre com `-c core.autocrlf=false -c core.safecrlf=false`, `GIT_TERMINAL_PROMPT=0`). Três variantes
+  novas em `SpiderError` (`PublicacaoSaidaInvalida`, `PublicacaoRecusada`, `PublicacaoEnvioFalhou`);
+  subcomando `publicar [--saida publico] [--repo ../rust_spider_dados]`; README; `docs/contrato-v1.md`
+  só no parágrafo "Estado atual". Nenhuma crate nova. Escolhas do implementador onde o plano não
+  decidia (aceitas pela revisão): mensagem do commit em ordem do index, loteria `null` omitida ("Dados:
+  nenhuma loteria com arquivos" se todas forem `null`); arquivo em `publico/v1/` não citado no index
+  (ex. `.tmp`) → recusa; saída conferida antes do `fetch`; à frente de `origin/main` = envio pendente
+  (qualquer commit local, por isso o clone é só da publicação — README); raiz do clone conferida com
+  `rev-parse --show-prefix`; index do clone ilegível conta como mudança; falha na cópia/add/commit
+  desfaz o espelho só em `v1/` (`reset`/`checkout`/`clean -- v1`, sem `reset --hard`); remoto vazio
+  (sem `main`) → recusa com instrução de commit inicial fora de `v1/`. Testes: 13 unitários e 18 de
+  integração em `tests/publicar.rs` (remoto bare local, sem rede, pulados sem git; blobs no remoto
+  conferidos byte a byte contra o index com `autocrlf`/`safecrlf` ligados; push recusado por hook e
+  reenviado; commit recusado por hook e espelho desfeito; clone sujo/outro branch/atrás/divergente/
+  vazio/inexistente; caminho inseguro). Revisão: aprovada com ressalvas, sem ALTA; uma rodada corrigiu
+  o MÉDIA (remoto vazio com mensagem enganosa) e 4 BAIXA (autocrlf/safecrlf, teste dos blobs sem
+  `trim`, blindagem dos testes contra `core.hooksPath`/`commit.gpgsign` globais, testes do desfazer e
+  do caminho inseguro). **BAIXA deixadas para a Fase 3:** (1) `GIT_TERMINAL_PROMPT=0` não cobre o SSH
+  (passphrase ou host key desconhecido travam sem timeout) — na 3.1/3.7, `core.sshCommand "ssh -o
+  BatchMode=yes"` no clone de dados ou timeout no fetch/push; (2) não se confere que o clone é o
+  repositório de dados (`--repo .` na raiz do código, limpo e em main, commitaria `v1/` lá) — checagem
+  barata possível pela URL do `origin`, fora do plano, a decidir; (3) janela entre conferir e copiar
+  (um `exportar` simultâneo) — resolvida pela trava da 3.4. O remoto real (`git ls-remote`) já tem
+  `main` com um commit (f3ebe1a). `sync publicar` **não** foi rodado contra o repositório real. Gate:
+  fmt ok, clippy ok, cargo test verde (lib 569, 3 ignorados; sync 32, avaliar 89, conformidade 4,
+  dataset 25, evidencia 20, exportar 26, features 56, indice 57, parser 10, publicar 18, tabela 13),
+  pytest 175, `validar todas` ok. **2.4 concluída; Fase 2 concluída.**

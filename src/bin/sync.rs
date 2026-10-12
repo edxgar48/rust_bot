@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
 use rust_spider::{
     backup, config, correcoes, dataset, db, downloader, exportacao, manuais, orquestracao, parser,
-    perfil, registros, tabela, tempo, validacao, SpiderError,
+    perfil, publicacao, registros, tabela, tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -250,6 +250,23 @@ enum Comando {
         /// Pasta dos perfis de pesos (uma subpasta por loteria)
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
+    },
+    /// Publica o `<saida>/v1/` já exportado no clone git do repositório de
+    /// dados e envia (push para `origin/main`). Não chama o `exportar` nem lê
+    /// banco: confere `sha256` e `bytes` do `index.json` contra o disco e
+    /// recusa se não baterem. Antes de copiar faz `git fetch` e recusa, sem
+    /// tocar em nada, se o clone estiver sujo, fora de `main` ou atrás/
+    /// divergente de `origin/main`. Se só `gerado_em` mudou, diz "nada a
+    /// publicar" e sai com sucesso. Um commit por publicação; se o push
+    /// falhar, o commit fica local e a próxima execução tenta de novo. Não
+    /// clona sozinho.
+    Publicar {
+        /// Pasta de saída do `exportar` (lê `<saida>/v1/`)
+        #[arg(long, default_value = "publico")]
+        saida: PathBuf,
+        /// Clone do repositório de dados
+        #[arg(long, default_value = publicacao::REPO_PADRAO)]
+        repo: PathBuf,
     },
     /// Grava o dataset de ML para o Python: as features de `features_dezena`
     /// (uma linha por concurso, dezena e janela, com data, trecho e `saiu`)
@@ -534,6 +551,25 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
             exportar(&alvos, &perfis, &saida)?;
+        }
+        Comando::Publicar { saida, repo } => {
+            let mut destino = publicacao::DestinoGit::novo(&repo);
+            match publicacao::publicar(&mut destino, &saida)? {
+                publicacao::Desfecho::Publicado { mensagem } => println!(
+                    "Publicado e enviado para {}/{} a partir de {}: {mensagem}",
+                    publicacao::REMOTO,
+                    publicacao::BRANCH,
+                    absoluto(&repo).display()
+                ),
+                publicacao::Desfecho::EnvioRetomado => println!(
+                    "Nada novo a publicar, mas havia commit local sem push: enviado para {}/{}.",
+                    publicacao::REMOTO,
+                    publicacao::BRANCH
+                ),
+                publicacao::Desfecho::NadaAPublicar => println!(
+                    "Nada a publicar: os arquivos são os mesmos do clone (só `gerado_em` mudou, se mudou)."
+                ),
+            }
         }
         Comando::Dataset {
             loteria,

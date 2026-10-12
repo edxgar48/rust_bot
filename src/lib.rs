@@ -16,6 +16,7 @@ pub mod motor;
 pub mod orquestracao;
 pub mod parser;
 pub mod perfil;
+pub mod publicacao;
 pub mod registros;
 pub mod tabela;
 pub mod tempo;

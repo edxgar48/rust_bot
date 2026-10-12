@@ -262,6 +262,22 @@ pub enum SpiderError {
     #[error("exportação: {0}; nada foi gravado")]
     ExportacaoInvalida(String),
 
+    /// Saída do `sync exportar` que não pode ser publicada: sem `index.json`,
+    /// arquivo que não bate com o `sha256`/`bytes` do índice, arquivo ausente
+    /// ou fora do índice. Nada foi copiado.
+    #[error("publicação: a saída `{}` não pode ser publicada: {motivo} — rode `sync exportar todas` de novo; nada foi copiado", caminho.display())]
+    PublicacaoSaidaInvalida { caminho: PathBuf, motivo: String },
+
+    /// O destino não está em condições de receber (clone ausente, sujo, fora
+    /// de `main`, atrás ou divergente de `origin/main`) ou o `git` falhou antes
+    /// de qualquer envio. A mensagem diz o que fazer.
+    #[error("publicação: {0}")]
+    PublicacaoRecusada(String),
+
+    /// O commit existe só no clone local; a próxima execução tenta de novo.
+    #[error("publicação: o envio ao remoto falhou ({0}) — o commit ficou só no clone local; confira a rede e o SSH e rode `sync publicar` de novo, que tenta o envio outra vez")]
+    PublicacaoEnvioFalhou(String),
+
     #[error("erro ao montar o Parquet: {0}")]
     Parquet(#[from] parquet::errors::ParquetError),
 

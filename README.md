@@ -50,6 +50,7 @@ src/
 ├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela`, `exportar` e `dataset`: validação + motor/avaliação + banco
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
 ├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
+├── publicacao/    # `sync publicar`: confere o publico/v1/, decide se mudou e publica num `Destino` (clone git)
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
@@ -149,6 +150,23 @@ cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concu
 # vies|acaso, normalizacao zscore|minmax (identificadores do contrato, não os rótulos do CSV).
 cargo run --bin sync -- exportar todas
 cargo run --bin sync -- exportar quina --saida outra/pasta
+
+# publica o publico/v1/ já exportado no clone git do repositório de dados e faz push (origin/main).
+# Não exporta nem lê banco; não clona sozinho (se o clone faltar, o erro traz o `git clone` a rodar).
+# Clone padrão ../rust_spider_dados (relativo ao diretório atual), trocável com --repo.
+# Antes de copiar: confere sha256 e bytes do index.json contra o disco, faz `git fetch` e recusa, sem
+# tocar em nada, se o clone estiver sujo, fora de `main` ou atrás/divergente de origin/main.
+# Só publica se algum hash ou a lista de arquivos mudou (só `gerado_em` diferente = "nada a publicar",
+# sucesso, sem commit). Um commit por publicação, "Dados: lotofacil 3802, megasena 3069, quina 7140"
+# (loteria null no index fica fora da mensagem), autor = git da máquina; v1/ do clone vira espelho do
+# publico/v1/ (apaga o que sumiu; fora de v1/ nada é tocado). Push que falha: o commit fica local, o
+# comando termina com erro e a próxima execução reenvia, mesmo sem mudança. Qualquer commit local do
+# clone à frente de origin/main também é enviado pelo `publicar` (envio pendente): use o clone só
+# para a publicação. Remoto vazio (sem commit em main) é recusado: faça antes um commit inicial
+# fora de v1/ (ex.: README) e `git push -u origin main`.
+git clone git@github.com:edxgar48/rust_spider_dados.git ../rust_spider_dados   # uma vez
+cargo run --bin sync -- publicar
+cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 
 # dataset de ML para o Python (`ml/`): features por (concurso, dezena, janela) dos
 # concursos sorteados, em datasets/<loteria>/features_v<versão>.<parquet|csv>
