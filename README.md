@@ -57,6 +57,7 @@ src/
 ├── orquestracao/aguardar.rs # `sync ciclo --aguardar` (3.3): rodadas com backoff até 01h00, relógio e espera injetados
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── trava.rs       # `sync.lock` (3.4): trava do SO contra execução simultânea
+├── log_arquivo.rs # `logs/sync_AAAA-MM-DD.log` (3.5): cópia da tela com hora e nível, abertura e fechamento
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
@@ -188,8 +189,8 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
-#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); log em arquivo,
-#    alertas e agendamento ainda não existem (3.5 a 3.7). A trava (3.4) existe: ver "Trava" abaixo.
+#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); alertas e agendamento
+#    ainda não existem (3.6 e 3.7). A trava (3.4) e o log em arquivo (3.5) existem: ver "Trava" e "Log".
 cargo run --bin sync -- ciclo todas
 cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
 
@@ -511,6 +512,51 @@ Ficam livres `listar`, `validar`, `buracos`, `calendario`, `aleatoriedade`,
   o processo que perde não consegue ler o próprio `sync.lock` travado). Se
   faltar, a mensagem sai sem detalhes. Os dois arquivos estão no `.gitignore`.
 - Exige Rust 1.89 (`File::try_lock`).
+
+## Log em arquivo (`logs/`)
+
+Os mesmos comandos que tomam a trava gravam um log em
+`logs/sync_AAAA-MM-DD.log`, na pasta de trabalho (a mesma do `sync.lock`, fora
+do git). Os comandos só de leitura ficam só no console e não criam a pasta.
+
+```text
+23:00:01 INFO  Início: PID 4120, comando `sync ciclo todas --aguardar`, versão 0.1.0
+23:00:03 INFO  === Lotofácil (lotofacil) ===
+23:05:10 INFO  Aguardando lotofacil: o concurso do sorteio de 2026-10-13 ainda não saiu ...
+00:12:44 ERRO  Error: o ciclo terminou com falha(s); veja o resumo acima
+00:12:44 ERRO  Fim: falha, duração 1 h 12 min 44 s
+```
+
+- É uma cópia de tudo o que sai na tela (saída normal e de erro, inclusive o
+  erro final com a cadeia `Caused by:` e as mensagens do navegador, como
+  "tentativa 2/3 falhou"), uma linha do log por linha da tela, cada uma com a
+  hora de Brasília (`HH:MM:SS`) e o nível. O texto do console não muda.
+- **Níveis**: `INFO` é o andamento normal (inclui "aguardando o concurso" do
+  `--aguardar`); `AVISO` é o que o comando seguiu mas merece olhar (avisos da
+  validação, buraco e a dica de como fechá-lo, salto, concurso que não saiu,
+  falha de navegador/rede que será repetida, divergência de inserção manual ou
+  de correção); `ERRO` é falha de etapa, de loteria, da publicação ou do
+  comando.
+- A primeira linha traz o PID, o comando completo (os argumentos) e a versão; a
+  última, a duração e `sucesso` ou `falha`. Um processo morto à força (queda de
+  energia, `taskkill`) não escreve o fechamento: um log que termina sem `Fim:`
+  indica isso.
+- **Arquivo do dia**: a data é a do *início* da execução em Brasília, então a
+  noite do `ciclo --aguardar` (23h às 01h) fica toda num arquivo. O arquivo é
+  aberto em acréscimo: várias execuções no mesmo dia, inclusive a que a trava
+  recusou ("outra execução em andamento"), aparecem no mesmo arquivo. O log
+  abre antes da trava de propósito, para o agendado que encontrar a trava
+  ocupada deixar rastro.
+- **Retenção**: ao abrir o arquivo do dia, apaga os `sync_AAAA-MM-DD.log` com
+  mais de 90 dias (pela data do nome). Arquivos com outro nome não são tocados.
+- **Log que não grava nunca derruba o comando**: se não abrir (sem permissão,
+  `logs` é um arquivo...), sai `Aviso: não foi possível abrir o log em arquivo`
+  no console e o comando segue sem log; se a escrita falhar no meio, avisa uma
+  vez e o log se desliga.
+- Os diagnósticos de `downloader` e `parser` chegam ao log por um hook global
+  (`OnceLock` em `log_arquivo`). É a única exceção de estado global do
+  projeto, aceita só para a camada de I/O; não deve virar precedente em
+  `motor/` nem em `avaliacao/`.
 
 ## Experimentos em Python (`ml/`)
 

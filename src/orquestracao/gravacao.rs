@@ -16,6 +16,7 @@ use crate::config::LoteriaConfig;
 use crate::correcoes::{self, Ocorrencia};
 use crate::db;
 use crate::error::{Result, SpiderError};
+use crate::log_arquivo::Nivel;
 use crate::manuais::{self, Conciliacao};
 use crate::model::Resultado;
 use crate::parser;
@@ -100,6 +101,24 @@ impl Evento {
             Evento::Conciliacao(_) => Destino::Erro,
             Evento::Ciclo(e) => e.destino(),
             _ => Destino::Padrao,
+        }
+    }
+
+    /// Nível no log em arquivo (3.5; regra em `log_arquivo`): `Erro` para o
+    /// que recusa o lote, `Aviso` para o que merece atenção mas não parou
+    /// nada (avisos, buracos, salto, divergências), `Info` para o andamento.
+    pub fn nivel(&self) -> Nivel {
+        match self {
+            Evento::Erros(_) => Nivel::Erro,
+            Evento::Avisos(_)
+            | Evento::DicaBuracos { .. }
+            | Evento::Correcao(Ocorrencia::Divergente { .. })
+            | Evento::Conciliacao(Conciliacao::Divergente { .. })
+            | Evento::Conciliacao(Conciliacao::DifereDoBanco { .. })
+            | Evento::Salto { .. }
+            | Evento::BuracosRestantes { .. } => Nivel::Aviso,
+            Evento::Ciclo(e) => e.nivel(),
+            _ => Nivel::Info,
         }
     }
 }
@@ -267,11 +286,7 @@ pub fn validar_lote(
     if !decisao.avisos.is_empty() {
         obs(Evento::Avisos(decisao.avisos.clone()));
     }
-    if decisao
-        .avisos
-        .iter()
-        .any(|p| matches!(p, Problema::ConcursosFaltando { .. }))
-    {
+    if validacao::tem_buraco(&decisao.avisos) {
         obs(Evento::DicaBuracos { slug: cfg.slug });
     }
     if !decisao.pode_gravar() {

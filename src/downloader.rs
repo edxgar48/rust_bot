@@ -1,5 +1,6 @@
 use crate::config::LoteriaConfig;
 use crate::error::{Result, SpiderError};
+use crate::log_arquivo::{diagnosticar, Nivel};
 use crate::model::Resultado;
 use crate::parser::normalizar_data;
 use playwright::api::page::{Event, EventType};
@@ -34,9 +35,12 @@ pub async fn baixar_resultado(
         match tentativa_unica(config, seletor, dir_destino, headless).await {
             Ok(caminho) => return Ok(caminho),
             Err(e) => {
-                eprintln!(
-                    "[{}] tentativa {}/{} falhou: {}",
-                    config.slug, tentativa, TENTATIVAS_MAX, e
+                diagnosticar(
+                    Nivel::Aviso,
+                    &format!(
+                        "[{}] tentativa {}/{} falhou: {}",
+                        config.slug, tentativa, TENTATIVAS_MAX, e
+                    ),
                 );
                 ultimo_erro = Some(e);
                 if tentativa < TENTATIVAS_MAX {
@@ -164,9 +168,12 @@ pub async fn raspar_ultimo_resultado(config: &LoteriaConfig, headless: bool) -> 
         match raspar_tentativa_unica(config, headless).await {
             Ok(resultado) => return Ok(resultado),
             Err(e) => {
-                eprintln!(
-                    "[{}] tentativa {}/{} falhou: {}",
-                    config.slug, tentativa, TENTATIVAS_MAX, e
+                diagnosticar(
+                    Nivel::Aviso,
+                    &format!(
+                        "[{}] tentativa {}/{} falhou: {}",
+                        config.slug, tentativa, TENTATIVAS_MAX, e
+                    ),
                 );
                 ultimo_erro = Some(e);
                 if tentativa < TENTATIVAS_MAX {

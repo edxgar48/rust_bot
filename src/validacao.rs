@@ -182,6 +182,25 @@ pub fn validar(cfg: &LoteriaConfig, resultados: &[Resultado]) -> Vec<Problema> {
     problemas
 }
 
+/// [`validar`] já separado em `(erros, avisos)`: o único lugar que decide o
+/// que reprova (erro) e o que só avisa. Usado pelo `validar`, pelo `features`
+/// e pelo `ciclo`.
+pub fn validar_separando(
+    cfg: &LoteriaConfig,
+    resultados: &[Resultado],
+) -> (Vec<Problema>, Vec<Problema>) {
+    validar(cfg, resultados)
+        .into_iter()
+        .partition(|p| p.severidade() == Severidade::Erro)
+}
+
+/// Algum dos problemas é um buraco na numeração (pede a dica de como fechá-lo).
+pub fn tem_buraco(problemas: &[Problema]) -> bool {
+    problemas
+        .iter()
+        .any(|p| matches!(p, Problema::ConcursosFaltando { .. }))
+}
+
 /// Regras que dependem só do próprio concurso.
 pub fn validar_resultado(cfg: &LoteriaConfig, r: &Resultado) -> Vec<Problema> {
     let mut problemas = Vec::new();

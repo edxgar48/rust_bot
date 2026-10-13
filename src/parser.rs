@@ -1,5 +1,6 @@
 use crate::config::LoteriaConfig;
 use crate::error::{Result, SpiderError};
+use crate::log_arquivo::{diagnosticar, Nivel};
 use crate::model::Resultado;
 use calamine::{open_workbook_auto, Data, DataType, Reader};
 use std::path::Path;
@@ -40,16 +41,19 @@ pub fn parsear_arquivo(caminho: &Path, config: &LoteriaConfig) -> Result<Vec<Res
 
     if resultados.is_empty() {
         if let Some(exemplo) = exemplo_nao_reconhecido {
-            eprintln!(
-                "[{}] encontrei {} linha(s) na planilha, mas nenhuma bateu com o layout \
+            diagnosticar(
+                Nivel::Erro,
+                &format!(
+                    "[{}] encontrei {} linha(s) na planilha, mas nenhuma bateu com o layout \
                  configurado (coluna_concurso={}, coluna_data={}, primeira_coluna_dezena={}).\n\
                  Exemplo de linha crua, célula por índice: {:?}",
-                config.slug,
-                linhas_com_colunas_suficientes,
-                config.coluna_concurso,
-                config.coluna_data,
-                config.primeira_coluna_dezena,
-                exemplo
+                    config.slug,
+                    linhas_com_colunas_suficientes,
+                    config.coluna_concurso,
+                    config.coluna_data,
+                    config.primeira_coluna_dezena,
+                    exemplo
+                ),
             );
         }
         return Err(SpiderError::TabelaNaoEncontrada(caminho.to_path_buf()));

@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
+use rust_spider::log_arquivo::{self, LogArquivo, Nivel};
+use rust_spider::orquestracao::Destino;
 use rust_spider::orquestracao::{
     carregar_existentes, descrever_faixa, faixas_faltando, validar_lote, PastasAtualizar,
 };
@@ -8,6 +10,65 @@ use rust_spider::{
     registros, tabela, tempo, trava, validacao, SpiderError,
 };
 use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
+
+/// Log em arquivo da execução (3.5), aberto em `main` só para os comandos que
+/// gravam. Todo texto que vai para a tela passa por [`emitir`], que o copia
+/// aqui; sem log aberto (comandos de leitura, ou log que falhou) só imprime.
+static LOG: Mutex<Option<LogArquivo>> = Mutex::new(None);
+
+/// Mostra `texto` na saída padrão ou de erro e o copia no log com o `nivel`.
+/// É o único caminho de saída do binário. O log vem antes da tela: se a saída
+/// estiver fechada (`| head`) e o `println!` entrar em pânico, o registro já
+/// foi feito.
+fn emitir(nivel: Nivel, destino: Destino, texto: &str) {
+    registrar_no_log(nivel, texto);
+    match destino {
+        Destino::Padrao => std::println!("{texto}"),
+        Destino::Erro => std::eprintln!("{texto}"),
+    }
+}
+
+/// Aviso na tela (fora do log, que já parou) de que o log foi desligado.
+fn avisar_log_desligado(erro: SpiderError) {
+    std::eprintln!(
+        "Aviso: o log em arquivo parou de gravar e foi desligado; o comando segue sem log: {:#}",
+        anyhow::Error::from(erro)
+    );
+}
+
+/// Copia no log, se aberto. Falha de escrita: avisa na tela uma vez (o log
+/// se desliga sozinho) e o comando segue.
+fn registrar_no_log(nivel: Nivel, texto: &str) {
+    let mut guarda = LOG.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(log) = guarda.as_mut() {
+        if let Err(e) = log.registrar(nivel, texto) {
+            avisar_log_desligado(e);
+        }
+    }
+}
+
+// Estas duas macros trocam o `println!`/`eprintln!` da biblioteca padrão em
+// todo este arquivo: o texto na tela é o mesmo, mas também vai para o log.
+// `println!` é nível INFO; `eprintln!` é ERRO. Mensagem de outro nível usa
+// `emitir` direto.
+macro_rules! println {
+    () => {
+        emitir(Nivel::Info, Destino::Padrao, "")
+    };
+    ($($arg:tt)*) => {
+        emitir(Nivel::Info, Destino::Padrao, &format!($($arg)*))
+    };
+}
+
+macro_rules! eprintln {
+    () => {
+        emitir(Nivel::Erro, Destino::Erro, "")
+    };
+    ($($arg:tt)*) => {
+        emitir(Nivel::Erro, Destino::Erro, &format!($($arg)*))
+    };
+}
 
 #[derive(Parser)]
 #[command(
@@ -454,10 +515,74 @@ fn nome_se_grava(comando: &Comando) -> Option<&'static str> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
+    // O log abre antes da trava: um `ciclo` agendado que encontre a trava
+    // ocupada precisa deixar rastro no arquivo do dia.
+    abrir_log(&cli.comando);
+    let resultado = executar(cli).await;
+    // Mesma saída que o `main` devolvendo `anyhow::Result` produzia
+    // (`Error: {:?}`, com a cadeia "Caused by"), agora também no log.
+    if let Err(erro) = &resultado {
+        eprintln!("Error: {erro:?}");
+    }
+    fechar_log(resultado.is_ok());
+    if resultado.is_ok() {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::FAILURE
+    }
+}
 
-    // A trava vem antes de qualquer gravação e fica até o fim do `main`
+/// Abre o log do dia e escreve a linha de abertura, se o comando grava
+/// (mesma regra da trava, [`nome_se_grava`]). Qualquer falha vira um aviso na
+/// tela e o comando segue sem log.
+fn abrir_log(comando: &Comando) {
+    if nome_se_grava(comando).is_none() {
+        return;
+    }
+    let aberto = LogArquivo::abrir(
+        std::path::Path::new(log_arquivo::PASTA),
+        Box::new(agora_segundos),
+    );
+    let mut log = match aberto {
+        Ok(log) => log,
+        Err(e) => {
+            std::eprintln!(
+                "Aviso: não foi possível abrir o log em arquivo; o comando segue sem log: {:#}",
+                anyhow::Error::from(e)
+            );
+            return;
+        }
+    };
+    // argv[0] é o caminho do executável; no log basta o nome (`sync`).
+    let mut argv: Vec<String> = std::env::args().collect();
+    if let Some(primeiro) = argv.first_mut() {
+        if let Some(nome) = std::path::Path::new(primeiro.as_str()).file_stem() {
+            *primeiro = nome.to_string_lossy().into_owned();
+        }
+    }
+    if let Err(e) = log.abertura(std::process::id(), &argv, env!("CARGO_PKG_VERSION")) {
+        avisar_log_desligado(e);
+    }
+    *LOG.lock().unwrap_or_else(PoisonError::into_inner) = Some(log);
+    // Diagnósticos de dentro da biblioteca (tentativas do navegador, layout da
+    // planilha) seguem o mesmo caminho da tela e do log.
+    log_arquivo::instalar_diagnostico(|nivel, texto| emitir(nivel, Destino::Erro, texto));
+}
+
+/// Linha de fechamento (duração, sucesso ou falha) e fecha o log.
+fn fechar_log(sucesso: bool) {
+    let mut guarda = LOG.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(mut log) = guarda.take() {
+        if let Err(e) = log.fechamento(sucesso) {
+            avisar_log_desligado(e);
+        }
+    }
+}
+
+async fn executar(cli: Cli) -> anyhow::Result<()> {
+    // A trava vem antes de qualquer gravação e fica até o fim da execução
     // (`ciclo --aguardar`: a noite toda). Trava ocupada: erro na hora.
     let _trava = match nome_se_grava(&cli.comando) {
         Some(nome) => Some(trava::Trava::obter(
@@ -979,11 +1104,11 @@ fn imprimir_calendario(
 fn imprimir_resumo_ciclo(relatorio: &orquestracao::RelatorioCiclo) {
     println!("=== Resumo do ciclo ===");
     for l in &relatorio.loterias {
-        println!("  {l}");
+        emitir(nivel_do_resumo(l.ok()), Destino::Padrao, &format!("  {l}"));
     }
     match &relatorio.publicacao {
         Ok(_) => println!("  publicação: ok"),
-        Err(_) => println!("  publicação: falhou"),
+        Err(_) => emitir(Nivel::Erro, Destino::Padrao, "  publicação: falhou"),
     }
 }
 
@@ -996,27 +1121,48 @@ fn imprimir_resumo_aguardar(relatorio: &orquestracao::RelatorioAguardar) {
         rust_spider::calendario::instante_brasilia(relatorio.janela_ate)
     );
     for l in &relatorio.loterias {
-        println!("  {} [{} tentativa(s)]", l.resumo, l.tentativas);
+        emitir(
+            nivel_do_resumo(l.resumo.ok()),
+            Destino::Padrao,
+            &format!("  {} [{} tentativa(s)]", l.resumo, l.tentativas),
+        );
         if let Some(esperado) = &l.concurso_ausente {
-            println!("    AVISO: o concurso do sorteio de {esperado} não saiu até o fim da janela");
+            emitir(
+                Nivel::Aviso,
+                Destino::Padrao,
+                &format!(
+                    "    AVISO: o concurso do sorteio de {esperado} não saiu até o fim da janela"
+                ),
+            );
         }
     }
     for p in &relatorio.publicacoes {
         let quem = p.slug.unwrap_or("reenvio");
         match &p.resultado {
             Ok(_) => println!("  publicação ({quem}): ok"),
-            Err(_) => println!("  publicação ({quem}): falhou"),
+            Err(_) => emitir(
+                Nivel::Erro,
+                Destino::Padrao,
+                &format!("  publicação ({quem}): falhou"),
+            ),
         }
     }
 }
 
-/// Mostra um evento dos fluxos de gravação (`orquestracao`) na hora em que
-/// acontece, na saída certa: a ordem das mensagens é a de sempre.
-fn imprimir_evento(evento: orquestracao::Evento) {
-    match evento.destino() {
-        orquestracao::Destino::Padrao => println!("{evento}"),
-        orquestracao::Destino::Erro => eprintln!("{evento}"),
+/// Nível de uma linha do resumo de loteria: falha é ERRO, o resto INFO.
+fn nivel_do_resumo(ok: bool) -> Nivel {
+    if ok {
+        Nivel::Info
+    } else {
+        Nivel::Erro
     }
+}
+
+/// Mostra um evento dos fluxos de gravação (`orquestracao`) na hora em que
+/// acontece, na saída certa (a ordem das mensagens é a de sempre) e o copia
+/// no log com o nível do próprio evento.
+fn imprimir_evento(evento: orquestracao::Evento) {
+    emitir(evento.nivel(), evento.destino(), &evento.to_string());
 }
 
 /// Só o download da planilha (sem gravar): a parte do `baixar` que o
@@ -1090,17 +1236,11 @@ fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> a
         resultados.len()
     );
 
-    let problemas = validacao::validar(cfg, &resultados);
-    let (erros, avisos): (Vec<_>, Vec<_>) = problemas
-        .iter()
-        .partition(|p| p.severidade() == validacao::Severidade::Erro);
+    let (erros, avisos) = validacao::validar_separando(cfg, &resultados);
 
-    imprimir_problemas("aviso(s)", &avisos, Saida::Padrao);
-    imprimir_problemas("erro(s)", &erros, Saida::Padrao);
-    if erros
-        .iter()
-        .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
-    {
+    imprimir_problemas(Nivel::Aviso, &avisos, Destino::Padrao);
+    imprimir_problemas(Nivel::Erro, &erros, Destino::Padrao);
+    if validacao::tem_buraco(&erros) {
         imprimir_dica_buracos(cfg);
     }
 
@@ -1120,26 +1260,18 @@ fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> a
     )
 }
 
-/// Onde imprimir: `validar` é um relatório e usa a saída padrão; a recusa de
-/// um lote ao gravar é falha do comando e vai para a saída de erro.
-#[derive(Clone, Copy)]
-enum Saida {
-    Padrao,
-    Erro,
-}
-
-impl Saida {
-    fn imprimir(self, linha: &str) {
-        match self {
-            Saida::Padrao => println!("{linha}"),
-            Saida::Erro => eprintln!("{linha}"),
-        }
-    }
-}
-
-fn imprimir_problemas<P: std::fmt::Display>(rotulo: &str, problemas: &[P], saida: Saida) {
+/// Imprime o bloco de avisos (`Nivel::Aviso`) ou de erros (`Nivel::Erro`) da
+/// validação, como o `Evento::Avisos`/`Evento::Erros` do mesmo texto. `validar`
+/// é um relatório e usa a saída padrão; a recusa de um lote ao gravar é falha
+/// do comando e vai para a saída de erro.
+fn imprimir_problemas<P: std::fmt::Display>(nivel: Nivel, problemas: &[P], saida: Destino) {
+    let rotulo = if nivel == Nivel::Erro {
+        "erro(s)"
+    } else {
+        "aviso(s)"
+    };
     for linha in orquestracao::formatar_problemas(rotulo, problemas) {
-        saida.imprimir(&linha);
+        emitir(nivel, saida, &linha);
     }
 }
 
@@ -1292,12 +1424,9 @@ fn calcular_features(
             erros,
             avisos,
         }) => {
-            imprimir_problemas("aviso(s)", &avisos, Saida::Erro);
-            imprimir_problemas("erro(s)", &erros, Saida::Erro);
-            if erros
-                .iter()
-                .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
-            {
+            imprimir_problemas(Nivel::Aviso, &avisos, Destino::Erro);
+            imprimir_problemas(Nivel::Erro, &erros, Destino::Erro);
+            if validacao::tem_buraco(&erros) {
                 imprimir_dica_buracos(cfg);
             }
             anyhow::bail!(SpiderError::ResultadosReprovados {
@@ -1310,7 +1439,7 @@ fn calcular_features(
     };
     let duracao = inicio.elapsed();
 
-    imprimir_problemas("aviso(s)", &resumo.avisos, Saida::Padrao);
+    imprimir_problemas(Nivel::Aviso, &resumo.avisos, Destino::Padrao);
     println!("Modo: {}.", resumo.modo);
     println!(
         "{} concurso(s) incorporado(s); {} linha(s) gravada(s) em features_dezena.",
@@ -1431,10 +1560,14 @@ fn gravar_dataset(
     std::fs::write(&arquivo_manifesto, &texto_manifesto).map_err(io(&arquivo_manifesto))?;
 
     if com_trancado {
-        eprintln!(
-            "Aviso: o dataset inclui o conjunto TRANCADO (concursos acima de {}). Use só na \
-             validação final do perfil campeão, nunca na busca de pesos.",
-            cfg.ultimo_concurso_busca
+        emitir(
+            Nivel::Aviso,
+            Destino::Erro,
+            &format!(
+                "Aviso: o dataset inclui o conjunto TRANCADO (concursos acima de {}). Use só na \
+                 validação final do perfil campeão, nunca na busca de pesos.",
+                cfg.ultimo_concurso_busca
+            ),
         );
     }
     println!(
@@ -1615,14 +1748,17 @@ fn avaliar(
     let arquivo_registro = absoluto(&registros::caminho(&pasta_registros.escolhida, cfg.slug));
     if opcoes.trancado {
         avisar_pasta_de_registros(cfg, &arquivo_registro, pasta_registros)?;
-        imprimir(&format!(
-            "ATENÇÃO: --trancado avalia o conjunto TRANCADO da {} (concursos acima de {}). \
+        imprimir_nivel(
+            Nivel::Aviso,
+            &format!(
+                "ATENÇÃO: --trancado avalia o conjunto TRANCADO da {} (concursos acima de {}). \
              Ele é de uso único por perfil: se a avaliação der certo, o uso fica registrado \
              em {} (versione no git).\n\n",
-            cfg.nome_exibicao,
-            cfg.ultimo_concurso_busca,
-            arquivo_registro.display()
-        ))?;
+                cfg.nome_exibicao,
+                cfg.ultimo_concurso_busca,
+                arquivo_registro.display()
+            ),
+        )?;
     }
     let inicio = std::time::Instant::now();
     let (_, texto) = orquestracao::avaliar_perfil_e_formatar(
@@ -1645,25 +1781,22 @@ fn avaliar(
         }
         // O uso já conta: o veredito não pode se perder. Tenta a saída de
         // erro (sem panic se também estiver fechada).
-        let _ = std::io::Write::write_all(
-            &mut std::io::stderr().lock(),
-            format!(
-                "Não foi possível imprimir o relatório na saída padrão ({e:#}). O uso do \
-                 trancado JÁ foi registrado em {}; o relatório vai abaixo, na saída de erro.\n\n\
-                 {texto}",
-                arquivo_registro.display()
-            )
-            .as_bytes(),
+        // O relatório já foi copiado no log por `imprimir`; aqui só o motivo.
+        let motivo = format!(
+            "Não foi possível imprimir o relatório na saída padrão ({e:#}). O uso do \
+             trancado JÁ foi registrado em {}; o relatório vai abaixo, na saída de erro.",
+            arquivo_registro.display()
         );
+        registrar_no_log(Nivel::Erro, &motivo);
+        let _ = escrever_stderr(&format!("{motivo}\n\n{texto}"));
         return Err(e.context(format!(
             "o uso do trancado já foi registrado em {}",
             arquivo_registro.display()
         )));
     }
-    let _ = std::io::Write::write_all(
-        &mut std::io::stderr(),
-        format!("Tempo: {:.2} s.\n", duracao.as_secs_f64()).as_bytes(),
-    );
+    let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    registrar_no_log(Nivel::Info, &tempo);
+    let _ = escrever_stderr(&format!("{tempo}\n"));
     Ok(())
 }
 
@@ -1703,7 +1836,8 @@ fn avisar_pasta_de_registros(
     if avisos.is_empty() {
         return Ok(());
     }
-    std::io::Write::write_all(&mut std::io::stderr().lock(), avisos.as_bytes())
+    registrar_no_log(Nivel::Aviso, &avisos);
+    escrever_stderr(&avisos)
         .map_err(|e| anyhow::anyhow!("não foi possível escrever o aviso na saída de erro: {e}"))
 }
 
@@ -1712,10 +1846,23 @@ fn absoluto(caminho: &std::path::Path) -> PathBuf {
     std::path::absolute(caminho).unwrap_or_else(|_| caminho.to_path_buf())
 }
 
-/// Escreve na saída padrão sem `println!`, que dá panic com a saída fechada
-/// (`| head`, por exemplo): aqui vira um erro comum.
+/// Escreve na saída de erro sem `eprintln!`, que dá panic com a saída
+/// fechada. Não registra no log: quem chama decide o texto e o nível.
+fn escrever_stderr(texto: &str) -> std::io::Result<()> {
+    std::io::Write::write_all(&mut std::io::stderr().lock(), texto.as_bytes())
+}
+
+/// [`imprimir_nivel`] com nível INFO.
 fn imprimir(texto: &str) -> anyhow::Result<()> {
+    imprimir_nivel(Nivel::Info, texto)
+}
+
+/// Escreve na saída padrão sem `println!`, que dá panic com a saída fechada
+/// (`| head`, por exemplo): aqui vira um erro comum. Copia no log antes de
+/// escrever, para o texto constar mesmo se a saída estiver fechada.
+fn imprimir_nivel(nivel: Nivel, texto: &str) -> anyhow::Result<()> {
     use std::io::Write as _;
+    registrar_no_log(nivel, texto);
     let mut saida = std::io::stdout().lock();
     saida
         .write_all(texto.as_bytes())
@@ -2255,7 +2402,11 @@ fn testar_aleatoriedade(
              sorteio."
         );
     }
-    eprintln!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    emitir(
+        Nivel::Info,
+        Destino::Erro,
+        &format!("Tempo: {:.2} s.", duracao.as_secs_f64()),
+    );
     Ok(())
 }
 
@@ -2288,12 +2439,9 @@ fn evidenciar(
             erros,
             avisos,
         }) => {
-            imprimir_problemas("aviso(s)", &avisos, Saida::Erro);
-            imprimir_problemas("erro(s)", &erros, Saida::Erro);
-            if erros
-                .iter()
-                .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
-            {
+            imprimir_problemas(Nivel::Aviso, &avisos, Destino::Erro);
+            imprimir_problemas(Nivel::Erro, &erros, Destino::Erro);
+            if validacao::tem_buraco(&erros) {
                 imprimir_dica_buracos(cfg);
             }
             anyhow::bail!(SpiderError::ResultadosReprovados {
@@ -2305,7 +2453,7 @@ fn evidenciar(
         Err(e) => return Err(e.into()),
     };
     let duracao = inicio.elapsed();
-    imprimir_problemas("aviso(s)", &relatorio.dezenas.avisos, Saida::Erro);
+    imprimir_problemas(Nivel::Aviso, &relatorio.dezenas.avisos, Destino::Erro);
     let mut texto = formatar_evidencia(&relatorio.dezenas);
     texto.push('\n');
     texto.push_str(&formatar_evidencia_indice(
@@ -2313,7 +2461,11 @@ fn evidenciar(
         perfil.is_some(),
     ));
     imprimir(&texto)?;
-    eprintln!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    emitir(
+        Nivel::Info,
+        Destino::Erro,
+        &format!("Tempo: {:.2} s.", duracao.as_secs_f64()),
+    );
     if let (orquestracao::SecaoIndice::Indisponivel(i), Some(_)) = (&relatorio.indice, perfil) {
         anyhow::bail!(
             "a evidência do índice (B) não pôde ser calculada com o perfil `{}` pedido em \

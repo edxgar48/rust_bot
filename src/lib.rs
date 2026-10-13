@@ -11,6 +11,7 @@ pub mod db;
 pub mod downloader;
 pub mod error;
 pub mod exportacao;
+pub mod log_arquivo;
 pub mod manuais;
 pub mod model;
 pub mod motor;

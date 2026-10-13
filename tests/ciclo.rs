@@ -950,3 +950,126 @@ fn eventos_do_ciclo_dizem_para_onde_vao() {
     let ok = Evento::Ciclo(EventoCiclo::NadaAPublicar);
     assert_eq!(ok.destino(), rust_spider::orquestracao::Destino::Padrao);
 }
+
+/// Pendência da 3.1b: o validar do ciclo mostra a dica de como fechar o
+/// buraco, como o `sync validar` e o `sync features`, logo depois dos erros.
+#[tokio::test]
+async fn validar_do_ciclo_emite_a_dica_de_buracos_depois_dos_erros() {
+    let a = Amb::novo(false);
+    a.semear("megasena", N, &[5]);
+    let sem_5: Vec<Resultado> = historico(cfg_de("megasena"), N)
+        .into_iter()
+        .filter(|r| r.concurso != 5)
+        .collect();
+    let planilha = gravar_planilha(&a.raiz.join("downloads"), cfg_de("megasena"), &sem_5);
+    let chamadas = Rc::new(Cell::new(0));
+    let mut destino = DestinoFalso::default();
+
+    let (r, eventos) = a
+        .rodar(
+            &["megasena"],
+            &mut destino,
+            pagina_em(N),
+            planilha_fixa(vec![("megasena", planilha)], chamadas),
+        )
+        .await;
+
+    assert_eq!(falha_de(&r, "megasena").etapa, EtapaCiclo::Validar);
+    let posicao_erros = eventos
+        .iter()
+        .position(|e| matches!(e, Evento::Erros(_)))
+        .expect("o validar emitiu os erros");
+    assert_eq!(
+        eventos[posicao_erros + 1],
+        Evento::DicaBuracos { slug: "megasena" }
+    );
+}
+
+/// Banco sem buraco: o validar do ciclo não emite a dica.
+#[tokio::test]
+async fn validar_do_ciclo_sem_buraco_nao_emite_a_dica() {
+    let a = Amb::novo(false);
+    a.semear_todas(N);
+    let mut destino = DestinoFalso::default();
+
+    let (r, eventos) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N), sem_planilha)
+        .await;
+
+    assert!(r.sucesso());
+    assert!(!eventos
+        .iter()
+        .any(|e| matches!(e, Evento::DicaBuracos { .. })));
+}
+
+/// Mapeamento de níveis do log (3.5): um evento de cada nível.
+#[test]
+fn eventos_do_ciclo_dizem_o_nivel_no_log() {
+    use rust_spider::log_arquivo::Nivel;
+    let nivel = |e: EventoCiclo| Evento::Ciclo(e).nivel();
+    assert_eq!(
+        nivel(EventoCiclo::Loteria {
+            nome: "Quina",
+            slug: "quina"
+        }),
+        Nivel::Info
+    );
+    assert_eq!(
+        nivel(EventoCiclo::AguardandoConcurso {
+            slug: "quina",
+            esperado_em: "2026-10-13".into(),
+            ultimo: Some(1)
+        }),
+        Nivel::Info
+    );
+    for aviso in [
+        EventoCiclo::BackfillPersiste { faixas: vec![] },
+        EventoCiclo::FalhaTransitoria {
+            slug: "quina",
+            etapa: EtapaCiclo::Atualizar,
+            mensagem: "rede".into(),
+        },
+        EventoCiclo::ConcursoNaoSaiu {
+            slug: "quina",
+            esperado_em: "2026-10-13".into(),
+        },
+        EventoCiclo::JanelaEncerrada {
+            hora: "01:00".into(),
+            pendentes: vec!["quina"],
+        },
+    ] {
+        assert_eq!(nivel(aviso.clone()), Nivel::Aviso, "{aviso:?}");
+    }
+    assert_eq!(
+        nivel(EventoCiclo::JanelaEncerrada {
+            hora: "01:00".into(),
+            pendentes: vec![]
+        }),
+        Nivel::Info
+    );
+    assert_eq!(
+        nivel(EventoCiclo::LoteriaFalhou {
+            slug: "quina",
+            etapa: EtapaCiclo::Validar,
+            mensagem: "x".into()
+        }),
+        Nivel::Erro
+    );
+    assert_eq!(
+        nivel(EventoCiclo::PublicacaoFalhou {
+            mensagem: "x".into()
+        }),
+        Nivel::Erro
+    );
+    assert_eq!(Evento::DicaBuracos { slug: "quina" }.nivel(), Nivel::Aviso);
+    assert_eq!(Evento::Avisos(vec![]).nivel(), Nivel::Aviso);
+    assert_eq!(Evento::Erros(vec![]).nivel(), Nivel::Erro);
+    assert_eq!(
+        Evento::JaAtualizado {
+            ultimo: 1,
+            pagina: 1
+        }
+        .nivel(),
+        Nivel::Info
+    );
+}

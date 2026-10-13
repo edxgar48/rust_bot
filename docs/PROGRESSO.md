@@ -72,7 +72,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.2 Calendário de sorteios no `config.rs`
 - [x] 3.3 Retentativas com backoff
 - [x] 3.4 Trava contra execução simultânea
-- [ ] 3.5 Logs em arquivo
+- [x] 3.5 Logs em arquivo
 - [ ] 3.6 Alertas (depende de decisão em aberto)
 - [ ] 3.7 Agendamento no Windows (`.ps1`)
 - [ ] 3.8 Runbook no README
@@ -1858,3 +1858,30 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   validar do ciclo não emite `DicaBuracos`) entra na 3.5? sugestão: sim.
 - 2026-10-13 — Usuário aceitou as sugestões (1)–(7) da 3.5; regras registradas na 3.5 do plano (retenção
   de 90 dias incluída; a pendência da 3.1b sobre erros/avisos do validar e `DicaBuracos` entra junto).
+- 2026-10-13 — 3.5 entregue pelo `engenheiro-operacao`. `src/log_arquivo.rs` (novo, na lib): `LogArquivo`
+  (abre `logs/sync_AAAA-MM-DD.log` pela data de início em Brasília, acréscimo, retenção de 90 dias só sobre
+  nomes `sync_<data válida>.log`), `Nivel` (`INFO`/`AVISO`/`ERRO`), linha `HH:MM:SS NIVEL texto`, abertura
+  (PID, argv, versão) e fechamento (duração, sucesso/falha); falha de abertura ou escrita avisa uma vez no
+  console e desliga. `Evento::nivel()` e `EventoCiclo::nivel()` (regra no módulo e no README: avisos de lote,
+  dica de buracos, salto, backfill, falha transitória, concurso que não saiu = AVISO; erros e falhas = ERRO;
+  o resto, inclusive `AguardandoConcurso`, = INFO). `validacao::validar_separando` + `tem_buraco` substituem
+  as cópias da partição erros/avisos (orquestracao, ciclo, CLI); o validar do `ciclo` emite `DicaBuracos`
+  (pendência da 3.1b resolvida). CLI: `println!`/`eprintln!` sombreados por macros que passam por
+  `emitir(nivel, destino, texto)` (grava no log e imprime; texto do console inalterado); `main` devolve
+  `ExitCode` com `Error: {:?}` igual ao do anyhow, também no log. `.gitignore` `/logs/`; README com seção.
+  **Decisões do implementador (aceitas pela revisão, revisáveis pelo usuário):** (1) o log abre antes da
+  trava, para "outra execução em andamento" ficar registrada (a execução recusada também roda a retenção);
+  (2) os `eprintln!` de `downloader.rs`/`parser.rs` vão ao log por um hook global (`OnceLock<fn>`) em
+  `log_arquivo` — única exceção de estado global, só para a camada de I/O, documentada no código e no
+  README; sem hook instalado, continuam no stderr; (3) `DicaBuracos` pode sair duas vezes numa passada do
+  ciclo (backfill + validar), não deduplicado; (4) `tests/avaliar.rs`: contagem de entradas no diretório de
+  trabalho de 1 para 2 (`logs/`), como na 3.4. Revisão: aprovada com ressalvas, só BAIXA; corrigidas numa
+  rodada 4 (exemplo de nível no README/doc; última cópia do teste de buraco em `gravacao.rs` →
+  `tem_buraco`; comentário e README sobre a exceção do estado global; pastas temporárias dos testes
+  unitários apagadas com `Drop`). Testes: +12 em `log_arquivo.rs`, +5 em `tests/log_arquivo.rs` (binário:
+  log com cópia da tela, erro final, comandos de leitura sem log, trava ocupada no log, log impossível =
+  aviso e sucesso), +3 em `tests/ciclo.rs`. Gate: fmt, clippy ok; cargo test 1068 passaram, 0 falharam (lib
+  658, 3 ignorados); pytest 175; `validar todas` ok. **3.5 concluída.**
+  **Pendências BAIXA (não bloqueiam):** (1) pânico, Ctrl-C ou `taskkill` não escrevem a linha `Fim:` (README
+  diz que log sem `Fim:` indica morte do processo); hook de pânico opcional; (2) comandos de leitura
+  (`calendario`, `validar`) continuam sem log — se a 3.7 os agendar, não deixam rastro.

@@ -43,7 +43,7 @@ use crate::model::Resultado;
 use crate::motor::{self, EstadoMotor, FeaturesDezena, IndiceDezena, FEATURE_VERSION, JANELAS};
 use crate::perfil::{Perfil, PerfilCarregado};
 use crate::registros::AvaliacaoTrancado;
-use crate::validacao::{self, Problema, Severidade};
+use crate::validacao::{self, Problema};
 use rusqlite::Connection;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -170,9 +170,7 @@ pub fn sincronizar_features(
     let tx = db::iniciar_escrita(conn)?;
     let resultados = db::listar_crescente(&tx, cfg.slug)?;
 
-    let (erros, avisos): (Vec<Problema>, Vec<Problema>) = validacao::validar(cfg, &resultados)
-        .into_iter()
-        .partition(|p| p.severidade() == Severidade::Erro);
+    let (erros, avisos) = validacao::validar_separando(cfg, &resultados);
     if !erros.is_empty() {
         return Err(SpiderError::ResultadosReprovados {
             loteria: cfg.slug.to_string(),
@@ -1224,9 +1222,7 @@ fn ler_indice_conferido(
     if resultados.is_empty() {
         return Err(SpiderError::SemResultados(cfg.slug.to_string()));
     }
-    let (erros, avisos): (Vec<Problema>, Vec<Problema>) = validacao::validar(cfg, &resultados)
-        .into_iter()
-        .partition(|p| p.severidade() == Severidade::Erro);
+    let (erros, avisos) = validacao::validar_separando(cfg, &resultados);
     if !erros.is_empty() {
         return Err(SpiderError::ResultadosReprovados {
             loteria: cfg.slug.to_string(),
@@ -1638,9 +1634,7 @@ pub fn evidencia_do_banco(conn: &Connection, cfg: &LoteriaConfig) -> Result<Rela
     let Some(ultimo) = resultados.last().map(|r| r.concurso) else {
         return Err(SpiderError::SemResultados(cfg.slug.to_string()));
     };
-    let (erros, avisos): (Vec<Problema>, Vec<Problema>) = validacao::validar(cfg, &resultados)
-        .into_iter()
-        .partition(|p| p.severidade() == Severidade::Erro);
+    let (erros, avisos) = validacao::validar_separando(cfg, &resultados);
     if !erros.is_empty() {
         return Err(SpiderError::ResultadosReprovados {
             loteria: cfg.slug.to_string(),

@@ -27,11 +27,12 @@ use crate::backup;
 use crate::config::LoteriaConfig;
 use crate::db;
 use crate::error::{Result, SpiderError};
+use crate::log_arquivo::Nivel;
 use crate::model::Resultado;
 use crate::perfil;
 use crate::publicacao::{self, Desfecho};
 use crate::tempo;
-use crate::validacao::{self, Severidade};
+use crate::validacao;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -177,6 +178,23 @@ impl EventoCiclo {
             | EventoCiclo::FalhaTransitoria { .. }
             | EventoCiclo::ConcursoNaoSaiu { .. } => super::Destino::Erro,
             _ => super::Destino::Padrao,
+        }
+    }
+
+    /// Nível no log em arquivo (3.5; regra em `log_arquivo`). Esperar o
+    /// concurso é o andamento normal do `--aguardar` (`Info`); falha de
+    /// loteria ou da publicação é `Erro`; buraco, falha que será repetida e
+    /// concurso que não saiu são `Aviso`.
+    pub fn nivel(&self) -> Nivel {
+        match self {
+            EventoCiclo::LoteriaFalhou { .. } | EventoCiclo::PublicacaoFalhou { .. } => Nivel::Erro,
+            EventoCiclo::BackfillIniciado { .. }
+            | EventoCiclo::BackfillDispensado { .. }
+            | EventoCiclo::BackfillPersiste { .. }
+            | EventoCiclo::FalhaTransitoria { .. }
+            | EventoCiclo::ConcursoNaoSaiu { .. } => Nivel::Aviso,
+            EventoCiclo::JanelaEncerrada { pendentes, .. } if !pendentes.is_empty() => Nivel::Aviso,
+            _ => Nivel::Info,
         }
     }
 }
@@ -794,14 +812,15 @@ fn validar(cfg: &LoteriaConfig, db_caminho: &Path, obs: &mut dyn FnMut(Evento)) 
     let Some(ultimo) = resultados.iter().map(|r| r.concurso).max() else {
         return Err(SpiderError::SemResultados(cfg.slug.to_string()));
     };
-    let (erros, avisos): (Vec<_>, Vec<_>) = validacao::validar(cfg, &resultados)
-        .into_iter()
-        .partition(|p| p.severidade() == Severidade::Erro);
+    let (erros, avisos) = validacao::validar_separando(cfg, &resultados);
     if !avisos.is_empty() {
         obs(Evento::Avisos(avisos.clone()));
     }
     if !erros.is_empty() {
         obs(Evento::Erros(erros.clone()));
+        if validacao::tem_buraco(&erros) {
+            obs(Evento::DicaBuracos { slug: cfg.slug });
+        }
         return Err(SpiderError::ResultadosReprovados {
             loteria: cfg.slug.to_string(),
             erros,
