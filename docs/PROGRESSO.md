@@ -74,7 +74,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.4 Trava contra execução simultânea
 - [x] 3.5 Logs em arquivo
 - [ ] 3.6 Alertas (depende de decisão em aberto)
-- [ ] 3.7 Agendamento no Windows (`.ps1`)
+- [x] 3.7 Agendamento no Windows (`.ps1`)
 - [ ] 3.8 Runbook no README
 
 ## Decisões em aberto
@@ -1885,3 +1885,130 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   **Pendências BAIXA (não bloqueiam):** (1) pânico, Ctrl-C ou `taskkill` não escrevem a linha `Fim:` (README
   diz que log sem `Fim:` indica morte do processo); hook de pânico opcional; (2) comandos de leitura
   (`calendario`, `validar`) continuam sem log — se a 3.7 os agendar, não deixam rastro.
+- 2026-10-13 — Usuário decidiu pular a 3.6 por enquanto: canal de alerta segue em aberto, 3.6 fica `[ ]` e
+  não bloqueia a 3.7.
+- 2026-10-13 — 3.7 não iniciada: o plano diz só "Agendador de Tarefas, `.ps1` versionado, 23h00 com `sync
+  ciclo todas --aguardar`, SSH com `BatchMode=yes` no `publicar` sem console", e os pontos abertos mudam o
+  comportamento. Contexto conferido: bancos, `publico/`, `perfis/`, `cache/`, `backups/`, `sync.lock` e
+  `logs/` são relativos à pasta de trabalho (hoje a raiz do repositório); `--repo` padrão é
+  `../rust_spider_dados`, origin SSH (`git@github.com:...`), sem `core.sshCommand` no clone; o `publicar`
+  só define `GIT_TERMINAL_PROMPT=0`. Perguntas devolvidas ao usuário, com sugestões:
+  (1) **registrar ou só gerar** — sugestão: dois scripts em `scripts/`: `ciclo_agendado.ps1` (o que a
+  tarefa executa: fixa a pasta de trabalho, define o SSH em lote, chama o binário e devolve o exit code)
+  e `registrar_tarefa.ps1` (cria/atualiza a tarefa `rust_spider ciclo` de forma idempotente com
+  `Register-ScheduledTask`, com `-Remover` e `-Mostrar` para só imprimir a definição); quem registra é o
+  usuário, rodando o script à mão — nem build nem testes tocam o Agendador real;
+  (2) **conta** — sugestão: usuário atual, "executar estando conectado ou não" sem guardar senha
+  (`LogonType S4U`): sem console e sem janela piscando, e é exatamente o caso do `BatchMode`; a chave SSH
+  em `~/.ssh` e o Playwright headless funcionam sem sessão (a conferir na 1ª execução manual).
+  Alternativa: só quando conectado (`Interactive`), com janela minimizada;
+  (3) **máquina desligada/suspensa às 23h** — sugestão: `StartWhenAvailable` (roda ao ligar; fora da
+  janela 23h–01h o `--aguardar` já faz passada única, decisão (a) da 3.3), sem acordar o PC (`WakeToRun`
+  desligado; opcional), `MultipleInstances IgnoreNew` (a trava da 3.4 cobre o resto), limite de execução
+  de 3 h (janela até 01h00 + margem), sem repetição no mesmo dia, roda também na bateria;
+  (4) **binário** — sugestão: `target\release\sync.exe` direto, sem compilar no script (`cargo run`
+  compilaria à noite e falharia com código pela metade); binário ausente = erro claro. Ressalva: no
+  Windows, um `cargo build --release` durante a janela da noite falha porque o `.exe` está em uso.
+  Alternativa: o `registrar_tarefa.ps1` copia o release para uma pasta própria (ex.:
+  `%LOCALAPPDATA%\rust_spider\bin`) e a atualização exige rodar o registro de novo;
+  (5) **pasta de trabalho** — sugestão: a raiz do repositório (pai de `scripts/`, onde estão os bancos),
+  parâmetro `-Pasta` do registro com esse padrão; o `ciclo_agendado.ps1` faz `Set-Location` nela antes
+  de chamar o `sync`, fechando a pendência da 3.4/3.5;
+  (6) **BatchMode** — sugestão: sem mudar Rust: o `ciclo_agendado.ps1` define
+  `GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=30"` só para o processo (passphrase ou host
+  desconhecido viram falha do `publicar`, exit ≠ 0, no log). Alternativa: o `publicar` passar a definir
+  isso sempre no código (mudaria também as execuções manuais) ou uma flag `--sem-console`;
+  (7) **rastro fora do log do `sync`** — falhas antes do `sync` abrir o log (binário ausente, pasta
+  inexistente) não ficam em lugar nenhum além do "Último resultado" do Agendador. Sugestão: o `.ps1`
+  acrescenta uma linha por execução (início, fim, exit code, erro próprio) em `logs/agendador.log`; não
+  agendar `calendario`/`validar` (o `ciclo` já valida e consulta o calendário), então "comandos de
+  leitura sem log" não pesa aqui;
+  (8) **Playwright transitório** — sugestão: nada novo no código (a 3.3 já repete falha transitória na
+  janela e o `downloader` tem 3 tentativas curtas); conferir na 1ª execução manual da tarefa (com
+  autorização) que o navegador inicia sob a conta escolhida em (2);
+  (9) **PowerShell e testes** — sugestão: compatível com Windows PowerShell 5.1 (sempre presente), tarefa
+  chama `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ...`; sem Pester (sem
+  dependência nova): teste de integração Rust que confere a sintaxe dos `.ps1` (parser do PowerShell,
+  pulado sem `powershell.exe`) e roda `ciclo_agendado.ps1` com um binário/pasta de teste para conferir
+  `Set-Location`, `GIT_SSH_COMMAND` e repasse do exit code; `registrar_tarefa.ps1 -Mostrar` validado sem
+  registrar.
+- 2026-10-13 — Usuário aceitou as sugestões (1)–(9) da 3.7; regras registradas na 3.7 do plano.
+- 2026-10-13 — 3.7 entregue (`engenheiro-operacao`): `scripts/ciclo_agendado.ps1` (`-Pasta`, `-Binario`,
+  `-Argumentos` padrão `ciclo todas --aguardar`; `Set-Location`, `GIT_SSH_COMMAND="ssh -o BatchMode=yes -o
+  ConnectTimeout=30"` só no processo, binário release direto, repasse do exit code; `logs/agendador.log` com
+  linha de início e de fim, sem BOM, falha ao gravar só avisa; pasta ou binário ausentes = exit 2) e
+  `scripts/registrar_tarefa.ps1` (tarefa "rust_spider ciclo", diária 23h00, S4U, `StartWhenAvailable`, sem
+  `WakeToRun`, `IgnoreNew`, 3 h, bateria; `Register-ScheduledTask -Force`; `-Mostrar`, `-Remover`; `-Pasta`
+  resolvida para caminho absoluto sem barra final). README: seção "Agendamento (Windows)". Testes: +6 em
+  `tests/agendamento.rs` (sintaxe pelo parser do PS 5.1; `ciclo_agendado.ps1` com binário falso `.cmd` e
+  pasta temporária; binário ausente; `-Mostrar` com e sem barra final e com pasta inexistente), pulados sem
+  `powershell.exe`. Revisão: aprovada com ressalvas (1 MÉDIA — `-Pasta` com barra final escapava a aspa da
+  ação — e BAIXAs), corrigidas numa rodada. Gate: fmt, clippy ok; cargo test 1074 passaram, 0 falharam
+  (4 ignorados); pytest 175; `validar todas` ok. Nada registrado no Agendador real. **3.7 concluída.**
+  **Decisões tomadas sem o usuário:** `.ps1` só em ASCII (sem acentos, evita codificação no PS 5.1);
+  `-Argumentos` é string única dividida por espaços (sem argumento com espaço); `-Pasta` na raiz de unidade
+  (`C:\`) é recusada; sem a pasta de trabalho, o `agendador.log` cai em `<repo>\logs`.
+  **Pendências BAIXA:** (1) o fallback do log para `<repo>\logs` não tem teste (escreveria no repositório
+  real); (2) se o Agendador matar o `powershell.exe` no limite de 3 h, um `sync.exe` órfão pode segurar a
+  trava (README diz como conferir); (3) a conferir na primeira execução manual: registro S4U pode exigir
+  PowerShell elevado; chave SSH via ssh-agent/passphrase pode não estar acessível sob S4U; Playwright sob
+  S4U; fuso da máquina = Brasília (gatilho usa hora local). O registro da tarefa e a primeira execução
+  manual (`Start-ScheduledTask`) ficam com o usuário.
+- 2026-10-13 — Canal de alerta da 3.6 decidido pelo usuário: e-mail sem disparo automático — o sistema grava
+  o e-mail pronto (rascunho) e o usuário envia à mão; sem SMTP nem credencial no projeto. 3.6 desbloqueada.
+- 2026-10-13 — 3.6 preparada, não iniciada (sem delegar): o plano diz só "alerta após N falhas seguidas ou
+  mudança aparente no site", canal = rascunho de e-mail. Contexto conferido no código: o `sync` sai só com
+  0/1 (`ExitCode::FAILURE`), então o `ciclo_agendado.ps1` não distingue trava ocupada de outra falha; o
+  `ciclo`/`--aguardar` não consulta `Atrasado` (só `Aguardando` espera; `Atrasado` faz passada única sem
+  aviso; o estado só aparece no `sync calendario`); `RelatorioAguardar` já expõe `falhas()` (com
+  `FalhaCiclo`, etapa e erro) e `avisos()` (concurso que não saiu); seletor não encontrado e
+  `PaginaIncompleta` são tratados como transitórios (`eh_transitorio`), então "site mudou" hoje sai como
+  falha transitória que persistiu; nada guarda estado entre execuções além de logs. Perguntas devolvidas
+  ao usuário, com sugestões:
+  (1) **o que conta como falha e N** — sugestão: por loteria, uma "noite com falha" = execução do `ciclo`
+  em que a loteria terminou em `falhas()` (qualquer etapa, inclusive publicar) ou `Atrasado` fora de janela
+  especial; N = 2 noites seguidas; sucesso (ou `EmDia`) zera o contador; falhas da execução inteira
+  (trava ocupada, binário/pasta ausentes, processo morto sem `Fim:`) contam num contador "geral" com o
+  mesmo N; concurso que não saiu às 01h00 (`avisos()`) não conta sozinho — só vira falha quando a
+  situação passar a `Atrasado`;
+  (2) **"mudança aparente no site"** — sugestão: alerta imediato (sem esperar N) quando o erro final da
+  loteria for de forma de página (`ElementoNaoEncontrado`, `BotaoDownloadNaoEncontrado`,
+  `PaginaIncompleta`, `LinhaInvalida` do parser) em todas as rodadas da noite, mesmo com o navegador
+  abrindo; `Navegador`/`DownloadNaoIniciado` (rede, Playwright) ficam como falha passageira e seguem a
+  regra de N; a classificação numa função só da biblioteca, ao lado de `eh_transitorio` (que continua
+  igual para a retentativa);
+  (3) **histórico de falhas seguidas** — sugestão: arquivo `alertas/estado.json` na pasta de trabalho
+  (no `.gitignore`), regenerável, com por loteria + "geral": contador, primeira e última falha, último
+  erro, último alerta emitido; não no banco (`resultados_<loteria>.db` não é lugar de operação, e a
+  falha "geral" não tem banco); arquivo ilegível = recomeça do zero com aviso, nunca derruba o `ciclo`;
+  (4) **formato, pasta e nome do rascunho** — sugestão: `.eml` (RFC 822, UTF-8, `X-Unsent: 1` para o
+  Outlook/Thunderbird abrir como rascunho editável com "Enviar"), em `alertas/AAAA-MM-DD_HHMMSS_<motivo>.eml`;
+  assunto `[rust_spider] <loteria>: <motivo>`; corpo em texto com loteria, motivo, falhas seguidas,
+  último concurso no banco, erro com a cadeia de causas, caminho do log do dia e passos do runbook (3.8);
+  sem anexo. **Destinatário**: qual endereço? sugestão: `To:` vindo de um arquivo de configuração local
+  não versionado (ex. `alertas/destinatario.txt`); sem ele, o `.eml` sai sem `To:` e o usuário preenche;
+  (5) **quando gerar** — sugestão: no fim do `sync ciclo` (com ou sem `--aguardar`), na biblioteca
+  (`orquestracao/alertas.rs`, relógio injetado, testável com pasta temporária); e também pelo
+  `ciclo_agendado.ps1` quando o `sync` nem roda ou não chega ao fim (binário/pasta ausentes, trava
+  ocupada) — para isso o `sync` ganharia um código de saída próprio para trava ocupada (ex.: 3) ou o
+  `.ps1` chamaria um subcomando `sync alerta --geral "<motivo>"` que não pega a trava; alternativa mais
+  simples: o `.ps1` grava o `.eml` sozinho nesses casos (duplica o formato em PowerShell);
+  (6) **como avisar que há rascunho novo** — sugestão: linha `AVISO` no console e no log do dia com o
+  caminho do `.eml`, e linha no `agendador.log`; opcional: notificação do Windows (toast) pelo `.ps1` —
+  provavelmente não aparece sob S4U sem sessão; alternativa: `sync alertas` lista os rascunhos pendentes
+  (ainda não movidos para `alertas/enviados/`);
+  (7) **janelas dos sorteios especiais** — sugestão: lista fixa por loteria no `config.rs` (perto de
+  `dias_sorteio`), cada especial com regra de data (Mega da Virada 31/12; Lotofácil da Independência
+  ~7/9; Quina de São João ~24/6) e quantos dias antes a loteria pode parar (ex.: Mega 20 dias, Lotofácil
+  15, Quina 15), conferida contra as paradas vistas nos bancos (ex.: Lotofácil sem concursos de
+  2026-09-03 a 2026-09-15); dentro da janela, `Atrasado` é aviso; alternativa sem lista: teto genérico
+  (`Atrasado` até X dias só avisa) — mais simples, mas atrasa alerta real;
+  (8) **deduplicação** — sugestão: um rascunho por (alvo, motivo) por incidente: depois do alerta, não gera
+  outro enquanto o contador não zerar; lembrete opcional a cada 7 noites seguidas ainda em falha; quando
+  o alvo volta a dar certo, gera um `.eml` curto de "normalizado"? (sugestão: não, só linha no log);
+  (9) **teste do "pronto quando"** ("falha simulada dispara o alerta") — sugestão: teste de integração
+  com loteria falsa que falha N vezes e confere o `.eml` gerado, mais uma execução manual autorizada com
+  `--db` apontando para pasta inexistente ou trava presa.
+- 2026-10-13 — Usuário aceitou as sugestões (1)–(9) da 3.6, com o caminho recomendado para o item 5 (trava
+  ocupada sai com código 3 e o `.ps1` chama `sync alerta --geral`; binário ausente só no `agendador.log`).
+  Regras registradas na 3.6 do plano.

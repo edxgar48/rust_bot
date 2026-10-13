@@ -558,6 +558,55 @@ do git). Os comandos só de leitura ficam só no console e não criam a pasta.
   projeto, aceita só para a camada de I/O; não deve virar precedente em
   `motor/` nem em `avaliacao/`.
 
+## Agendamento (Windows)
+
+O Agendador de Tarefas roda `sync ciclo todas --aguardar` todo dia às 23h00.
+Quem registra a tarefa é você, à mão; nenhum comando do projeto a registra
+sozinho. Scripts em `scripts/` (Windows PowerShell 5.1):
+
+```powershell
+cargo build --release                       # gera target\release\sync.exe
+scripts\registrar_tarefa.ps1 -Mostrar       # só imprime a definição, não registra
+scripts\registrar_tarefa.ps1 [-Pasta C:\...]  # cria ou atualiza a tarefa "rust_spider ciclo"
+scripts\registrar_tarefa.ps1 -Remover       # apaga a tarefa
+```
+
+Se a política de execução bloquear os scripts, use
+`powershell -ExecutionPolicy Bypass -File scripts\registrar_tarefa.ps1 ...`.
+
+- A tarefa roda `scripts\ciclo_agendado.ps1`, que entra na pasta de trabalho
+  (`-Pasta`, padrão a raiz do repositório; é ela que fixa `sync.lock`, `logs/`
+  e os bancos), liga o SSH sem perguntas (`GIT_SSH_COMMAND` com
+  `BatchMode=yes`, só para esse processo), chama `target\release\sync.exe`
+  direto (sem `cargo run`) e devolve o código de saída do `sync`.
+- Conta: o usuário atual, "executar estando conectado ou não", sem guardar
+  senha (S4U). Se a máquina estava desligada às 23h, roda ao ligar
+  (`StartWhenAvailable`; fora da janela 23h–01h o `--aguardar` faz uma passada
+  só). Não acorda o PC, não abre segunda instância, limite de 3 h, roda na
+  bateria. Repetir `registrar_tarefa.ps1` atualiza a tarefa, não duplica.
+- **Rastro**: `logs\agendador.log` (duas linhas por execução: uma de início,
+  gravada antes do sync, e uma de fim com código de saída e o erro do próprio
+  script, como binário ou pasta ausentes),
+  `logs\sync_AAAA-MM-DD.log` (o ciclo em si) e "Último resultado" da tarefa no
+  Agendador (`Get-ScheduledTaskInfo -TaskName "rust_spider ciclo"`).
+- Linha de início sem linha de fim = processo morto (ex.: limite de 3 h do
+  Agendador). Se a noite seguinte acusar "outra execução em andamento",
+  confira se ficou um `sync.exe` vivo (`Get-Process sync`).
+- `-Pasta` é resolvida para caminho absoluto sem barra final antes de ir para a
+  tarefa (pasta inexistente = erro; raiz de unidade como `C:\` é recusada).
+- O gatilho das 23h00 usa o fuso da máquina, que precisa ser o de Brasília.
+  Registrar com S4U pode exigir PowerShell elevado. Chave SSH protegida por
+  ssh-agent ou passphrase pode não estar acessível sob S4U: confira na primeira
+  execução manual.
+- **Não recompile o release entre 23h e 01h**: com o `sync.exe` em uso o
+  `cargo build --release` falha.
+- **Primeira execução manual**, para conferir o Playwright e o SSH sob a conta
+  S4U: com a tarefa registrada, rode `Start-ScheduledTask -TaskName "rust_spider
+  ciclo"` num horário em que o ciclo possa gravar de verdade e leia os dois
+  logs.
+- Os `.ps1` são só ASCII (o 5.1 lê UTF-8 sem BOM como ANSI); os testes
+  (`tests/agendamento.rs`) usam um binário falso e não tocam no Agendador.
+
 ## Experimentos em Python (`ml/`)
 
 Python só experimenta e propõe perfis; nada da produção depende dele. Lê o
