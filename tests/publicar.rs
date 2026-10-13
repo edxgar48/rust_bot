@@ -58,7 +58,7 @@ fn git_bruto(pasta: &Path, args: &[&str]) -> Vec<u8> {
     o.stdout
 }
 
-/// Ambiente: `remoto.git` (bare), `clone/` (com um commit inicial `LEIAME`
+/// Ambiente: `rust_spider_dados.git` (bare), `clone/` (com um commit inicial `LEIAME`
 /// já enviado) e `saida/` (onde o teste monta o `v1/`).
 struct Ambiente {
     raiz: PathBuf,
@@ -91,14 +91,14 @@ fn novo_ambiente() -> Ambiente {
     ));
     let _ = fs::remove_dir_all(&raiz);
     fs::create_dir_all(&raiz).unwrap();
-    let remoto = raiz.join("remoto.git");
+    let remoto = raiz.join("rust_spider_dados.git");
     let clone = raiz.join("clone");
     let saida = raiz.join("saida");
-    git(&raiz, &["init", "-q", "--bare", "remoto.git"]);
+    git(&raiz, &["init", "-q", "--bare", "rust_spider_dados.git"]);
     git(&remoto, &["symbolic-ref", "HEAD", "refs/heads/main"]);
     // O pre-receive dos testes só vale se os hooks forem os do bare.
     git(&remoto, &["config", "core.hooksPath", "hooks"]);
-    git(&raiz, &["clone", "-q", "remoto.git", "clone"]);
+    git(&raiz, &["clone", "-q", "rust_spider_dados.git", "clone"]);
     git(&clone, &["symbolic-ref", "HEAD", "refs/heads/main"]);
     configurar_autor(&clone);
     fs::write(clone.join("LEIAME"), "dados\n").unwrap();
@@ -410,10 +410,77 @@ fn branch_diferente_de_main_e_recusado() {
     assert!(!a.clone.join("v1").exists());
 }
 
+#[test]
+fn origin_que_nao_e_o_repositorio_de_dados_e_recusado() {
+    // Um `--repo` apontado para o clone do código (limpo e em `main`) não
+    // pode receber o `v1/` nem o push.
+    exige_git!();
+    let a = novo_ambiente();
+    gravar_saida(
+        &a.saida,
+        "2026-10-12T10:00:00Z",
+        &[lote("quina", 7140, "q\n")],
+        &[],
+    );
+    let antes = commits(&a.clone);
+    git(
+        &a.clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "git@github.com:edxgar48/rust_bot.git",
+        ],
+    );
+    let e = publicar_em(&a).unwrap_err();
+    assert!(matches!(e, SpiderError::PublicacaoRecusada(_)), "{e}");
+    let texto = e.to_string();
+    assert!(texto.contains("`rust_bot`"), "{texto}");
+    assert!(!texto.contains("rust_bot.git"), "{texto}");
+    assert!(texto.contains("rust_spider_dados"), "{texto}");
+    assert!(!a.clone.join("v1").exists());
+    assert_eq!(commits(&a.clone), antes);
+}
+
+#[test]
+fn pushurl_que_nao_e_o_repositorio_de_dados_e_recusada() {
+    // O fetch aponta para o repositório de dados, mas o `push` iria para a
+    // `pushurl`: também tem de ser recusado.
+    exige_git!();
+    let a = novo_ambiente();
+    gravar_saida(
+        &a.saida,
+        "2026-10-12T10:00:00Z",
+        &[lote("quina", 7140, "q\n")],
+        &[],
+    );
+    let antes = commits(&a.clone);
+    git(
+        &a.clone,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://token@github.com/edxgar48/rust_bot.git",
+        ],
+    );
+    let e = publicar_em(&a).unwrap_err();
+    assert!(matches!(e, SpiderError::PublicacaoRecusada(_)), "{e}");
+    let texto = e.to_string();
+    assert!(texto.contains("URL de push"), "{texto}");
+    assert!(!texto.contains("token"), "{texto}");
+    assert!(!a.clone.join("v1").exists());
+    assert_eq!(commits(&a.clone), antes);
+}
+
 /// Outro clone empurra um commit para o remoto.
 fn empurrar_de_outro_clone(a: &Ambiente) {
     let outro = a.raiz.join("outro_clone");
-    git(&a.raiz, &["clone", "-q", "remoto.git", "outro_clone"]);
+    git(
+        &a.raiz,
+        &["clone", "-q", "rust_spider_dados.git", "outro_clone"],
+    );
     configurar_autor(&outro);
     fs::write(outro.join("alheio.txt"), "x").unwrap();
     git(&outro, &["add", "-A"]);
@@ -619,10 +686,16 @@ fn remoto_vazio_e_recusado_com_mensagem_clara() {
         &[],
     );
     // Bare sem nenhum commit e um clone dele (HEAD ainda sem commit).
-    git(&a.raiz, &["init", "-q", "--bare", "vazio.git"]);
-    let vazio = a.raiz.join("vazio.git");
+    git(
+        &a.raiz,
+        &["init", "-q", "--bare", "vazio/rust_spider_dados.git"],
+    );
+    let vazio = a.raiz.join("vazio").join("rust_spider_dados.git");
     git(&vazio, &["symbolic-ref", "HEAD", "refs/heads/main"]);
-    git(&a.raiz, &["clone", "-q", "vazio.git", "clone_vazio"]);
+    git(
+        &a.raiz,
+        &["clone", "-q", "vazio/rust_spider_dados.git", "clone_vazio"],
+    );
     let clone_vazio = a.raiz.join("clone_vazio");
     git(&clone_vazio, &["symbolic-ref", "HEAD", "refs/heads/main"]);
     configurar_autor(&clone_vazio);

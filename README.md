@@ -155,7 +155,8 @@ cargo run --bin sync -- exportar quina --saida outra/pasta
 # Não exporta nem lê banco; não clona sozinho (se o clone faltar, o erro traz o `git clone` a rodar).
 # Clone padrão ../rust_spider_dados (relativo ao diretório atual), trocável com --repo.
 # Antes de copiar: confere sha256 e bytes do index.json contra o disco, faz `git fetch` e recusa, sem
-# tocar em nada, se o clone estiver sujo, fora de `main` ou atrás/divergente de origin/main.
+# tocar em nada, se o clone estiver sujo, fora de `main` ou atrás/divergente de origin/main, ou se a
+# URL do origin (fetch ou push) não for a de um repositório `rust_spider_dados` (evita publicar no repo do código).
 # Só publica se algum hash ou a lista de arquivos mudou (só `gerado_em` diferente = "nada a publicar",
 # sucesso, sem commit). Um commit por publicação, "Dados: lotofacil 3802, megasena 3069, quina 7140"
 # (loteria null no index fica fora da mensagem), autor = git da máquina; v1/ do clone vira espelho do

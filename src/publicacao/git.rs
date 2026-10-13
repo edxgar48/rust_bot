@@ -88,6 +88,26 @@ impl DestinoGit {
     }
 }
 
+/// Nome do repositório de dados: o último trecho da URL do `origin` (sem a
+/// barra final e sem `.git`) tem de ser exatamente este.
+const NOME_REPO_DADOS: &str = "rust_spider_dados";
+
+/// Último trecho da URL do remoto, sem a barra final e sem `.git`, em
+/// qualquer forma de URL (SSH `git@host:dono/nome.git`, HTTPS ou caminho
+/// local). É o que a recusa mostra: a URL inteira pode trazer credencial.
+fn nome_do_repositorio(url: &str) -> &str {
+    let sem_barra = url.trim().trim_end_matches(['/', '\\']);
+    let sem_git = sem_barra.strip_suffix(".git").unwrap_or(sem_barra);
+    sem_git.rsplit(['/', '\\', ':']).next().unwrap_or("")
+}
+
+/// Se a URL do remoto aponta para um repositório chamado [`NOME_REPO_DADOS`].
+/// Diferença de caixa ou origin num clone não-bare (`.../nome/.git`) são
+/// recusados — falso negativo, do lado seguro.
+fn e_o_repositorio_de_dados(url: &str) -> bool {
+    nome_do_repositorio(url) == NOME_REPO_DADOS
+}
+
 fn texto_do_erro(saida: &Output) -> String {
     let e = String::from_utf8_lossy(&saida.stderr).trim().to_string();
     if e.is_empty() {
@@ -114,6 +134,23 @@ impl Destino for DestinoGit {
             return Err(recusa(format!(
                 "`{repo}` está dentro de outro repositório git (em `{prefixo}`), não é a raiz do clone de dados — aponte `--repo` para a pasta do clone"
             )));
+        }
+
+        // O `origin` tem de ser o repositório de dados: um `--repo` apontado
+        // para o clone do código (ou outro qualquer), limpo e em `main`,
+        // receberia o `v1/` e o push (decisão de 2026-10-13). Confere a URL
+        // de fetch e a de push: o `push` usa a `pushurl` quando ela existe.
+        for (args, qual) in [
+            (&["remote", "get-url", REMOTO][..], "fetch"),
+            (&["remote", "get-url", "--push", REMOTO][..], "push"),
+        ] {
+            let url = self.exigir(args, &args.join(" "))?;
+            if !e_o_repositorio_de_dados(&url) {
+                let nome = nome_do_repositorio(&url);
+                return Err(recusa(format!(
+                    "a URL de {qual} do `{REMOTO}` de `{repo}` aponta para `{nome}`, não para o repositório de dados `{NOME_REPO_DADOS}` — aponte `--repo` para o clone de {URL_CLONE}"
+                )));
+            }
         }
 
         self.exigir(&["fetch", REMOTO], &format!("fetch {REMOTO}"))?;
@@ -261,6 +298,35 @@ impl Destino for DestinoGit {
             Ok(())
         } else {
             Err(SpiderError::PublicacaoEnvioFalhou(texto_do_erro(&saida)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn so_aceita_remoto_com_o_nome_do_repositorio_de_dados() {
+        for ok in [
+            "git@github.com:edxgar48/rust_spider_dados.git",
+            "git@github.com:edxgar48/rust_spider_dados",
+            "https://github.com/edxgar48/rust_spider_dados.git",
+            "https://github.com/edxgar48/rust_spider_dados/",
+            r"C:\temp\x\rust_spider_dados.git",
+            "/tmp/x/rust_spider_dados.git\n",
+            "rust_spider_dados.git",
+        ] {
+            assert!(e_o_repositorio_de_dados(ok), "{ok}");
+        }
+        for ruim in [
+            "git@github.com:edxgar48/rust_bot.git",
+            "git@github.com:edxgar48/rust_spider_dados_velho.git",
+            "git@github.com:edxgar48/meu_rust_spider_dados.git",
+            "https://github.com/edxgar48/rust_spider_dados.git/extra",
+            "",
+        ] {
+            assert!(!e_o_repositorio_de_dados(ruim), "{ruim}");
         }
     }
 }

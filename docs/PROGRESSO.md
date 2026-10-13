@@ -67,7 +67,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
-- [ ] 3.1 Comando `sync ciclo`
+- [ ] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
+- [ ] 3.1b Comando `sync ciclo`
 - [ ] 3.2 Calendário de sorteios no `config.rs`
 - [ ] 3.3 Retentativas com backoff
 - [ ] 3.4 Trava contra execução simultânea
@@ -1602,3 +1603,34 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   fmt ok, clippy ok, cargo test verde (lib 569, 3 ignorados; sync 32, avaliar 89, conformidade 4,
   dataset 25, evidencia 20, exportar 26, features 56, indice 57, parser 10, publicar 18, tabela 13),
   pytest 175, `validar todas` ok. **2.4 concluída; Fase 2 concluída.**
+- 2026-10-12 — Primeira publicação real feita pelo usuário com `sync publicar`: commit `788341a`
+  "Dados: lotofacil 3802, megasena 3069, quina 7140" em `edxgar48/rust_spider_dados` (clone em
+  `../rust_spider_dados`, com `core.autocrlf=false` local). Sugestão aceita: `publicar` recusa se a URL
+  do `origin` não terminar em `rust_spider_dados` (`e_o_repositorio_de_dados` em
+  `src/publicacao/git.rs`, conferido antes do `fetch`); +1 teste unitário (formas de URL SSH/HTTPS/local)
+  e +1 de integração (origin `rust_bot.git` recusado, sem `v1/` nem commit); bares dos testes renomeados
+  para `rust_spider_dados.git`. Plano e README atualizados. Gate: fmt, clippy, cargo test verde (publicar
+  19). Feito direto, sem nova rodada do revisor.
+- 2026-10-13 — 3.1 não iniciada: o plano não define pontos que mudam o comportamento do `sync ciclo`.
+  Perguntas devolvidas ao usuário, com sugestões: (1) fonte do backfill — hoje só há a planilha inteira e
+  a página do último concurso; buscar concurso a concurso exige fonte nova (ex.: API JSON da Caixa, com
+  crate HTTP nova) — sugestão: na 3.1, buraco → baixar a planilha (caminho do `baixar`) e, se o buraco
+  persistir, só aviso + `validar` reprova a loteria; fonte por concurso vai para o backlog; (2) alvo
+  `ciclo <loteria|todas>`, uma loteria com falha não interrompe as outras, exit ≠ 0 no fim; (3) loteria
+  que falhar fica fora da publicação: exportar só as que passaram (`exportar <loteria>` uma a uma,
+  `index.json` com o que há no disco) e um `publicar` só no fim; (4) sem novidade no `atualizar`, seguir
+  mesmo assim até o `publicar` (tudo idempotente; reenvia push pendente); (5) índice só do `perfil_ativo`;
+  features incrementais (a orquestração já decide regenerar); (6) entregar em duas partes: 3.1a mover
+  `processar_e_salvar`, `validar_lote`, `aplicar_atualizacao` e o tudo ou nada do `exportar todas` para
+  `orquestracao` sem mudar comportamento; 3.1b o `ciclo`; (7) retentativas, trava, log e calendário ficam
+  para 3.2–3.5; SSH com `BatchMode=yes` (BAIXA da 2.4) entra na 3.1 ou na 3.7?
+  Antes: as mudanças pós-2.4 (checagem da URL do `origin` no `publicar`) seguem sem commit e sem revisão.
+- 2026-10-13 — Usuário aceitou as sugestões da 3.1 (1–6): regras no plano, 3.1 dividida em 3.1a (mover
+  para a biblioteca, sem mudar comportamento) e 3.1b (o `ciclo`). (7) SSH com `BatchMode=yes` ficou na 3.7
+  (agendamento, onde o `publicar` roda sem console). Revisão da checagem do `origin` (`revisor-arquitetura`):
+  aprovado com 4 BAIXA. Corrigidas: o `publicar` confere também a URL de push (`git push` usa a `pushurl`
+  quando existe) e a recusa mostra só o nome do repositório, não a URL (podia vazar credencial);
+  `NOME_REPO_DADOS` e `e_o_repositorio_de_dados` ficaram privados; limitação dos falsos negativos (caixa,
+  origin em clone não-bare) registrada no comentário. +1 teste de integração (`pushurl` recusada). Gate:
+  fmt, clippy, cargo test verde (lib 570, publicar 20, demais suítes inalteradas); clone real passa (fetch
+  e push em `rust_spider_dados`).

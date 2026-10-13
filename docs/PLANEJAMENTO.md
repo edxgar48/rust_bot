@@ -526,7 +526,12 @@ Tarefas:
     R2/Pages/S3 sem mudar o `sync exportar` nem o contrato (só a URL base).
 - **Regras do `sync publicar`** (decisões de 2026-10-12):
   - **clone**: padrão `../rust_spider_dados`, trocável com `--repo <pasta>`;
-    se não existir, erro com o `git clone` a rodar (não clona sozinho);
+    se não existir, erro com o `git clone` a rodar (não clona sozinho); recusa
+    se a URL de fetch ou a de push do `origin` não terminar em
+    `rust_spider_dados` (com ou sem `.git`), para um `--repo` errado nunca
+    commitar `v1/` no repositório do código; a recusa mostra só o nome do
+    repositório, nunca a URL inteira (pode trazer credencial) (decisão de
+    2026-10-13);
   - **antes de copiar**: `git fetch` e confere que o clone está limpo, em
     `main` e sem divergir de `origin/main`; se não estiver, recusa sem
     tocar em nada (nunca `reset --hard`);
@@ -554,13 +559,14 @@ Tarefas:
 
 | # | Tarefa |
 |---|---|
-| 3.1 | `sync ciclo`: atualizar → backfill automático se houver buraco (buscando os concursos que faltam e gravando pelo mesmo caminho do `inserir`, no cache de 0.7) → validar → features (incremental) → índice → exportar → publicar (só se mudou). Antes, mover para a biblioteca (`orquestracao`) a lógica de gravação que ainda está na CLI (`processar_e_salvar`, `validar_lote`, `aplicar_atualizacao`), para o ciclo reaproveitá-la |
+| 3.1a | Mover para a biblioteca (`orquestracao`), sem mudar comportamento, a lógica de gravação que ainda está na CLI (`processar_e_salvar`, `validar_lote`, `aplicar_atualizacao`) e o tudo ou nada do `exportar todas`, para o ciclo reaproveitá-los |
+| 3.1b | `sync ciclo <loteria\|todas>`: atualizar → backfill se houver buraco → validar → features (incremental) → índice → exportar → publicar. Regras (decisões de 2026-10-13): **backfill** = baixar a planilha inteira pelo caminho do `baixar`; se o buraco persistir, só aviso e o `validar` reprova a loteria (busca concurso a concurso, com fonte nova, fica no backlog); **falha isolada** = uma loteria com falha não interrompe as outras e o comando sai com erro no fim; **publicação parcial** = exporta só as loterias que passaram (`exportar <loteria>` uma a uma, `index.json` com o que há no disco) e roda um único `publicar` no fim; **sem concurso novo** = segue até o `publicar` mesmo assim (todos os passos são idempotentes; o `publicar` reenvia push pendente e diz "nada a publicar" se nada mudou); **índice** só do `perfil_ativo` da loteria, features incrementais (a orquestração já decide quando regenerar); retentativas, trava, log e calendário ficam para 3.2–3.5 |
 | 3.2 | Calendário de sorteios por loteria no `config.rs` |
 | 3.3 | Retentativas com backoff (sorteio ~20h, tentativas até ~23h, nova tentativa no dia seguinte) |
 | 3.4 | Arquivo de trava contra execução simultânea |
 | 3.5 | Log em arquivo (`logs/sync_AAAA-MM-DD.log`) |
 | 3.6 | Alerta após N falhas seguidas ou mudança aparente no site |
-| 3.7 | Agendamento via Agendador de Tarefas do Windows (script `.ps1` versionado) |
+| 3.7 | Agendamento via Agendador de Tarefas do Windows (script `.ps1` versionado); o `publicar` sem console roda o SSH com `BatchMode=yes` (falha em vez de travar pedindo senha ou confirmação de host) |
 | 3.8 | Runbook no README: bloqueio, seletor mudou, reprocessar do zero |
 
 **Pronto quando:** uma semana rodando agendado sem intervenção, cada concurso
