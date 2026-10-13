@@ -1787,3 +1787,23 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   **3.3 concluída.** Pendências para a 3.6: distinguir "mudança aparente no site" de falha transitória
   persistente (hoje ambas saem como falha em Atualizar, com o erro original); o relatório já expõe
   `avisos()` (concurso que não saiu) e `falhas()`.
+- 2026-10-13 — 3.4 não iniciada: o plano diz só "arquivo de trava contra execução simultânea", e os pontos
+  abertos mudam o comportamento da CLI e a dependência do projeto. Perguntas devolvidas ao usuário, com
+  sugestões: (1) **quais comandos travam** — sugestão: todos os que escrevem (`baixar`, `importar`,
+  `atualizar`, `inserir`, `features`, `indice`, `exportar`, `publicar`, `ciclo`, `avaliar --trancado`,
+  `dataset`); os só de leitura (`listar`, `validar`, `buracos`, `calendario`, `tabela`, `aleatoriedade`,
+  `evidencia` sem gravar) não; isso fecha a janela `exportar`×`publicar` (BAIXA da 2.4) e a corrida do
+  trancado (BAIXA da 1c.5); (2) **escopo** — sugestão: uma trava global por pasta de trabalho
+  (`sync.lock` ao lado dos bancos), não por loteria: `ciclo todas` e `exportar`/`publicar` tocam
+  `publico/` e o clone de dados, que são comuns; (3) **mecanismo e trava órfã** — sugestão: trava do
+  sistema operacional sobre o arquivo (`File::try_lock`, liberada sozinha se o processo morrer ou a
+  máquina reiniciar), com PID, comando e horário de início gravados no arquivo só para a mensagem; isso
+  exige subir `rust-version` de 1.88 para 1.89 (rustc local é 1.98.1); alternativa sem subir é o crate
+  `fs4`/`fd-lock` (dependência nova); (4) **ocupado** — sugestão: falha na hora com mensagem ("outra
+  execução em andamento: PID, comando, desde HH:MM") e exit ≠ 0, sem esperar; o agendado das 23h que
+  encontrar trava sai com erro (vira alerta na 3.6); (5) a pendência BAIXA da 3.3 (`std::thread::sleep`
+  dentro de `async fn` no `--aguardar` → `tokio::time::sleep`) entra na 3.4?
+- 2026-10-13 — Usuário aceitou as sugestões (1)–(5) da 3.4; regras registradas na 3.4 do plano. Pontos
+  sem sugestão, decididos na conferência do código: `evidencia` fica livre (abre o banco só para leitura) e
+  `tabela` também (só leitura no banco; grava em `tabelas/`, que nenhum outro comando usa); a troca para
+  `tokio::time::sleep` entra junto na 3.4.
