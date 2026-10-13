@@ -10,6 +10,7 @@
 //! O relógio, a leitura da página e o download da planilha entram como
 //! funções, para testar sem rede. Nenhum SQL: tudo passa por `db`.
 
+use super::ciclo::EventoCiclo;
 use crate::backup;
 use crate::config::LoteriaConfig;
 use crate::correcoes::{self, Ocorrencia};
@@ -87,6 +88,8 @@ pub enum Evento {
         total: u32,
         faixas: Vec<(u32, u32)>,
     },
+    /// Passos do `sync ciclo` (3.1b).
+    Ciclo(EventoCiclo),
 }
 
 impl Evento {
@@ -95,6 +98,7 @@ impl Evento {
             Evento::Correcao(Ocorrencia::Divergente { .. }) | Evento::Erros(_) => Destino::Erro,
             Evento::Conciliacao(Conciliacao::Resolvida { .. }) => Destino::Padrao,
             Evento::Conciliacao(_) => Destino::Erro,
+            Evento::Ciclo(e) => e.destino(),
             _ => Destino::Padrao,
         }
     }
@@ -193,6 +197,7 @@ impl fmt::Display for Evento {
                     faixas.join(", ")
                 )
             }
+            Evento::Ciclo(e) => write!(f, "{e}"),
         }
     }
 }

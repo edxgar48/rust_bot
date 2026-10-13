@@ -51,6 +51,7 @@ src/
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
 ├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
 ├── publicacao/    # `sync publicar`: confere o publico/v1/, decide se mudou e publica num `Destino` (clone git)
+├── orquestracao/ciclo.rs # `sync ciclo`: compõe atualizar, backfill, validar, features, índice, exportar e publicar
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
@@ -168,6 +169,24 @@ cargo run --bin sync -- exportar quina --saida outra/pasta
 git clone git@github.com:edxgar48/rust_spider_dados.git ../rust_spider_dados   # uma vez
 cargo run --bin sync -- publicar
 cargo run --bin sync -- publicar --repo outra/pasta --saida publico
+
+# ciclo completo (3.1b): por loteria, atualizar -> backfill (se sobrar buraco) -> validar -> features
+# (incremental) -> índice do perfil ativo -> exportar; depois de todas, UM publicar. Só compõe os
+# comandos acima, com as mesmas flags e padrões (--dir, --backups, --cache, --perfis, --saida, --repo,
+# --visivel; --db só com slug). Comportamento:
+#  - falha isolada: uma loteria que falha (seletor mudou, rede fora, validar reprovou...) não interrompe
+#    as outras; só as que passaram são exportadas (index.json com o que há no disco, a falhada fica como
+#    estava) e o publicar roda mesmo assim. No fim, resumo por loteria e saída com erro (exit != 0) se
+#    qualquer loteria ou o publicar falhou (push que falha deixa o commit local; a próxima execução reenvia);
+#  - sem concurso novo: segue até o publicar ("Nada a publicar" se nada mudou); rodar duas vezes seguidas
+#    não muda nada nem gera commit;
+#  - backfill: se depois do atualizar ainda faltar concurso no meio do banco, baixa a planilha inteira
+#    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
+#    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
+#    de novo;
+#  - retentativas, trava, log em arquivo, calendário e agendamento ainda não existem (3.2 a 3.7).
+cargo run --bin sync -- ciclo todas
+cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
 
 # dataset de ML para o Python (`ml/`): features por (concurso, dezena, janela) dos
 # concursos sorteados, em datasets/<loteria>/features_v<versão>.<parquet|csv>

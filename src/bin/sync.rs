@@ -271,6 +271,42 @@ enum Comando {
         #[arg(long, default_value = publicacao::REPO_PADRAO)]
         repo: PathBuf,
     },
+    /// Ciclo completo por loteria: atualizar -> backfill (se houver buraco) ->
+    /// validar -> features (incremental) -> índice do perfil ativo -> exportar;
+    /// depois de todas, um único publicar. Uma loteria com falha não
+    /// interrompe as outras: só as que passaram são exportadas, o publicar
+    /// roda mesmo assim e o comando sai com erro no fim. Sem concurso novo,
+    /// segue até o publicar (passos idempotentes). Backfill = baixar a
+    /// planilha inteira; se o buraco persistir, só aviso e o validar reprova.
+    Ciclo {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
+        loteria: String,
+        /// Pasta onde salvar a planilha (.xlsx), se houver salto ou backfill
+        #[arg(long, default_value = "downloads")]
+        dir: PathBuf,
+        /// Pasta dos backups do banco feitos antes de baixar a planilha
+        #[arg(long, default_value = backup::PASTA_PADRAO)]
+        backups: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Mostra a janela do navegador (útil para depurar bloqueios/seletores)
+        #[arg(long)]
+        visivel: bool,
+        /// Pasta do cache de concursos inseridos à mão (manuais_<loteria>.json)
+        #[arg(long, default_value = "cache")]
+        cache: PathBuf,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+        /// Pasta de saída do exportar (os arquivos vão em `<saida>/v1/`)
+        #[arg(long, default_value = "publico")]
+        saida: PathBuf,
+        /// Clone do repositório de dados
+        #[arg(long, default_value = publicacao::REPO_PADRAO)]
+        repo: PathBuf,
+    },
     /// Grava o dataset de ML para o Python: as features de `features_dezena`
     /// (uma linha por concurso, dezena e janela, com data, trecho e `saiu`)
     /// dos concursos já sorteados, em `<saida>/<loteria>/features_v<versão>.<ext>`,
@@ -576,6 +612,40 @@ async fn main() -> anyhow::Result<()> {
                 ),
             }
         }
+        Comando::Ciclo {
+            loteria,
+            dir,
+            backups,
+            db,
+            visivel,
+            cache,
+            perfis,
+            saida,
+            repo,
+        } => {
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let pastas = orquestracao::PastasCiclo {
+                backups: &backups,
+                cache: &cache,
+                perfis: &perfis,
+                saida: &saida,
+            };
+            let mut destino = publicacao::DestinoGit::novo(&repo);
+            let relatorio = orquestracao::executar_ciclo(
+                &alvos.itens,
+                &pastas,
+                &mut destino,
+                &mut imprimir_evento,
+                &mut agora_segundos,
+                |cfg| downloader::raspar_ultimo_resultado(cfg, !visivel),
+                |cfg| baixar_planilha(cfg, &dir, None, visivel),
+            )
+            .await;
+            imprimir_resumo_ciclo(&relatorio);
+            if !relatorio.sucesso() {
+                anyhow::bail!("o ciclo terminou com falha(s); veja o resumo acima");
+            }
+        }
         Comando::Dataset {
             loteria,
             formato,
@@ -734,6 +804,18 @@ async fn baixar(
     let arquivo = baixar_planilha(cfg, dir, seletor, visivel).await?;
     orquestracao::processar_e_salvar(&arquivo, cfg, db_caminho, cache, &mut imprimir_evento)?;
     Ok(())
+}
+
+/// Resumo do `sync ciclo`: uma linha por loteria e a situação da publicação.
+fn imprimir_resumo_ciclo(relatorio: &orquestracao::RelatorioCiclo) {
+    println!("=== Resumo do ciclo ===");
+    for l in &relatorio.loterias {
+        println!("  {l}");
+    }
+    match &relatorio.publicacao {
+        Ok(_) => println!("  publicação: ok"),
+        Err(_) => println!("  publicação: falhou"),
+    }
 }
 
 /// Mostra um evento dos fluxos de gravação (`orquestracao`) na hora em que

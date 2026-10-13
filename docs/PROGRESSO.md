@@ -68,7 +68,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 3 — Automação · `engenheiro-operacao`
 
 - [x] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
-- [ ] 3.1b Comando `sync ciclo`
+- [x] 3.1b Comando `sync ciclo`
 - [ ] 3.2 Calendário de sorteios no `config.rs`
 - [ ] 3.3 Retentativas com backoff
 - [ ] 3.4 Trava contra execução simultânea
@@ -1659,3 +1659,34 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `PastasAtualizar`; o caminho do próximo concurso não relê o banco depois de gravar. Antes, uma falha
   nessa releitura daria erro com o concurso já gravado. Gate: fmt, clippy ok; cargo test verde (lib 592,
   bin 22, exportar 33, demais inalteradas); pytest 175; `validar todas` ok. **3.1a concluída.**
+- 2026-10-13 — 3.1b: interpretações do orquestrador (revisáveis): (1) o `publicar` final roda sempre,
+  mesmo se todas as loterias falharem; falha no publicar → exit ≠ 0; (2) flags iguais às dos comandos
+  existentes (`--dir`, `--backups`, `--db`, `--visivel`, `--cache`, `--perfis`, `--saida`, `--repo`), `--db`
+  com `todas` é erro; (3) `criado_em` do perfil a partir do relógio; (4) backfill extra só para buraco
+  interno que continua no banco depois do `atualizar`; (5) ordem = `config::LOTERIAS`.
+- 2026-10-13 — 3.1b entregue pelo `engenheiro-operacao`. `src/orquestracao/ciclo.rs` (novo, `pub use` em
+  `orquestracao`): `executar_ciclo(alvos, &PastasCiclo, &mut dyn Destino, obs, agora, ler_pagina,
+  obter_planilha) -> RelatorioCiclo` (`loterias: Vec<ResumoLoteria>`, `publicacao: Result<Desfecho>`,
+  `sucesso()`, `falhas()`), `FalhaCiclo { etapa, erro }`, `EtapaCiclo`, `EventoCiclo` (via
+  `Evento::Ciclo`). Reaproveita o que a 3.1a moveu (`atualizar`, `processar_e_salvar`,
+  `sincronizar_features`, `sincronizar_indice`, `exportar_tudo_ou_nada` com uma loteria) e
+  `publicacao::publicar`. CLI: subcomando `ciclo` + `imprimir_resumo_ciclo`; README. Desvios aceitos pela
+  revisão: depois de salto já resolvido pelo `atualizar`, o backfill é dispensado (`BackfillDispensado`,
+  sem segundo download); o backfill faz backup antes do download; relógio injetado na lib; o validar do
+  ciclo reusa `validacao::validar` e emite eventos. Se nenhuma loteria tiver `v1/`, o publicar falha
+  com `PublicacaoSaidaInvalida` sem tocar no destino. Revisão: aprovada com ressalvas, sem ALTA;
+  corrigidos numa rodada 2 MÉDIA (mensagem de falha agora traz a cadeia de causas, como o `{:#}`;
+  testes de falha em Indice e Backfill e de causa no salto) e 2 BAIXA (falha do backfill aponta o
+  backup via `CaminhoDaPlanilhaFalhou`; `como_str` privado). Testes: `tests/ciclo.rs` com 17 (os que
+  usam git pulam sem ele). Gate: fmt, clippy ok; cargo test verde (lib 592, bin 22, ciclo 17, demais
+  inalteradas); pytest 175; `validar todas` ok. `ciclo` **não** foi rodado contra os bancos reais nem
+  contra `../rust_spider_dados`. **3.1b concluída.**
+  **Pendências BAIXA (não bloqueiam):** (1) buraco que persiste refaz backup e download da planilha a
+  cada execução — limitar (ex.: uma vez por dia por loteria, ou backup só se houver o que gravar) na
+  3.3/3.6; (2) a partição erros/avisos do validar está duplicada entre `ciclo.rs` e `validar_banco` da
+  CLI, e o validar do ciclo não emite `DicaBuracos` (o `atualizar` já emite) — unificar quando a 3.5
+  mexer em logs; (3) o resumo final da CLI só diz "falhou em <etapa>" (a cadeia sai no stderr pelo evento).
+- 2026-10-13 — Usuário confirmou as três decisões da 3.1b (`publicar` final sempre roda e, se falhar, o
+  `ciclo` sai com erro; flags dos comandos existentes, `--db` com `todas` recusado; backfill só para buraco
+  que persiste após o `atualizar`). O primeiro `sync ciclo todas` real (bancos e `../rust_spider_dados`)
+  fica para depois da 3.2 (calendário).
