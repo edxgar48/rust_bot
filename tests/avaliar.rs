@@ -2593,11 +2593,14 @@ fn cli_trancado_sem_registros_usa_a_pasta_ao_lado_do_banco_em_qualquer_diretorio
             .len(),
         1
     );
+    // Só a trava `sync.lock` (3.4) fica no diretório de trabalho; o registro
+    // (e o resto) não.
     assert_eq!(
         entradas(&outro_dir.0),
-        0,
-        "nada gravado no diretório de trabalho"
+        1,
+        "nada gravado no diretório de trabalho além da trava"
     );
+    assert!(outro_dir.0.join("sync.lock").exists());
     // Primeiro registro: aviso com o caminho absoluto do arquivo.
     let caminho = arquivo.display().to_string();
     assert!(
@@ -2620,7 +2623,8 @@ fn cli_trancado_sem_registros_usa_a_pasta_ao_lado_do_banco_em_qualquer_diretorio
     );
     assert!(!segunda.sucesso);
     assert!(segunda.stderr.contains("--repetir"), "{}", segunda.stderr);
-    assert_eq!(entradas(&terceiro_dir.0), 0);
+    // Só a trava `sync.lock` (3.4).
+    assert_eq!(entradas(&terceiro_dir.0), 1);
 
     // Com --repetir: o arquivo já existe e a pasta é a padrão, sem aviso.
     let terceira = rodar_sync_em(
@@ -2635,7 +2639,8 @@ fn cli_trancado_sem_registros_usa_a_pasta_ao_lado_do_banco_em_qualquer_diretorio
             .len(),
         2
     );
-    assert_eq!(entradas(&terceiro_dir.0), 0);
+    // Só a trava `sync.lock` (3.4).
+    assert_eq!(entradas(&terceiro_dir.0), 1);
 }
 
 #[test]

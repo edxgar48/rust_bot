@@ -21,6 +21,7 @@ pub mod publicacao;
 pub mod registros;
 pub mod tabela;
 pub mod tempo;
+pub mod trava;
 pub mod validacao;
 
 pub use error::{Result, SpiderError};

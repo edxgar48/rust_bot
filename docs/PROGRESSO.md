@@ -71,7 +71,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.1b Comando `sync ciclo`
 - [x] 3.2 Calendário de sorteios no `config.rs`
 - [x] 3.3 Retentativas com backoff
-- [ ] 3.4 Trava contra execução simultânea
+- [x] 3.4 Trava contra execução simultânea
 - [ ] 3.5 Logs em arquivo
 - [ ] 3.6 Alertas (depende de decisão em aberto)
 - [ ] 3.7 Agendamento no Windows (`.ps1`)
@@ -1807,3 +1807,35 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   sem sugestão, decididos na conferência do código: `evidencia` fica livre (abre o banco só para leitura) e
   `tabela` também (só leitura no banco; grava em `tabelas/`, que nenhum outro comando usa); a troca para
   `tokio::time::sleep` entra junto na 3.4.
+- 2026-10-13 — 3.4: interpretações do orquestrador (revisáveis; rodando como subagente): (1) "pasta dos
+  bancos" = pasta de trabalho atual, onde ficam os bancos padrão (`resultados_<loteria>.db`, também relativos
+  a ela); o `sync.lock` fica sempre lá, mesmo com `--db` apontando para outro lugar (uma trava só, como
+  decidido); (2) a trava é tomada antes de qualquer gravação e mantida até o fim do comando (no `ciclo
+  --aguardar`, a noite toda); (3) a lógica da trava (abrir, tentar travar, gravar/ler PID, comando e início,
+  montar a mensagem) fica na biblioteca, testável com pasta temporária; a CLI só decide quais comandos travam.
+- 2026-10-13 — 3.4 entregue pelo `engenheiro-operacao`. `src/trava.rs` (novo, na lib): `Trava::obter(pasta,
+  comando, agora)` com `File::try_lock` sobre `sync.lock`, solta no Drop ou quando o processo morre;
+  `SpiderError::TravaOcupada { dono }` (definitivo em `eh_transitorio`), mensagem "outra execução em andamento:
+  PID n, comando x, desde HH:MM" em Brasília. CLI: `nome_se_grava(&Comando)` (match sem `_`: comando novo
+  obriga a decidir) e trava em `./sync.lock` logo depois do parse, mantida até o fim do `main` (a noite toda
+  no `ciclo --aguardar`). Travam: baixar, importar, atualizar, inserir, features, indice, exportar, publicar,
+  ciclo, dataset, avaliar `--trancado`; livres os demais, como no plano. `rust-version` 1.89, sem crate nova;
+  `.gitignore` (`/sync.lock`, `/sync.lock.dono`); README com seção da trava.
+  **Desvios (aceitos pela revisão, revisáveis pelo usuário):** (1) PID, comando e início ficam em
+  `sync.lock.dono`, ao lado, e não dentro do `sync.lock`: no Windows a trava é obrigatória e o processo
+  barrado não leria o conteúdo; `.dono` ausente ou velho só empobrece a mensagem, nunca a exclusão — o texto
+  da 3.4 no plano ainda diz "o arquivo guarda", **ajustar com aprovação do usuário**; (2) o sono do
+  `--aguardar` é `tokio::time::sleep` dentro de `block_in_place` + `Handle::block_on`, mantendo síncrona a
+  espera injetada em `aguardar.rs` (testes intactos); efeito prático igual ao anterior, caminho real sem
+  teste; (3) `tests/avaliar.rs`: o teste do trancado em qualquer diretório passou de 0 para 1 entrada no
+  diretório de trabalho (o `sync.lock`), conferindo o nome — consequência direta da regra.
+  Testes: +6 em `src/trava.rs`, +3 em `tests/trava.rs` (processo filho de verdade segura a trava; binário
+  `sync` barrado em features/atualizar/publicar/avaliar --trancado; trava órfã liberada ao matar o filho),
+  +1 em `sync.rs`, +1 em `error.rs`. Revisão: aprovada com ressalvas, só BAIXA. Gate: fmt, clippy ok;
+  cargo test verde (lib 646, 3 ignorados; bin 23; demais verdes); pytest 175; `validar todas` ok.
+  `ciclo --aguardar` não rodado de ponta a ponta. **3.4 concluída.** Resolvidas por esta tarefa as pendências
+  "sem trava" da 1c.5 (uso único do trancado) e da 2.4 (`exportar` × `publicar`).
+  **Pendências BAIXA (não bloqueiam):** (1) comentário em `src/bin/sync.rs` (~731-741) diz que o
+  `block_in_place` move tarefas para outra thread; a thread do `main` não é worker — corrigir o texto e,
+  opcional, teste de fumaça multi-thread; (2) `filho_segura_a_trava` em `tests/trava.rs` passa vazio na suíte
+  normal (poderia ser `#[ignore]`); (3) a trava vale por pasta de trabalho: a 3.7 deve fixar a pasta.

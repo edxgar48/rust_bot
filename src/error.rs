@@ -317,6 +317,13 @@ pub enum SpiderError {
     #[error("erro ao montar o Parquet: {0}")]
     Parquet(#[from] parquet::errors::ParquetError),
 
+    /// Outra execução tem a trava `sync.lock` (tarefa 3.4). Definitivo: o
+    /// `ciclo` agendado que a encontrar sai com erro em vez de esperar.
+    #[error("outra execução em andamento{}", dono.as_ref().map_or_else(String::new, |d| format!(": {}", d.descricao())))]
+    TravaOcupada {
+        dono: Option<crate::trava::DonoTrava>,
+    },
+
     #[error("erro de banco de dados: {0}")]
     Db(#[from] rusqlite::Error),
 }
@@ -425,6 +432,7 @@ mod tests {
             SpiderError::PublicacaoEnvioFalhou("rede".into()),
             SpiderError::PublicacaoRecusada("sujo".into()),
             SpiderError::RelogioInvalido,
+            SpiderError::TravaOcupada { dono: None },
             SpiderError::Db(rusqlite::Error::InvalidQuery),
             io,
         ] {

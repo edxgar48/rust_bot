@@ -56,6 +56,7 @@ src/
 ├── orquestracao/ciclo.rs # `sync ciclo`: compõe atualizar, backfill, validar, features, índice, exportar e publicar
 ├── orquestracao/aguardar.rs # `sync ciclo --aguardar` (3.3): rodadas com backoff até 01h00, relógio e espera injetados
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
+├── trava.rs       # `sync.lock` (3.4): trava do SO contra execução simultânea
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
 ├── error.rs       # erros específicos do domínio (thiserror)
@@ -187,8 +188,8 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
-#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); trava, log em arquivo,
-#    alertas e agendamento ainda não existem (3.4 a 3.7).
+#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); log em arquivo,
+#    alertas e agendamento ainda não existem (3.5 a 3.7). A trava (3.4) existe: ver "Trava" abaixo.
 cargo run --bin sync -- ciclo todas
 cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
 
@@ -416,12 +417,10 @@ Cuidados com o registro do trancado:
   manda o relatório para a saída de erro, avisando que o uso já foi
   registrado. Se a saída fechar antes da avaliação (no aviso inicial), nada é
   avaliado nem registrado.
-- **Uma execução por vez.** Não há trava de arquivo: o registro é recarregado
-  logo antes de gravar e o uso novo é juntado ao conteúdo recarregado (o uso
-  gravado por outra execução não se perde; se ela registrou o mesmo perfil, a
-  segunda é recusada; se o registro mudar em 3 recargas seguidas, nada é
-  gravado). Ainda assim sobra uma janela mínima entre a última recarga e a
-  gravação: **não rode `--trancado` em paralelo**.
+- **Uma execução por vez.** `avaliar --trancado` toma a trava `sync.lock` (ver
+  "Trava"), então duas execuções não rodam juntas. Por baixo, o registro ainda
+  é recarregado logo antes de gravar e o uso novo é juntado ao conteúdo
+  recarregado (se o registro mudar em 3 recargas seguidas, nada é gravado).
 
 `dataset <loteria> [--formato parquet|csv] [--trancado] [--saida datasets]`
 grava o dataset que o Python (`ml/`) lê: as linhas de `features_dezena` —
@@ -486,6 +485,32 @@ no mesmo arquivo. Os downloads vão para `downloads/` e os backups do
 `--backups`; os três ficam fora do git (`*.db` e `/downloads` no
 `.gitignore`). As saídas de `tabela` e `dataset` (`tabelas/`, `datasets/`)
 também ficam fora do git.
+
+## Trava contra execução simultânea (`sync.lock`)
+
+Os comandos que gravam tomam, antes de qualquer gravação, uma trava do sistema
+operacional sobre `sync.lock` e a seguram até terminar (no `ciclo --aguardar`,
+a noite toda): `baixar`, `importar`, `atualizar`, `inserir`, `features`,
+`indice`, `exportar`, `publicar`, `ciclo`, `dataset` e `avaliar --trancado`.
+Ficam livres `listar`, `validar`, `buracos`, `calendario`, `aleatoriedade`,
+`evidencia`, `tabela` e `avaliar` sem `--trancado`.
+
+- Uma trava só, no `sync.lock` da **pasta de trabalho** (a mesma dos bancos
+  padrão `resultados_<loteria>.db`), mesmo com `--db` apontando para outro
+  lugar: `publico/` e o clone de dados são comuns às três loterias. Rode o
+  `sync` sempre da mesma pasta.
+- Trava ocupada: o comando falha na hora, sem esperar, com saída diferente de
+  zero e a mensagem `outra execução em andamento: PID 1234, comando ciclo,
+  desde 23:00` (horário de Brasília). O `ciclo` agendado que a encontrar sai
+  com erro (vira alerta quando a 3.6 existir).
+- Não existe trava órfã: ela é do sistema operacional e some se o processo
+  morrer, for encerrado à força ou a máquina reiniciar. Não apague o
+  `sync.lock` à mão para "destravar"; se a mensagem aparece, há mesmo um
+  processo com aquele PID (confira no Gerenciador de Tarefas).
+- `sync.lock.dono` guarda PID, comando e início só para a mensagem (no Windows
+  o processo que perde não consegue ler o próprio `sync.lock` travado). Se
+  faltar, a mensagem sai sem detalhes. Os dois arquivos estão no `.gitignore`.
+- Exige Rust 1.89 (`File::try_lock`).
 
 ## Experimentos em Python (`ml/`)
 

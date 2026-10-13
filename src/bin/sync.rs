@@ -5,7 +5,7 @@ use rust_spider::orquestracao::{
 };
 use rust_spider::{
     backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil, publicacao,
-    registros, tabela, tempo, validacao, SpiderError,
+    registros, tabela, tempo, trava, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -426,9 +426,47 @@ const MOTIVO_INDICE_UMA_LOTERIA: &str =
 const MOTIVO_AVALIAR_UMA_LOTERIA: &str =
     "avalie uma loteria e um perfil por vez (cada loteria tem seu banco, seus perfis e seu trancado)";
 
+/// Nome do comando se ele grava (e portanto toma a trava `sync.lock`, 3.4);
+/// `None` para os que só leem. Sem `_`: comando novo obriga a decidir aqui.
+/// `tabela` fica livre: lê o banco e grava só em `tabelas/`, que nenhum outro
+/// comando usa. `avaliar` só grava (o registro do trancado) com `--trancado`.
+fn nome_se_grava(comando: &Comando) -> Option<&'static str> {
+    match comando {
+        Comando::Baixar { .. } => Some("baixar"),
+        Comando::Importar { .. } => Some("importar"),
+        Comando::Atualizar { .. } => Some("atualizar"),
+        Comando::Inserir { .. } => Some("inserir"),
+        Comando::Features { .. } => Some("features"),
+        Comando::Indice { .. } => Some("indice"),
+        Comando::Exportar { .. } => Some("exportar"),
+        Comando::Publicar { .. } => Some("publicar"),
+        Comando::Ciclo { .. } => Some("ciclo"),
+        Comando::Dataset { .. } => Some("dataset"),
+        Comando::Avaliar { trancado, .. } => trancado.then_some("avaliar --trancado"),
+        Comando::Listar { .. }
+        | Comando::Validar { .. }
+        | Comando::Buracos { .. }
+        | Comando::Tabela { .. }
+        | Comando::Calendario { .. }
+        | Comando::Aleatoriedade { .. }
+        | Comando::Evidencia { .. } => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // A trava vem antes de qualquer gravação e fica até o fim do `main`
+    // (`ciclo --aguardar`: a noite toda). Trava ocupada: erro na hora.
+    let _trava = match nome_se_grava(&cli.comando) {
+        Some(nome) => Some(trava::Trava::obter(
+            std::path::Path::new("."),
+            nome,
+            i64::try_from(agora_segundos()?).unwrap_or(i64::MAX),
+        )?),
+        None => None,
+    };
 
     match cli.comando {
         Comando::Baixar {
@@ -690,13 +728,17 @@ async fn main() -> anyhow::Result<()> {
                     &mut destino,
                     &mut imprimir_evento,
                     &mut agora_segundos,
-                    // `thread::sleep` bloqueia a thread do tokio por até 30
-                    // min por espera. É seguro hoje: o `ciclo --aguardar` é
-                    // a única tarefa do runtime (nada concorrente depende
-                    // dele), e a espera injetada é síncrona de propósito para
-                    // manter a API simples. A 3.4 (trava, logs, alertas em
-                    // paralelo) deve rever e passar a `tokio::time::sleep`.
-                    &mut std::thread::sleep,
+                    // Espera com `tokio::time::sleep`. A injeção em
+                    // `executar_ciclo_aguardando` é síncrona (os testes
+                    // trocam o sono por um relógio falso), então a ponte é
+                    // `block_in_place`: o runtime (`#[tokio::main]`, várias
+                    // threads) move as outras tarefas para outra thread
+                    // enquanto esta espera, sem bloquear o executor.
+                    &mut |espera| {
+                        tokio::task::block_in_place(|| {
+                            tokio::runtime::Handle::current().block_on(tokio::time::sleep(espera));
+                        });
+                    },
                     |cfg| downloader::raspar_ultimo_resultado(cfg, !visivel),
                     |cfg| baixar_planilha(cfg, &dir, None, visivel),
                 )
@@ -2991,6 +3033,63 @@ mod tests {
                 assert_eq!(backups, PathBuf::from("y/copias"));
             }
             _ => panic!("esperava o comando atualizar"),
+        }
+    }
+
+    fn trava_de(args: &[&str]) -> Option<&'static str> {
+        let mut todos = vec!["sync"];
+        todos.extend_from_slice(args);
+        nome_se_grava(
+            &Cli::try_parse_from(todos)
+                .expect("argumentos válidos")
+                .comando,
+        )
+    }
+
+    #[test]
+    fn so_os_comandos_que_gravam_tomam_a_trava() {
+        let grava: [(&[&str], &str); 11] = [
+            (&["baixar", "quina"], "baixar"),
+            (&["importar", "quina", "x.xlsx"], "importar"),
+            (&["atualizar", "quina"], "atualizar"),
+            (
+                &[
+                    "inserir",
+                    "quina",
+                    "1",
+                    "--data",
+                    "2026-01-01",
+                    "--dezenas",
+                    "1,2,3,4,5",
+                ],
+                "inserir",
+            ),
+            (&["features", "quina"], "features"),
+            (&["indice", "quina", "--perfil", "p"], "indice"),
+            (&["exportar", "todas"], "exportar"),
+            (&["publicar"], "publicar"),
+            (&["ciclo", "todas"], "ciclo"),
+            (&["dataset", "quina"], "dataset"),
+            (
+                &["avaliar", "quina", "--perfil", "p", "--trancado"],
+                "avaliar --trancado",
+            ),
+        ];
+        for (args, nome) in grava {
+            assert_eq!(trava_de(args), Some(nome), "{args:?}");
+        }
+        let livres: [&[&str]; 8] = [
+            &["listar", "quina"],
+            &["validar", "quina"],
+            &["buracos", "quina"],
+            &["calendario", "quina"],
+            &["aleatoriedade", "quina"],
+            &["evidencia", "quina"],
+            &["tabela", "quina", "--perfil", "p"],
+            &["avaliar", "quina", "--perfil", "p"],
+        ];
+        for args in livres {
+            assert_eq!(trava_de(args), None, "{args:?}");
         }
     }
 }
