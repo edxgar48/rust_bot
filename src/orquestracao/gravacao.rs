@@ -422,6 +422,40 @@ where
     F: FnOnce() -> Fut,
     Fut: Future<Output = Result<PathBuf>>,
 {
+    atualizar_reaproveitando_backup(
+        cfg,
+        db_caminho,
+        pastas,
+        obs,
+        agora,
+        ler_pagina,
+        obter_planilha,
+        &mut None,
+    )
+    .await
+}
+
+/// Como [`atualizar`], mas o backup do salto fica em `backup_previo`: se já
+/// há um, é reaproveitado em vez de criar outro. O `ciclo --aguardar` repete o
+/// salto a cada rodada quando o download da planilha falha de passagem e assim
+/// faz no máximo um backup por loteria por execução (tarefa 3.3).
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn atualizar_reaproveitando_backup<P, FutP, F, Fut>(
+    cfg: &LoteriaConfig,
+    db_caminho: &Path,
+    pastas: &PastasAtualizar<'_>,
+    obs: &mut dyn FnMut(Evento),
+    agora: impl FnOnce() -> Result<u64>,
+    ler_pagina: P,
+    obter_planilha: F,
+    backup_previo: &mut Option<PathBuf>,
+) -> Result<RelatorioAtualizacao>
+where
+    P: FnOnce() -> FutP,
+    FutP: Future<Output = Result<Resultado>>,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<PathBuf>>,
+{
     obs(Evento::Verificando {
         nome: cfg.nome_exibicao,
     });
@@ -429,7 +463,7 @@ where
     for o in correcoes::aplicar(cfg.slug, std::slice::from_mut(&mut resultado)) {
         obs(Evento::Correcao(o));
     }
-    aplicar_atualizacao(
+    aplicar_atualizacao_reaproveitando_backup(
         cfg,
         &resultado,
         db_caminho,
@@ -437,6 +471,7 @@ where
         obs,
         agora,
         obter_planilha,
+        backup_previo,
     )
     .await
 }
@@ -455,6 +490,36 @@ pub async fn aplicar_atualizacao<F, Fut>(
     obs: &mut dyn FnMut(Evento),
     agora: impl FnOnce() -> Result<u64>,
     obter_planilha: F,
+) -> Result<RelatorioAtualizacao>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<PathBuf>>,
+{
+    aplicar_atualizacao_reaproveitando_backup(
+        cfg,
+        resultado,
+        db_caminho,
+        pastas,
+        obs,
+        agora,
+        obter_planilha,
+        &mut None,
+    )
+    .await
+}
+
+/// [`aplicar_atualizacao`] com o backup do salto em `backup_previo` (ver
+/// [`atualizar_reaproveitando_backup`]).
+#[allow(clippy::too_many_arguments)]
+async fn aplicar_atualizacao_reaproveitando_backup<F, Fut>(
+    cfg: &LoteriaConfig,
+    resultado: &Resultado,
+    db_caminho: &Path,
+    pastas: &PastasAtualizar<'_>,
+    obs: &mut dyn FnMut(Evento),
+    agora: impl FnOnce() -> Result<u64>,
+    obter_planilha: F,
+    backup_previo: &mut Option<PathBuf>,
 ) -> Result<RelatorioAtualizacao>
 where
     F: FnOnce() -> Fut,
@@ -511,11 +576,17 @@ where
             pagina,
             faltando: classificacao.faltando(),
         });
-        let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
-        obs(Evento::BackupCriado {
-            caminho: copia.clone(),
-        });
-        Some(copia)
+        match backup_previo {
+            Some(copia) => Some(copia.clone()),
+            None => {
+                let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
+                obs(Evento::BackupCriado {
+                    caminho: copia.clone(),
+                });
+                *backup_previo = Some(copia.clone());
+                Some(copia)
+            }
+        }
     };
 
     let feito = async {

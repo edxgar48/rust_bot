@@ -17,8 +17,9 @@
 //! Rede, relógio e destino entram por parâmetro, então tudo roda nos testes
 //! sem rede. A biblioteca não imprime: emite [`Evento::Ciclo`].
 
+use super::gravacao::atualizar_reaproveitando_backup;
 use super::{
-    atualizar, carregar_existentes, descrever_faixa, exportar_tudo_ou_nada, faixas_faltando,
+    carregar_existentes, descrever_faixa, exportar_tudo_ou_nada, faixas_faltando,
     processar_e_salvar, sincronizar_features, sincronizar_indice, DesfechoAtualizacao, Evento,
     PastasAtualizar, ResultadoExportacao,
 };
@@ -125,6 +126,45 @@ pub enum EventoCiclo {
     PublicacaoFalhou {
         mensagem: String,
     },
+    // --- `--aguardar` (tarefa 3.3) ---
+    /// Dia de sorteio e a página ainda mostra o concurso anterior: a loteria
+    /// espera a próxima rodada (nada é exportado nem publicado por enquanto).
+    AguardandoConcurso {
+        slug: &'static str,
+        /// Data (`AAAA-MM-DD`) do sorteio que deveria ter saído.
+        esperado_em: String,
+        ultimo: Option<u32>,
+    },
+    /// Falha de navegador/rede: será repetida na próxima rodada.
+    FalhaTransitoria {
+        slug: &'static str,
+        etapa: EtapaCiclo,
+        mensagem: String,
+    },
+    /// Antes de dormir: quando e para quem é a próxima rodada.
+    ProximaRodada {
+        rodada: u32,
+        /// `HH:MM` no relógio de Brasília.
+        hora: String,
+        espera_minutos: u64,
+        pendentes: Vec<&'static str>,
+    },
+    /// A janela fechou (01h00): o que ainda faltava não será mais esperado.
+    JanelaEncerrada {
+        /// `HH:MM` no relógio de Brasília.
+        hora: String,
+        pendentes: Vec<&'static str>,
+    },
+    /// A janela fechou sem o concurso esperado: aviso, não falha (o alerta é da
+    /// 3.6). O resto do ciclo roda uma vez, sem novidade.
+    ConcursoNaoSaiu {
+        slug: &'static str,
+        esperado_em: String,
+    },
+    /// Início do `publicar` de uma loteria que chegou.
+    PublicandoLoteria {
+        slug: &'static str,
+    },
 }
 
 impl EventoCiclo {
@@ -133,7 +173,9 @@ impl EventoCiclo {
         match self {
             EventoCiclo::BackfillPersiste { .. }
             | EventoCiclo::LoteriaFalhou { .. }
-            | EventoCiclo::PublicacaoFalhou { .. } => super::Destino::Erro,
+            | EventoCiclo::PublicacaoFalhou { .. }
+            | EventoCiclo::FalhaTransitoria { .. }
+            | EventoCiclo::ConcursoNaoSaiu { .. } => super::Destino::Erro,
             _ => super::Destino::Padrao,
         }
     }
@@ -209,6 +251,49 @@ impl fmt::Display for EventoCiclo {
             EventoCiclo::PublicacaoFalhou { mensagem } => {
                 write!(f, "Erro na publicação: {mensagem}")
             }
+            EventoCiclo::AguardandoConcurso {
+                slug,
+                esperado_em,
+                ultimo,
+            } => {
+                let ultimo = ultimo.map_or_else(|| "?".to_string(), |u| u.to_string());
+                write!(
+                    f,
+                    "Aguardando {slug}: o concurso do sorteio de {esperado_em} ainda não saiu \
+                     (o último é o {ultimo})."
+                )
+            }
+            EventoCiclo::FalhaTransitoria {
+                slug,
+                etapa,
+                mensagem,
+            } => write!(
+                f,
+                "Falha transitória em {slug} (etapa {etapa}): {mensagem}; nova tentativa na \
+                 próxima rodada."
+            ),
+            EventoCiclo::ProximaRodada {
+                rodada,
+                hora,
+                espera_minutos,
+                pendentes,
+            } => write!(
+                f,
+                "Rodada {rodada} às {hora} (Brasília), daqui a {espera_minutos} min, para: {}.",
+                pendentes.join(", ")
+            ),
+            EventoCiclo::JanelaEncerrada { hora, pendentes } => write!(
+                f,
+                "Janela de espera encerrada às {hora} (Brasília); sem tentativas novas para: {}.",
+                pendentes.join(", ")
+            ),
+            EventoCiclo::ConcursoNaoSaiu { slug, esperado_em } => write!(
+                f,
+                "Aviso: o concurso do sorteio de {esperado_em} de {slug} não saiu até o fim da \
+                 janela; o resto do ciclo roda sem novidade (feriado, adiamento ou site atrasado; \
+                 a próxima execução agendada tenta de novo)."
+            ),
+            EventoCiclo::PublicandoLoteria { slug } => write!(f, "=== Publicação ({slug}) ==="),
         }
     }
 }
@@ -343,7 +428,21 @@ where
     }
 
     obs(Evento::Ciclo(EventoCiclo::Publicando));
-    let publicacao = publicacao::publicar(destino, pastas.saida);
+    let publicacao = publicar_e_avisar(destino, pastas.saida, obs);
+    RelatorioCiclo {
+        loterias,
+        publicacao,
+    }
+}
+
+/// Roda o `publicar` e conta o desfecho em eventos (o mesmo texto no ciclo de
+/// uma passada e no `--aguardar`).
+pub(super) fn publicar_e_avisar(
+    destino: &mut dyn publicacao::Destino,
+    saida: &Path,
+    obs: &mut dyn FnMut(Evento),
+) -> Result<Desfecho> {
+    let publicacao = publicacao::publicar(destino, saida);
     obs(Evento::Ciclo(match &publicacao {
         Ok(Desfecho::Publicado { mensagem }) => EventoCiclo::Publicado {
             mensagem: mensagem.clone(),
@@ -354,16 +453,13 @@ where
             mensagem: cadeia_do_erro(e),
         },
     }));
-    RelatorioCiclo {
-        loterias,
-        publicacao,
-    }
+    publicacao
 }
 
 /// Mensagem do erro com toda a cadeia de causas (`source()`), separadas por
 /// ": " como o `{:#}` do anyhow; sem isso a causa guardada em `#[source]`
 /// (ex.: o erro de rede dentro de `CaminhoDaPlanilhaFalhou`) se perde.
-fn cadeia_do_erro(erro: &(dyn std::error::Error + 'static)) -> String {
+pub(super) fn cadeia_do_erro(erro: &(dyn std::error::Error + 'static)) -> String {
     let mut texto = erro.to_string();
     let mut atual = erro.source();
     while let Some(causa) = atual {
@@ -376,11 +472,43 @@ fn cadeia_do_erro(erro: &(dyn std::error::Error + 'static)) -> String {
 
 /// O que as etapas já produziram, para o resumo mesmo quando uma falha.
 #[derive(Default)]
-struct Progresso {
-    ultimo_concurso: Option<u32>,
-    concurso_novo: bool,
-    backfill: bool,
-    exportada: bool,
+pub(super) struct Progresso {
+    pub(super) ultimo_concurso: Option<u32>,
+    pub(super) concurso_novo: bool,
+    pub(super) backfill: bool,
+    pub(super) exportada: bool,
+}
+
+impl Progresso {
+    pub(super) fn resumo(&self, slug: &'static str, falha: Option<FalhaCiclo>) -> ResumoLoteria {
+        ResumoLoteria {
+            slug,
+            ultimo_concurso: self.ultimo_concurso,
+            concurso_novo: self.concurso_novo,
+            backfill: self.backfill,
+            exportada: self.exportada,
+            falha,
+        }
+    }
+}
+
+/// O que o `atualizar` deixou para as etapas seguintes.
+#[derive(Debug, Clone)]
+pub(super) struct PosAtualizacao {
+    /// Faixas que continuam faltando no banco.
+    pub(super) buracos: Vec<(u32, u32)>,
+    /// O `atualizar` já seguiu o caminho da planilha (salto).
+    pub(super) salto: bool,
+}
+
+/// O que o salto e o backfill já fizeram, para não repetir backup e download
+/// da planilha quando o ciclo roda em várias rodadas (`--aguardar`, tarefa
+/// 3.3): no máximo um backup por loteria por execução, seja do salto do
+/// `atualizar` ou do backfill.
+#[derive(Debug, Default)]
+pub(super) struct MemoriaBackfill {
+    backup: Option<PathBuf>,
+    concluido: bool,
 }
 
 async fn ciclo_da_loteria<P, FutP, F, Fut>(
@@ -411,17 +539,10 @@ where
     )
     .await
     .err();
-    ResumoLoteria {
-        slug: cfg.slug,
-        ultimo_concurso: progresso.ultimo_concurso,
-        concurso_novo: progresso.concurso_novo,
-        backfill: progresso.backfill,
-        exportada: progresso.exportada,
-        falha,
-    }
+    progresso.resumo(cfg.slug, falha)
 }
 
-fn em(etapa: EtapaCiclo) -> impl Fn(SpiderError) -> FalhaCiclo {
+pub(super) fn em(etapa: EtapaCiclo) -> impl Fn(SpiderError) -> FalhaCiclo {
     move |erro| FalhaCiclo { etapa, erro }
 }
 
@@ -442,12 +563,57 @@ where
     F: FnMut(&'static LoteriaConfig) -> Fut,
     Fut: Future<Output = Result<PathBuf>>,
 {
-    // 1. atualizar (já resolve o salto pelo caminho da planilha).
+    let mut memoria = MemoriaBackfill::default();
+    let pos = etapa_atualizar(
+        cfg,
+        db_caminho,
+        pastas,
+        obs,
+        agora,
+        ler_pagina,
+        obter_planilha,
+        &mut memoria,
+        progresso,
+    )
+    .await?;
+    etapas_restantes(
+        cfg,
+        db_caminho,
+        pastas,
+        obs,
+        agora,
+        obter_planilha,
+        &pos,
+        &mut memoria,
+        progresso,
+    )
+    .await
+}
+
+/// 1. atualizar (já resolve o salto pelo caminho da planilha).
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn etapa_atualizar<P, FutP, F, Fut>(
+    cfg: &'static LoteriaConfig,
+    db_caminho: &Path,
+    pastas: &PastasCiclo<'_>,
+    obs: &mut dyn FnMut(Evento),
+    agora: &mut dyn FnMut() -> Result<u64>,
+    ler_pagina: &mut P,
+    obter_planilha: &mut F,
+    memoria: &mut MemoriaBackfill,
+    progresso: &mut Progresso,
+) -> std::result::Result<PosAtualizacao, FalhaCiclo>
+where
+    P: FnMut(&'static LoteriaConfig) -> FutP,
+    FutP: Future<Output = Result<Resultado>>,
+    F: FnMut(&'static LoteriaConfig) -> Fut,
+    Fut: Future<Output = Result<PathBuf>>,
+{
     let atualizar_pastas = PastasAtualizar {
         backups: pastas.backups,
         cache: pastas.cache,
     };
-    let relatorio = atualizar(
+    let relatorio = atualizar_reaproveitando_backup(
         cfg,
         db_caminho,
         &atualizar_pastas,
@@ -455,31 +621,57 @@ where
         &mut *agora,
         || ler_pagina(cfg),
         || obter_planilha(cfg),
+        &mut memoria.backup,
     )
     .await
     .map_err(em(EtapaCiclo::Atualizar))?;
     progresso.ultimo_concurso = relatorio.ultimo_concurso;
-    progresso.concurso_novo =
+    progresso.concurso_novo |=
         !matches!(relatorio.desfecho, DesfechoAtualizacao::SemNovidade { .. });
-
-    // 2. backfill: buraco interno que o `atualizar` deixou.
-    if !relatorio.buracos.is_empty() {
-        if matches!(
+    Ok(PosAtualizacao {
+        buracos: relatorio.buracos,
+        salto: matches!(
             relatorio.desfecho,
             DesfechoAtualizacao::SaltoResolvido { .. }
-        ) {
+        ),
+    })
+}
+
+/// 2 a 6: backfill, validar, features, índice e exportar.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn etapas_restantes<F, Fut>(
+    cfg: &'static LoteriaConfig,
+    db_caminho: &Path,
+    pastas: &PastasCiclo<'_>,
+    obs: &mut dyn FnMut(Evento),
+    agora: &mut dyn FnMut() -> Result<u64>,
+    obter_planilha: &mut F,
+    pos: &PosAtualizacao,
+    memoria: &mut MemoriaBackfill,
+    progresso: &mut Progresso,
+) -> std::result::Result<(), FalhaCiclo>
+where
+    F: FnMut(&'static LoteriaConfig) -> Fut,
+    Fut: Future<Output = Result<PathBuf>>,
+{
+    // 2. backfill: buraco interno que o `atualizar` deixou. Depois de um
+    // backfill concluído não se baixa de novo na mesma execução: se o buraco
+    // persiste, o `validar` abaixo reprova a loteria.
+    if !pos.buracos.is_empty() {
+        if pos.salto {
             obs(Evento::Ciclo(EventoCiclo::BackfillDispensado {
-                faixas: relatorio.buracos.clone(),
+                faixas: pos.buracos.clone(),
             }));
-        } else {
+        } else if !memoria.concluido {
             backfill(
                 cfg,
                 db_caminho,
                 pastas,
-                &relatorio.buracos,
+                &pos.buracos,
                 obs,
                 agora,
                 obter_planilha,
+                memoria,
             )
             .await
             .map_err(em(EtapaCiclo::Backfill))?;
@@ -544,7 +736,9 @@ where
 }
 
 /// Baixa a planilha completa pelo caminho do `baixar` (com backup antes) e
-/// avisa se o buraco continua.
+/// avisa se o buraco continua. O backup é feito uma vez só por execução
+/// (`memoria`), mesmo que o download falhe e seja repetido em outra rodada.
+#[allow(clippy::too_many_arguments)]
 async fn backfill<F, Fut>(
     cfg: &'static LoteriaConfig,
     db_caminho: &Path,
@@ -553,6 +747,7 @@ async fn backfill<F, Fut>(
     obs: &mut dyn FnMut(Evento),
     agora: &mut dyn FnMut() -> Result<u64>,
     obter_planilha: &mut F,
+    memoria: &mut MemoriaBackfill,
 ) -> Result<()>
 where
     F: FnMut(&'static LoteriaConfig) -> Fut,
@@ -561,10 +756,17 @@ where
     obs(Evento::Ciclo(EventoCiclo::BackfillIniciado {
         faixas: faixas.to_vec(),
     }));
-    let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
-    obs(Evento::BackupCriado {
-        caminho: copia.clone(),
-    });
+    let copia = match &memoria.backup {
+        Some(copia) => copia.clone(),
+        None => {
+            let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
+            obs(Evento::BackupCriado {
+                caminho: copia.clone(),
+            });
+            memoria.backup = Some(copia.clone());
+            copia
+        }
+    };
     // Falha daqui em diante aponta o backup, como no salto do `atualizar`.
     let restantes = async {
         let arquivo = obter_planilha(cfg).await?;
@@ -577,6 +779,7 @@ where
         backup: Some(copia),
         origem: Box::new(e),
     })?;
+    memoria.concluido = true;
     if !restantes.is_empty() {
         obs(Evento::Ciclo(EventoCiclo::BackfillPersiste {
             faixas: restantes,

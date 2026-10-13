@@ -296,6 +296,8 @@ enum Comando {
     /// roda mesmo assim e o comando sai com erro no fim. Sem concurso novo,
     /// segue até o publicar (passos idempotentes). Backfill = baixar a
     /// planilha inteira; se o buraco persistir, só aviso e o validar reprova.
+    /// Com `--aguardar`, repete em rodadas (5, 10, 20, 30, 30... min) até
+    /// 01h00 de Brasília, só para quem falta, e publica cada loteria que chega.
     Ciclo {
         /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
         loteria: String,
@@ -324,6 +326,14 @@ enum Comando {
         /// Clone do repositório de dados
         #[arg(long, default_value = publicacao::REPO_PADRAO)]
         repo: PathBuf,
+        /// Repete o ciclo enquanto o concurso esperado não sai (dia de sorteio
+        /// e a página ainda mostra o anterior) ou o navegador/rede falha de
+        /// passagem; erro de validação ou de gravação não é repetido. A janela
+        /// vai da primeira passada até 01h00 de Brasília (pensado para o
+        /// disparo das 23h00); cada loteria que chega é publicada na hora.
+        /// Fora de dia de sorteio ou com a loteria em dia, não espera.
+        #[arg(long)]
+        aguardar: bool,
     },
     /// Grava o dataset de ML para o Python: as features de `features_dezena`
     /// (uma linha por concurso, dezena e janela, com data, trecho e `saiu`)
@@ -663,6 +673,7 @@ async fn main() -> anyhow::Result<()> {
             perfis,
             saida,
             repo,
+            aguardar,
         } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
             let pastas = orquestracao::PastasCiclo {
@@ -672,6 +683,30 @@ async fn main() -> anyhow::Result<()> {
                 saida: &saida,
             };
             let mut destino = publicacao::DestinoGit::novo(&repo);
+            if aguardar {
+                let relatorio = orquestracao::executar_ciclo_aguardando(
+                    &alvos.itens,
+                    &pastas,
+                    &mut destino,
+                    &mut imprimir_evento,
+                    &mut agora_segundos,
+                    // `thread::sleep` bloqueia a thread do tokio por até 30
+                    // min por espera. É seguro hoje: o `ciclo --aguardar` é
+                    // a única tarefa do runtime (nada concorrente depende
+                    // dele), e a espera injetada é síncrona de propósito para
+                    // manter a API simples. A 3.4 (trava, logs, alertas em
+                    // paralelo) deve rever e passar a `tokio::time::sleep`.
+                    &mut std::thread::sleep,
+                    |cfg| downloader::raspar_ultimo_resultado(cfg, !visivel),
+                    |cfg| baixar_planilha(cfg, &dir, None, visivel),
+                )
+                .await?;
+                imprimir_resumo_aguardar(&relatorio);
+                if !relatorio.sucesso() {
+                    anyhow::bail!("o ciclo terminou com falha(s); veja o resumo acima");
+                }
+                return Ok(());
+            }
             let relatorio = orquestracao::executar_ciclo(
                 &alvos.itens,
                 &pastas,
@@ -907,6 +942,29 @@ fn imprimir_resumo_ciclo(relatorio: &orquestracao::RelatorioCiclo) {
     match &relatorio.publicacao {
         Ok(_) => println!("  publicação: ok"),
         Err(_) => println!("  publicação: falhou"),
+    }
+}
+
+/// Resumo do `sync ciclo --aguardar`: uma linha por loteria, avisos e as
+/// publicações feitas.
+fn imprimir_resumo_aguardar(relatorio: &orquestracao::RelatorioAguardar) {
+    println!(
+        "=== Resumo do ciclo ({} rodada(s), janela até {}) ===",
+        relatorio.rodadas,
+        rust_spider::calendario::instante_brasilia(relatorio.janela_ate)
+    );
+    for l in &relatorio.loterias {
+        println!("  {} [{} tentativa(s)]", l.resumo, l.tentativas);
+        if let Some(esperado) = &l.concurso_ausente {
+            println!("    AVISO: o concurso do sorteio de {esperado} não saiu até o fim da janela");
+        }
+    }
+    for p in &relatorio.publicacoes {
+        let quem = p.slug.unwrap_or("reenvio");
+        match &p.resultado {
+            Ok(_) => println!("  publicação ({quem}): ok"),
+            Err(_) => println!("  publicação ({quem}): falhou"),
+        }
     }
 }
 

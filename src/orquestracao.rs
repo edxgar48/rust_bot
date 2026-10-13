@@ -48,11 +48,13 @@ use rusqlite::Connection;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+mod aguardar;
 mod calendario;
 mod ciclo;
 mod exportar;
 mod gravacao;
 
+pub use aguardar::*;
 pub use calendario::*;
 pub use ciclo::*;
 pub use exportar::*;

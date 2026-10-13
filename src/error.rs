@@ -34,6 +34,13 @@ pub enum SpiderError {
     #[error("dado inválido: {0}")]
     LinhaInvalida(String),
 
+    /// A página do último concurso veio incompleta ou inconsistente (cabeçalho
+    /// ilegível, dezenas ainda não renderizadas, dezena que não é número). A
+    /// Caixa pode mostrar o cabeçalho do concurso novo antes das dezenas, por
+    /// isso é transitório; já `LinhaInvalida` fica para planilha e validação.
+    #[error("página do último concurso incompleta: {0}")]
+    PaginaIncompleta(String),
+
     #[error("cache de inserções manuais `{caminho}` inválido: {motivo}")]
     CacheManualInvalido { caminho: PathBuf, motivo: String },
 
@@ -314,4 +321,114 @@ pub enum SpiderError {
     Db(#[from] rusqlite::Error),
 }
 
+impl SpiderError {
+    /// `true` se a falha vem do navegador ou da rede e pode passar sozinha:
+    /// é a única classe de erro que o `sync ciclo --aguardar` repete (tarefa
+    /// 3.3). Todo o resto (validação, gravação, SQL, perfil, publicação...) é
+    /// definitivo: repetir não muda o resultado e só esconderia o problema.
+    ///
+    /// `ElementoNaoEncontrado` e `BotaoDownloadNaoEncontrado` contam como
+    /// transitórios: o downloader os produz quando o seletor não aparece em
+    /// 20 s, o que é igual para lentidão, bloqueio passageiro e layout novo;
+    /// as 3 tentativas curtas do downloader não distinguem. Repetir custa
+    /// poucas visitas dentro da janela e, se o layout mudou de fato, o erro
+    /// persiste e a loteria falha ao fim da janela do mesmo jeito.
+    ///
+    /// Variante nova nasce definitiva (o `_` abaixo): é o lado seguro.
+    pub fn eh_transitorio(&self) -> bool {
+        match self {
+            SpiderError::Navegador { .. }
+            | SpiderError::DownloadNaoIniciado(_)
+            | SpiderError::ElementoNaoEncontrado(_)
+            | SpiderError::BotaoDownloadNaoEncontrado(_)
+            | SpiderError::PaginaIncompleta(_) => true,
+            // O caminho da planilha embrulha a causa real.
+            SpiderError::CaminhoDaPlanilhaFalhou { origem, .. } => origem.eh_transitorio(),
+            _ => false,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, SpiderError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn navegador() -> SpiderError {
+        SpiderError::Navegador {
+            url: "https://loterias.caixa.gov.br".into(),
+            detalhe: "falha ao iniciar o Playwright: Failed to initialize".into(),
+        }
+    }
+
+    #[test]
+    fn navegador_rede_e_seletor_sao_transitorios() {
+        assert!(navegador().eh_transitorio());
+        assert!(SpiderError::DownloadNaoIniciado("#b".into()).eh_transitorio());
+        assert!(SpiderError::ElementoNaoEncontrado("#e".into()).eh_transitorio());
+        assert!(SpiderError::BotaoDownloadNaoEncontrado("#b".into()).eh_transitorio());
+    }
+
+    #[test]
+    fn pagina_incompleta_e_transitoria_e_linha_invalida_nao() {
+        let incompleta = SpiderError::PaginaIncompleta("esperava 15 dezenas, veio 0".into());
+        assert!(incompleta.eh_transitorio());
+        assert!(
+            incompleta.to_string().contains("incompleta"),
+            "{incompleta}"
+        );
+        assert!(!SpiderError::LinhaInvalida("esperava 15 dezenas".into()).eh_transitorio());
+    }
+
+    #[test]
+    fn o_caminho_da_planilha_vale_pela_causa() {
+        let embrulhar = |origem: SpiderError| SpiderError::CaminhoDaPlanilhaFalhou {
+            loteria: "quina".into(),
+            backup: None,
+            origem: Box::new(origem),
+        };
+        assert!(embrulhar(navegador()).eh_transitorio());
+        assert!(!embrulhar(SpiderError::LinhaInvalida("x".into())).eh_transitorio());
+        // Embrulho dentro de embrulho também olha a causa final.
+        assert!(embrulhar(embrulhar(navegador())).eh_transitorio());
+    }
+
+    #[test]
+    fn validacao_gravacao_e_banco_sao_definitivos() {
+        let io = SpiderError::Io {
+            caminho: PathBuf::from("x"),
+            origem: std::io::Error::other("disco cheio"),
+        };
+        for erro in [
+            SpiderError::LinhaInvalida("dado".into()),
+            SpiderError::SemResultados("quina".into()),
+            SpiderError::ResultadosReprovados {
+                loteria: "quina".into(),
+                erros: Vec::new(),
+                avisos: Vec::new(),
+            },
+            SpiderError::LoteRecusado {
+                loteria: "quina".into(),
+                erros: Vec::new(),
+                caminho: PathBuf::from("x.db"),
+            },
+            SpiderError::Planilha {
+                caminho: PathBuf::from("x.xlsx"),
+                detalhe: "corrompida".into(),
+            },
+            SpiderError::TabelaNaoEncontrada(PathBuf::from("x.xlsx")),
+            SpiderError::PerfilInvalido {
+                origem: PathBuf::from("p.toml"),
+                motivo: "x".into(),
+            },
+            SpiderError::PublicacaoEnvioFalhou("rede".into()),
+            SpiderError::PublicacaoRecusada("sujo".into()),
+            SpiderError::RelogioInvalido,
+            SpiderError::Db(rusqlite::Error::InvalidQuery),
+            io,
+        ] {
+            assert!(!erro.eh_transitorio(), "{erro}");
+        }
+    }
+}

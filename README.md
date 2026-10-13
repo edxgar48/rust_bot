@@ -54,6 +54,7 @@ src/
 ├── calendario.rs         # calendário de sorteios (3.2): dia/horário de procura, conferência, tolerância (puro)
 ├── orquestracao/calendario.rs # `sync calendario`: banco (somente leitura) + calendário
 ├── orquestracao/ciclo.rs # `sync ciclo`: compõe atualizar, backfill, validar, features, índice, exportar e publicar
+├── orquestracao/aguardar.rs # `sync ciclo --aguardar` (3.3): rodadas com backoff até 01h00, relógio e espera injetados
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
 ├── model.rs       # struct Resultado
@@ -186,10 +187,33 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
-#  - retentativas, trava, log em arquivo e agendamento ainda não existem (3.3 a 3.7); o ciclo não usa o
-#    calendário (3.2): sem concurso novo, segue sem efeito.
+#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); trava, log em arquivo,
+#    alertas e agendamento ainda não existem (3.4 a 3.7).
 cargo run --bin sync -- ciclo todas
 cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
+
+# retentativas (3.3): `ciclo --aguardar` é o modo da execução agendada das 23h00 (3.7); um processo só repete
+# o ciclo em rodadas, nenhum processo espera até o outro dia. O que provoca nova rodada:
+#  - o concurso esperado ainda não saiu: dia de sorteio pelo calendário (3.2, estado `aguardando`) e a
+#    página ainda mostra o concurso anterior. A loteria que espera não exporta nem publica;
+#  - falha transitória de navegador/rede ("falha ao iniciar o Playwright", timeout do seletor, download que
+#    não começou). Erro de validação, de gravação ou de banco NÃO é repetido: a loteria falha na hora;
+#  - janela: da primeira passada até 01h00 de Brasília (a 1ª passada às 23h00 deixa 2 h), com esperas de
+#    5, 10, 20, 30, 30... min entre as rodadas e só para as loterias que faltam (23:05, 23:15, 23:35, 00:05,
+#    00:35 e a última rodada às 01:00, com o sono cortado no limite). Depois da meia-noite o sorteio
+#    esperado continua sendo o da véspera. Só há janela se o próximo 01h00 está a até 4 h do início: uma
+#    execução manual às 10h ou às 02h faz uma passada só. Loteria `em_dia`, `atrasado` ou em dia sem
+#    sorteio nunca espera;
+#  - publicação: cada loteria que chega (features, índice, exportar) é publicada logo, até um commit por
+#    loteria por noite. Se nada foi publicado (todas falharam), um publicar final reenvia push pendente;
+#  - fim da janela: loteria que ainda aguarda roda o resto do ciclo uma vez, sem novidade, e termina com
+#    AVISO (exit 0; o alerta é da 3.6). Falha transitória persistente é falha (exit != 0) na etapa em que
+#    parou; isso vale também para a loteria que aguardou a noite toda e cai numa falha transitória justo
+#    na rodada das 01h00 (falha, sem aviso de "concurso ausente"). Página que veio incompleta (cabeçalho do
+#    concurso novo sem as dezenas ainda) conta como transitória. Backup (do salto ou do backfill) e download
+#    da planilha do backfill: um backup por loteria por execução, mesmo com várias rodadas;
+#  - as 3 tentativas curtas do downloader (2 s e 4 s) continuam por baixo de cada passada.
+cargo run --bin sync -- ciclo todas --aguardar
 
 # calendário de sorteios (3.2), só leitura: para hoje (relógio de Brasília, UTC-3 fixo) diz se é dia de
 # sorteio e desde que horário procurar o resultado (21h00 nas três loterias; o sorteio é por volta das

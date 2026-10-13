@@ -247,7 +247,7 @@ async fn raspar_tentativa_unica(config: &LoteriaConfig, headless: bool) -> Resul
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
     let (concurso, data_sorteio) = cabecalho_parseado.ok_or_else(|| {
-        SpiderError::LinhaInvalida(format!(
+        SpiderError::PaginaIncompleta(format!(
             "cabeçalho de concurso em formato inesperado: {ultimo_cabecalho_bruto:?}"
         ))
     })?;
@@ -258,7 +258,7 @@ async fn raspar_tentativa_unica(config: &LoteriaConfig, headless: bool) -> Resul
         .map_err(|e| erro_navegador(e.to_string()))?;
 
     if elementos_dezenas.len() != config.qtd_dezenas {
-        return Err(SpiderError::LinhaInvalida(format!(
+        return Err(SpiderError::PaginaIncompleta(format!(
             "esperava {} dezenas no seletor `{}`, a página retornou {}",
             config.qtd_dezenas,
             config.seletor_dezenas,
@@ -273,7 +273,7 @@ async fn raspar_tentativa_unica(config: &LoteriaConfig, headless: bool) -> Resul
             .await
             .map_err(|e| erro_navegador(e.to_string()))?;
         let valor: u32 = texto.trim().parse().map_err(|_| {
-            SpiderError::LinhaInvalida(format!("dezena inválida na página: {texto:?}"))
+            SpiderError::PaginaIncompleta(format!("dezena inválida na página: {texto:?}"))
         })?;
         dezenas.push(valor);
     }

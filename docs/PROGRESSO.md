@@ -70,7 +70,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
 - [x] 3.1b Comando `sync ciclo`
 - [x] 3.2 Calendário de sorteios no `config.rs`
-- [ ] 3.3 Retentativas com backoff
+- [x] 3.3 Retentativas com backoff
 - [ ] 3.4 Trava contra execução simultânea
 - [ ] 3.5 Logs em arquivo
 - [ ] 3.6 Alertas (depende de decisão em aberto)
@@ -1751,3 +1751,39 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   buraco persistente resolvido aqui. Regras registradas na 3.3 do plano; 3.7 passa a disparar
   `sync ciclo todas --aguardar` às 23h00. O horário de procura do calendário (21h, 3.2) não muda: segue
   sendo o momento em que o concurso passa a ser esperado.
+- 2026-10-13 — 3.3: interpretações do orquestrador (revisáveis; rodando como subagente): (1) limite da
+  janela = próximo 01h00 de Brasília a partir do início; (2) rodadas compartilhadas, a rodada k retenta
+  todas as pendentes depois do k-ésimo intervalo; (3) loteria aguardando não exporta nem publica; se a
+  janela fechar sem o concurso, faz o resto do ciclo uma vez e termina com **aviso** (não falha; alerta é
+  da 3.6); falha transitória que persiste até o fim é falha (exit ≠ 0); (4) classificação
+  transitória/definitiva numa função só da biblioteca.
+- 2026-10-13 — 3.3 entregue pelo `engenheiro-operacao`. `src/orquestracao/aguardar.rs` (novo):
+  `executar_ciclo_aguardando`, `fim_da_janela`, `intervalo_apos_rodada`, `RelatorioAguardar`
+  (`falhas()`, `avisos()`), `ResumoAguardar`, `PublicacaoLoteria`. `ciclo.rs`: `etapas` dividida em
+  `etapa_atualizar` + `etapas_restantes`, `MemoriaBackfill` (backup e download no máximo uma vez por
+  execução), 6 `EventoCiclo` novos (`AguardandoConcurso`, `FalhaTransitoria`, `ProximaRodada`,
+  `JanelaEncerrada`, `ConcursoNaoSaiu`, `PublicandoLoteria`). `error.rs`: `SpiderError::eh_transitorio()`
+  e variante nova `PaginaIncompleta` (usada pelo `downloader.rs` para página do último concurso parcial:
+  cabeçalho ilegível, dezenas faltando/não numéricas; antes era `LinhaInvalida`). `gravacao.rs`:
+  `atualizar_reaproveitando_backup`/`aplicar_atualizacao_reaproveitando_backup` (API antiga delega com
+  `&mut None`). CLI: `sync ciclo ... --aguardar` (espera com `std::thread::sleep`, relógio real). README.
+  **Decisões do implementador (aceitas pela revisão, revisáveis pelo usuário):** (a) só há janela se o
+  próximo 01h00 estiver a até 4 h do início (execução manual às 10h ou 02h faz passada única); (b) o sono é
+  cortado no limite e a última rodada cai exatamente às 01h00 (23:00, 23:05, 23:15, 23:35, 00:05, 00:35,
+  01:00 = 7 rodadas); (c) seletor não encontrado (`ElementoNaoEncontrado`, `BotaoDownloadNaoEncontrado`),
+  `DownloadNaoIniciado` e `PaginaIncompleta` são transitórios; `LinhaInvalida` (planilha/validação) é
+  definitiva; (d) só `Aguardando` espera (`EmDia` e `Atrasado` não); (e) se nenhuma loteria foi publicada
+  na execução, roda um `publicar` final de reenvio (regra da 3.1b); (f) loteria que aguardou a noite toda
+  e tem falha transitória na rodada das 01h00 termina como falha (exit ≠ 0), documentado no README.
+  Revisão (`revisor-arquitetura`): aprovada com ressalvas, sem ALTA; corrigidos numa rodada 1 MÉDIA
+  (página parcial às 23h falhava de vez na 1ª rodada → `PaginaIncompleta` transitória) e 5 BAIXA (ramo
+  inalcançável removido; salto com download transitório reaproveita o backup — 1 backup por noite, mas
+  relê a página a cada rodada; comentário no `thread::sleep` dentro de `async fn` — a 3.4 deve rever e
+  passar a `tokio::time::sleep`; falha às 01h00 documentada e testada; testes de relógio que falha no meio
+  do laço e de salto com download transitório). Testes: `tests/ciclo_aguardar.rs` com 32, +4 unitários em
+  `aguardar.rs`, +4 em `error.rs`; `tests/ciclo.rs` sem edição. Gate: fmt, clippy ok; cargo test verde
+  (lib 640, 3 ignorados; bin 22, ciclo 17, ciclo_aguardar 32, demais inalteradas); pytest 175; `validar
+  todas` ok. `ciclo --aguardar` **não** foi rodado contra os bancos reais nem `../rust_spider_dados`.
+  **3.3 concluída.** Pendências para a 3.6: distinguir "mudança aparente no site" de falha transitória
+  persistente (hoje ambas saem como falha em Atualizar, com o erro original); o relatório já expõe
+  `avisos()` (concurso que não saiu) e `falhas()`.
