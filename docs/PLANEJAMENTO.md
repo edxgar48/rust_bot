@@ -565,7 +565,7 @@ Tarefas:
 | 3.3 | Retentativas com backoff (sorteio ~20h, tentativas até ~23h, nova tentativa no dia seguinte) |
 | 3.4 | Arquivo de trava contra execução simultânea |
 | 3.5 | Log em arquivo (`logs/sync_AAAA-MM-DD.log`) |
-| 3.6 | Alerta após N falhas seguidas ou mudança aparente no site |
+| 3.6 | Alerta após N falhas seguidas ou mudança aparente no site. Paradas longas previstas (decisão de 2026-10-13) vêm dos sorteios especiais de datas comemorativas — a loteria fica sem concursos regulares antes do especial (ex.: Mega da Virada, Lotofácil da Independência, Quina de São João) — e não podem contar como falha: o `Atrasado` do calendário (3.2) dentro dessas janelas vira aviso, não alerta |
 | 3.7 | Agendamento via Agendador de Tarefas do Windows (script `.ps1` versionado); o `publicar` sem console roda o SSH com `BatchMode=yes` (falha em vez de travar pedindo senha ou confirmação de host) |
 | 3.8 | Runbook no README: bloqueio, seletor mudou, reprocessar do zero |
 

@@ -1722,3 +1722,10 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   **Pendência para a 3.6 (BAIXA da revisão):** a tolerância só vai até o próximo dia de sorteio; pausas
   longas previstas (Mega antes da Virada; suspensão da Lotofácil de 2026-09-03 a 2026-09-15 vista no banco)
   viram `Atrasado` e contariam como falha — decidir na 3.6 (lista de pausas conhecidas ou teto de alertas).
+- 2026-10-13 — Usuário confirmou o calendário da 3.2 tirado dos bancos (Lotofácil e Quina: domingo a sexta;
+  Mega-Sena: terça, quinta e domingo). Paradas longas (ex.: Lotofácil sem concursos de 2026-09-03 a
+  2026-09-15) são dos sorteios especiais de datas comemorativas; registrado na 3.6 do plano que o `Atrasado`
+  nessas janelas vira aviso, não alerta (como definir as janelas fica para a 3.6). Primeiro `sync ciclo todas`
+  real (release, 43 s): as três loterias ok, sem concurso novo, "Nada a publicar", exit 0. Na Lotofácil a 1ª
+  tentativa do navegador falhou ("falha ao iniciar o Playwright: Failed to initialize") e a 2ª passou —
+  falha transitória, a observar na 3.3.
