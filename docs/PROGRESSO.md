@@ -1634,3 +1634,8 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   origin em clone não-bare) registrada no comentário. +1 teste de integração (`pushurl` recusada). Gate:
   fmt, clippy, cargo test verde (lib 570, publicar 20, demais suítes inalteradas); clone real passa (fetch
   e push em `rust_spider_dados`).
+- 2026-10-13 — Pergunta do usuário: a 3.1 considera loterias com sorteio diário e semanal? Não precisa: o
+  `ciclo` sem concurso novo segue sem efeito, então rodar todo dia serve a todas. A frequência entra na 3.2
+  (calendário), consumida pela 3.3 e pela 3.6. A pedido, a 3.2 ganhou no plano: dias e horário por loteria,
+  conferência do calendário contra os dias da semana dos últimos concursos (divergência = aviso), tolerância
+  para feriados e concursos especiais (aviso até o próximo dia de sorteio) e a saída consumida pela 3.3/3.6.
