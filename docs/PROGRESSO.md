@@ -1839,3 +1839,22 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `block_in_place` move tarefas para outra thread; a thread do `main` não é worker — corrigir o texto e,
   opcional, teste de fumaça multi-thread; (2) `filho_segura_a_trava` em `tests/trava.rs` passa vazio na suíte
   normal (poderia ser `#[ignore]`); (3) a trava vale por pasta de trabalho: a 3.7 deve fixar a pasta.
+- 2026-10-13 — 3.5 não iniciada: o plano diz só "log em arquivo (`logs/sync_AAAA-MM-DD.log`)", e os pontos
+  abertos mudam o comportamento da CLI (e talvez as dependências). Perguntas devolvidas ao usuário, com
+  sugestões: (1) **quais comandos registram** — sugestão: os mesmos que tomam a trava da 3.4 (os que
+  gravam); os só de leitura continuam só no console; (2) **conteúdo** — sugestão: espelho do que sai no
+  console (saída padrão e de erro, com a cadeia "Caused by" completa), cada linha com hora HH:MM:SS de
+  Brasília e nível (`INFO`/`AVISO`/`ERRO`), mais uma linha de início (PID, comando completo, versão) e uma
+  de fim (duração, sucesso ou falha); (3) **mecanismo** — sugestão: sem crate nova (sem `tracing`): a lib
+  já emite `Evento`/`EventoCiclo` para um observador `FnMut`; um escritor de log na lib (testável com pasta
+  temporária) recebe as linhas e a CLI imprime e registra pelo mesmo caminho; alternativa: `tracing` +
+  `tracing-appender` (duas dependências novas); (4) **data do arquivo** — sugestão: a data de início da
+  execução em Brasília, para a noite do `ciclo --aguardar` (23h às 01h) ficar num arquivo só; abre em modo
+  de acréscimo (várias execuções no mesmo dia vão para o mesmo arquivo); (5) **pasta e retenção** —
+  sugestão: `logs/` na pasta de trabalho (a mesma do `sync.lock`, fixada pela 3.7), no `.gitignore`;
+  apagar logs com mais de 90 dias ao abrir o do dia (ou sem limpeza por enquanto?); (6) **falha ao
+  gravar o log** — sugestão: aviso no console e o comando segue sem log (o log nunca derruba o ciclo);
+  (7) a pendência (2) da 3.1b (partição erros/avisos do validar duplicada entre `ciclo.rs` e a CLI; o
+  validar do ciclo não emite `DicaBuracos`) entra na 3.5? sugestão: sim.
+- 2026-10-13 — Usuário aceitou as sugestões (1)–(7) da 3.5; regras registradas na 3.5 do plano (retenção
+  de 90 dias incluída; a pendência da 3.1b sobre erros/avisos do validar e `DicaBuracos` entra junto).
