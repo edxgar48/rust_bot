@@ -41,6 +41,57 @@ pub struct LoteriaConfig {
     /// `perfis/<slug>/<nome>.toml`, sem a extensão. A busca de pesos (1.5.3) não
     /// trocou o perfil ativo: segue o `padrao_v1`.
     pub perfil_ativo: &'static str,
+    /// Dias da semana em que a Caixa sorteia esta loteria (calendário da 3.2;
+    /// funções em `calendario`). Os dias mudam com o tempo: `sync calendario`
+    /// confere esta lista contra as datas dos últimos concursos do banco e
+    /// avisa se ficou desatualizada. Em ordem de semana, sem repetição.
+    pub dias_sorteio: &'static [DiaSemana],
+    /// Horário de Brasília (UTC−3) a partir do qual vale procurar o resultado
+    /// do dia: o sorteio é por volta das 20h; a folga cobre atraso e a
+    /// publicação no site.
+    pub procurar_a_partir_das: HoraLocal,
+}
+
+/// Dia da semana, de segunda a domingo (ordem ISO-8601).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DiaSemana {
+    Segunda,
+    Terca,
+    Quarta,
+    Quinta,
+    Sexta,
+    Sabado,
+    Domingo,
+}
+
+impl DiaSemana {
+    /// Nome por extenso, em português, para mensagens.
+    pub const fn nome(self) -> &'static str {
+        match self {
+            DiaSemana::Segunda => "segunda",
+            DiaSemana::Terca => "terça",
+            DiaSemana::Quarta => "quarta",
+            DiaSemana::Quinta => "quinta",
+            DiaSemana::Sexta => "sexta",
+            DiaSemana::Sabado => "sábado",
+            DiaSemana::Domingo => "domingo",
+        }
+    }
+}
+
+/// Hora do dia no relógio de Brasília (UTC−3 fixo; sem horário de verão desde
+/// 2019).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HoraLocal {
+    pub hora: u32,
+    pub minuto: u32,
+}
+
+impl HoraLocal {
+    /// Segundos desde a meia-noite local.
+    pub const fn segundos_do_dia(self) -> i64 {
+        (self.hora * 3600 + self.minuto * 60) as i64
+    }
 }
 
 /// A qual parte do histórico um concurso pertence, pelo corte fixo
@@ -130,6 +181,26 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 3416,
         perfil_ativo: "padrao_v1",
+        // Dias vistos nos últimos 60 concursos do banco real em 2026-10-13
+        // (`docs/PROGRESSO.md`, 3.2): domingo a sexta; o sábado aparece uma só
+        // vez (2026-10-03, sorteio isolado).
+        // Troca de sábado para domingo vista nos bancos em 2026: último sábado
+        // regular em 2026-07-11, primeiro domingo regular em 2026-07-19 (antes
+        // disso houve só um domingo isolado, 2026-06-14). O sábado de
+        // 2026-10-03 é provável antecipação pela eleição de 2026-10-04 (não
+        // confirmado).
+        dias_sorteio: &[
+            DiaSemana::Segunda,
+            DiaSemana::Terca,
+            DiaSemana::Quarta,
+            DiaSemana::Quinta,
+            DiaSemana::Sexta,
+            DiaSemana::Domingo,
+        ],
+        procurar_a_partir_das: HoraLocal {
+            hora: 21,
+            minuto: 0,
+        },
     },
     LoteriaConfig {
         slug: "megasena",
@@ -150,6 +221,19 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 2759,
         perfil_ativo: "padrao_v1",
+        // Dias vistos nos últimos 60 concursos do banco real em 2026-10-13
+        // (`docs/PROGRESSO.md`, 3.2): terça, quinta e domingo; o sábado, que já
+        // foi dia de sorteio, aparece uma só vez (2026-10-03, isolado).
+        // Troca de sábado para domingo vista no banco em 2026: último sábado
+        // regular em 2026-07-11, primeiro domingo regular em 2026-07-19 (antes
+        // disso houve só domingos isolados, 2026-05-24 e 2026-06-14). O sábado
+        // de 2026-10-03 é provável antecipação pela eleição de 2026-10-04 (não
+        // confirmado).
+        dias_sorteio: &[DiaSemana::Terca, DiaSemana::Quinta, DiaSemana::Domingo],
+        procurar_a_partir_das: HoraLocal {
+            hora: 21,
+            minuto: 0,
+        },
     },
     LoteriaConfig {
         slug: "quina",
@@ -170,6 +254,26 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         primeira_coluna_dezena: 2,
         ultimo_concurso_busca: 6421,
         perfil_ativo: "padrao_v1",
+        // Dias vistos nos últimos 60 concursos do banco real em 2026-10-13
+        // (`docs/PROGRESSO.md`, 3.2): domingo a sexta; o sábado aparece uma só
+        // vez (2026-10-03, sorteio isolado).
+        // Troca de sábado para domingo vista nos bancos em 2026: último sábado
+        // regular em 2026-07-11, primeiro domingo regular em 2026-07-19 (antes
+        // disso houve só um domingo isolado, 2026-06-14). O sábado de
+        // 2026-10-03 é provável antecipação pela eleição de 2026-10-04 (não
+        // confirmado).
+        dias_sorteio: &[
+            DiaSemana::Segunda,
+            DiaSemana::Terca,
+            DiaSemana::Quarta,
+            DiaSemana::Quinta,
+            DiaSemana::Sexta,
+            DiaSemana::Domingo,
+        ],
+        procurar_a_partir_das: HoraLocal {
+            hora: 21,
+            minuto: 0,
+        },
     },
 ];
 

@@ -271,6 +271,24 @@ enum Comando {
         #[arg(long, default_value = publicacao::REPO_PADRAO)]
         repo: PathBuf,
     },
+    /// Calendário de sorteios (só leitura): diz se hoje (Brasília) é dia de
+    /// sorteio e desde que horário procurar o resultado, em que estado está o
+    /// último concurso do banco (em_dia, aguardando ou atrasado) e avisa se o
+    /// calendário configurado diverge dos dias dos últimos concursos. Avisos e
+    /// estados não são erro: o comando só falha se não conseguir ler o banco.
+    Calendario {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina) ou `todas`
+        loteria: String,
+        /// Consulta outro dia (AAAA-MM-DD) em vez de hoje: muda só a parte
+        /// "é dia de sorteio / procurar desde"; o estado do banco segue o
+        /// relógio de agora
+        #[arg(long)]
+        data: Option<String>,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db);
+        /// não pode ser usado com `todas`
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
     /// Ciclo completo por loteria: atualizar -> backfill (se houver buraco) ->
     /// validar -> features (incremental) -> índice do perfil ativo -> exportar;
     /// depois de todas, um único publicar. Uma loteria com falha não
@@ -612,6 +630,29 @@ async fn main() -> anyhow::Result<()> {
                 ),
             }
         }
+        Comando::Calendario { loteria, data, db } => {
+            let dia = data
+                .as_deref()
+                .map(|texto| {
+                    tempo::dias_da_data_iso(texto).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "`--data {texto}` inválida: use AAAA-MM-DD (ex.: 2026-10-13)"
+                        )
+                    })
+                })
+                .transpose()?;
+            let alvos = resolver_alvos(&loteria, db, None)?;
+            let agora = i64::try_from(agora_segundos()?).unwrap_or(i64::MAX);
+            let mut execucao = alvos.execucao();
+            for (cfg, db_caminho) in alvos.itens {
+                execucao.cabecalho(cfg);
+                let r = orquestracao::consultar_calendario(cfg, &db_caminho, agora, dia)
+                    .map(|relatorio| imprimir_calendario(cfg, &relatorio, agora))
+                    .map_err(anyhow::Error::from);
+                execucao.registrar(cfg, r)?;
+            }
+            execucao.concluir()?;
+        }
         Comando::Ciclo {
             loteria,
             dir,
@@ -804,6 +845,57 @@ async fn baixar(
     let arquivo = baixar_planilha(cfg, dir, seletor, visivel).await?;
     orquestracao::processar_e_salvar(&arquivo, cfg, db_caminho, cache, &mut imprimir_evento)?;
     Ok(())
+}
+
+/// Saída do `sync calendario` de uma loteria.
+fn imprimir_calendario(
+    cfg: &config::LoteriaConfig,
+    r: &orquestracao::RelatorioCalendario,
+    agora: i64,
+) {
+    use rust_spider::calendario::{instante_brasilia, EstadoCalendario};
+    let dias: Vec<&str> = cfg.dias_sorteio.iter().map(|d| d.nome()).collect();
+    println!("Agora: {}", instante_brasilia(agora));
+    println!("Dias de sorteio configurados: {}", dias.join(", "));
+    let c = &r.consulta;
+    match c.procurar_desde {
+        Some(desde) => println!(
+            "{} ({}): dia de sorteio; procurar o resultado a partir de {}.",
+            c.data,
+            c.dia_da_semana.nome(),
+            instante_brasilia(desde)
+        ),
+        None => println!(
+            "{} ({}): não é dia de sorteio.",
+            c.data,
+            c.dia_da_semana.nome()
+        ),
+    }
+    println!(
+        "Último concurso do banco: {} ({}).",
+        r.ultimo_concurso.0, r.ultimo_concurso.1
+    );
+    let s = &r.situacao;
+    match (s.estado, &s.esperado_em, s.atrasado_a_partir_de) {
+        (EstadoCalendario::EmDia, _, _) => {
+            println!("Estado: em_dia (nenhum concurso esperado faltando).")
+        }
+        (estado, Some(esperado), Some(limite)) => {
+            println!(
+                "Estado: {} (o concurso de {esperado} já devia estar no banco; passa a atrasado em {}).",
+                estado.nome(),
+                instante_brasilia(limite)
+            );
+            println!("AVISO: feriado, adiamento ou site atrasado são causas possíveis; nada a fazer ainda.");
+        }
+        (estado, _, _) => println!("Estado: {}.", estado.nome()),
+    }
+    if r.avisos.is_empty() {
+        println!("Conferência do calendário: sem avisos.");
+    }
+    for aviso in &r.avisos {
+        println!("AVISO: {aviso}");
+    }
 }
 
 /// Resumo do `sync ciclo`: uma linha por loteria e a situação da publicação.

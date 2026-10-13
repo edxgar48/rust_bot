@@ -27,7 +27,7 @@
 //! - `NULL` é `null`; todo `f64` é escrito com 17 algarismos significativos
 //!   (`{:.16e}`), o que volta exatamente ao mesmo `f64`.
 
-use crate::config::{LoteriaConfig, Volante};
+use crate::config::{HoraLocal, LoteriaConfig, Volante};
 use crate::error::Result;
 use crate::motor::{
     self, calcular_indice, FeaturesDezena, IndiceDezena, Normalizacao, Pesos, FEATURE_VERSION,
@@ -137,6 +137,8 @@ fn config_do_caso(q: Quantidades) -> LoteriaConfig {
         // O motor não olha o corte da busca.
         ultimo_concurso_busca: 0,
         perfil_ativo: "caso_v1",
+        dias_sorteio: &[],
+        procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
     }
 }
 

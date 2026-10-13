@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{self, Volante};
+use crate::config::{self, HoraLocal, Volante};
 use crate::error::SpiderError;
 
 /// Loteria fictícia (2 de 1..=4, acaso = 1/2) para conferir à mão.
@@ -23,6 +23,8 @@ pub(super) const MINI: LoteriaConfig = LoteriaConfig {
     // Corte fictício da busca: os testes do walk-forward usam séries maiores.
     ultimo_concurso_busca: 20,
     perfil_ativo: "mini_v1",
+    dias_sorteio: &[],
+    procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
 };
 
 pub(super) fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {

@@ -51,6 +51,8 @@ src/
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
 ├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
 ├── publicacao/    # `sync publicar`: confere o publico/v1/, decide se mudou e publica num `Destino` (clone git)
+├── calendario.rs         # calendário de sorteios (3.2): dia/horário de procura, conferência, tolerância (puro)
+├── orquestracao/calendario.rs # `sync calendario`: banco (somente leitura) + calendário
 ├── orquestracao/ciclo.rs # `sync ciclo`: compõe atualizar, backfill, validar, features, índice, exportar e publicar
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── tempo.rs       # data/hora ISO-8601 UTC sem crate de calendário (`perfis.criado_em`)
@@ -184,9 +186,28 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
-#  - retentativas, trava, log em arquivo, calendário e agendamento ainda não existem (3.2 a 3.7).
+#  - retentativas, trava, log em arquivo e agendamento ainda não existem (3.3 a 3.7); o ciclo não usa o
+#    calendário (3.2): sem concurso novo, segue sem efeito.
 cargo run --bin sync -- ciclo todas
 cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
+
+# calendário de sorteios (3.2), só leitura: para hoje (relógio de Brasília, UTC-3 fixo) diz se é dia de
+# sorteio e desde que horário procurar o resultado (21h00 nas três loterias; o sorteio é por volta das
+# 20h), o estado do último concurso do banco e os avisos de conferência. Dias de sorteio e horário ficam
+# em config.rs (dias_sorteio, procurar_a_partir_das), conferidos nos bancos reais em 2026-10-13
+# (Lotofácil e Quina: domingo a sexta; Mega-Sena: terça, quinta e domingo).
+#  - estado do último concurso: em_dia = nenhum concurso esperado faltando; aguardando = um sorteio já
+#    passou do horário de procura e o concurso não está no banco, mas o horário de procura do dia de
+#    sorteio seguinte ainda não chegou (feriado, adiamento, site atrasado: aviso, não falha); atrasado =
+#    passou também desse horário (é o que a 3.6 contará como falha). Exatamente no horário de procura o
+#    concurso já é esperado;
+#  - conferência: nos 56 dias até a data do último concurso, avisa se um dia do calendário não teve
+#    nenhum concurso ou se um dia fora do calendário teve 2 ou mais (calendário possivelmente
+#    desatualizado). Um sorteio especial isolado (ex.: Mega da Virada) não avisa;
+#  - avisos e estados não mudam o código de saída; só falha se o banco não existe/não tem concursos;
+#  - --data AAAA-MM-DD consulta outro dia (só a linha "é dia de sorteio"); o estado segue o relógio de agora.
+cargo run --bin sync -- calendario todas
+cargo run --bin sync -- calendario megasena --data 2026-10-17
 
 # dataset de ML para o Python (`ml/`): features por (concurso, dezena, janela) dos
 # concursos sorteados, em datasets/<loteria>/features_v<versão>.<parquet|csv>

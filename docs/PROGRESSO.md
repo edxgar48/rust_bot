@@ -69,7 +69,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
 - [x] 3.1b Comando `sync ciclo`
-- [ ] 3.2 Calendário de sorteios no `config.rs`
+- [x] 3.2 Calendário de sorteios no `config.rs`
 - [ ] 3.3 Retentativas com backoff
 - [ ] 3.4 Trava contra execução simultânea
 - [ ] 3.5 Logs em arquivo
@@ -1690,3 +1690,35 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `ciclo` sai com erro; flags dos comandos existentes, `--db` com `todas` recusado; backfill só para buraco
   que persiste após o `atualizar`). O primeiro `sync ciclo todas` real (bancos e `../rust_spider_dados`)
   fica para depois da 3.2 (calendário).
+- 2026-10-13 — 3.2: interpretações do orquestrador (revisáveis; rodando como subagente, sem poder
+  perguntar): (1) **fuso** = Brasília fixo UTC−3 (sem horário de verão desde 2019), sem crate nova,
+  funções puras em segundos Unix como em `tempo.rs`; (2) **dias** de cada loteria tirados dos dados
+  recentes do banco (conferidos pelo agente) e **horário de procura** = 21h00 de Brasília (sorteio às
+  20h), por loteria no `LoteriaConfig`; (3) **conferência** = concursos dos últimos 56 dias (8 semanas)
+  antes do último concurso do banco: aviso se um dia do calendário não teve nenhum concurso na janela ou
+  se um dia fora do calendário teve 2 ou mais (um concurso isolado fora do calendário, como a Mega da
+  Virada, não acusa); (4) **tolerância** = concurso esperado e ausente é `Aguardando` (aviso) até o
+  horário de procura do próximo dia de sorteio; depois disso, `Atrasado`; (5) **onde aparece** = módulo
+  puro na biblioteca + comando `sync calendario <loteria|todas>` só de leitura; o `ciclo` não muda
+  (consumo fica para 3.3/3.6).
+- 2026-10-13 — 3.2 entregue pelo `engenheiro-operacao`. `src/calendario.rs` (novo, puro): `dia_local`
+  (UTC−3 fixo), `dia_da_semana`, `eh_dia_de_sorteio`, `procurar_desde`, `consultar_dia` (saída para a
+  3.3/3.6), `conferir(cfg, &[Resultado])` (janela de 56 dias; aviso se dia do calendário sem concurso ou
+  dia fora com 2+ **datas distintas**) e `situacao(cfg, dia_ultimo, agora)` → `EmDia`/`Aguardando`/
+  `Atrasado` (D1, D2 = dois primeiros dias de sorteio depois do último concurso; `Aguardando` a partir da
+  procura de D1, `Atrasado` a partir da procura de D2, bordas inclusivas). `src/orquestracao/calendario.rs`
+  lê o banco em modo somente leitura (não cria arquivo). `tempo.rs`: `dias_desde_epoca`,
+  `dias_da_data_iso`, `data_iso_de_dias`. `config.rs`: `DiaSemana`, `HoraLocal`, campos `dias_sorteio` e
+  `procurar_a_partir_das` (21h00). CLI: `sync calendario <loteria|todas> [--data] [--db]`, só leitura;
+  avisos e `Atrasado` não mudam o código de saída. README atualizado; `ciclo` intocado.
+  **Dias de sorteio (dos bancos, não da memória):** Lotofácil e Quina seg–sex + domingo; Mega-Sena
+  ter/qui/dom. Nos bancos, o sábado virou domingo nas três em 2026 (último sábado regular 2026-07-11,
+  primeiro domingo regular 2026-07-19); sábado isolado em 2026-10-03 nas três (provável antecipação pela
+  eleição de 2026-10-04, não confirmado). Revisão: aprovada com ressalvas, sem ALTA; corrigidos numa rodada
+  1 MÉDIA (falso aviso com dois concursos na mesma data fora do calendário, ex.: Lotofácil 3715/3716 em
+  2026-06-20) e 2 BAIXA (data da troca nos comentários; guard de limpeza no teste em disco). Testes: +38 no
+  calendário/orquestração, +2 em `tempo`. Gate: fmt, clippy ok; cargo test 998 passaram, 0 falhas; pytest
+  175; `validar todas` ok. `calendario todas` real sem aviso de conferência. **3.2 concluída.**
+  **Pendência para a 3.6 (BAIXA da revisão):** a tolerância só vai até o próximo dia de sorteio; pausas
+  longas previstas (Mega antes da Virada; suspensão da Lotofácil de 2026-09-03 a 2026-09-15 vista no banco)
+  viram `Atrasado` e contariam como falha — decidir na 3.6 (lista de pausas conhecidas ou teto de alertas).

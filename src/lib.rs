@@ -1,5 +1,6 @@
 pub mod avaliacao;
 pub mod backup;
+pub mod calendario;
 pub mod config;
 /// Ferramenta dos vetores de conformidade (testes e `examples/`), não é produção.
 #[doc(hidden)]

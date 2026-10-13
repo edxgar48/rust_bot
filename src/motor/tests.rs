@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{self, Volante};
+use crate::config::{self, HoraLocal, Volante};
 use crate::error::SpiderError;
 
 fn lotofacil() -> &'static LoteriaConfig {
@@ -35,6 +35,8 @@ const MINI: LoteriaConfig = LoteriaConfig {
     // O motor não usa o corte da busca.
     ultimo_concurso_busca: 0,
     perfil_ativo: "mini_v1",
+    dias_sorteio: &[],
+    procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
 };
 
 fn res(cfg: &LoteriaConfig, concurso: u32, dezenas: &[u32]) -> Resultado {

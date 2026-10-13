@@ -64,9 +64,99 @@ pub fn data_civil(dias: i64) -> (i64, u32, u32) {
     (ano, mes, dia)
 }
 
+/// Inverso de [`data_civil`]: dias desde 1970-01-01 da data (ano, mês 1–12,
+/// dia 1–31) do calendário gregoriano proléptico. Não valida o dia contra o
+/// mês (31 de abril vira 1º de maio); quem lê texto confere antes, como
+/// [`dias_da_data_iso`].
+///
+/// Algoritmo `days_from_civil` de Howard Hinnant, o espelho de `data_civil`.
+pub fn dias_desde_epoca(ano: i64, mes: u32, dia: u32) -> i64 {
+    let a = ano - i64::from(mes <= 2);
+    let era = a.div_euclid(400);
+    let yoe = a.rem_euclid(400); // 0 ..= 399
+    let mp = i64::from(if mes > 2 { mes - 3 } else { mes + 9 }); // março = 0
+    let doy = (153 * mp + 2) / 5 + i64::from(dia) - 1; // dia do ano desde 1º/3
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Dias desde 1970-01-01 de uma data `AAAA-MM-DD` (o formato de
+/// `Resultado::data_sorteio`), ou `None` se o texto não é uma data real
+/// (formato, mês, dia fora do mês, 29/02 de ano não bissexto).
+pub fn dias_da_data_iso(texto: &str) -> Option<i64> {
+    let b = texto.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    let numero = |trecho: &str| -> Option<u32> {
+        if trecho.bytes().all(|c| c.is_ascii_digit()) {
+            trecho.parse().ok()
+        } else {
+            None
+        }
+    };
+    let ano = numero(texto.get(0..4)?)?;
+    let mes = numero(texto.get(5..7)?)?;
+    let dia = numero(texto.get(8..10)?)?;
+    if !(1..=12).contains(&mes) || dia == 0 {
+        return None;
+    }
+    let dias = dias_desde_epoca(i64::from(ano), mes, dia);
+    // Dia que não existe no mês transborda para o mês seguinte: a volta pela
+    // fórmula inversa denuncia.
+    (data_civil(dias) == (i64::from(ano), mes, dia)).then_some(dias)
+}
+
+/// `AAAA-MM-DD` do dia `dias` desde 1970-01-01.
+pub fn data_iso_de_dias(dias: i64) -> String {
+    let (ano, mes, dia) = data_civil(dias);
+    format!("{ano:04}-{mes:02}-{dia:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dias_desde_epoca_e_o_inverso_de_data_civil() {
+        for dias in (-30_000..=160_000).step_by(7).chain([0, -1, 1, 20_000]) {
+            let (a, m, d) = data_civil(dias);
+            assert_eq!(dias_desde_epoca(a, m, d), dias, "{a}-{m}-{d}");
+        }
+        assert_eq!(dias_desde_epoca(1970, 1, 1), 0);
+        assert_eq!(dias_desde_epoca(2000, 3, 1), 11_017);
+        assert_eq!(dias_desde_epoca(2026, 10, 13), 20_739);
+    }
+
+    #[test]
+    fn data_iso_ida_e_volta_e_recusas() {
+        assert_eq!(dias_da_data_iso("2026-10-13"), Some(20_739));
+        assert_eq!(data_iso_de_dias(20_739), "2026-10-13");
+        assert_eq!(dias_da_data_iso("2024-02-29"), Some(19_782));
+        for ruim in [
+            "",
+            "2026-10-1",
+            "2026/10/13",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-10-00",
+            "2026-04-31",
+            "2025-02-29",
+            "2100-02-29",
+            "26-10-13x",
+            "2026-1a-13",
+            "+026-10-13",
+            "２０２６-10-13",
+        ] {
+            assert_eq!(dias_da_data_iso(ruim), None, "{ruim:?}");
+        }
+        assert_eq!(
+            dias_da_data_iso("2000-02-29")
+                .map(data_iso_de_dias)
+                .as_deref(),
+            Some("2000-02-29")
+        );
+    }
 
     #[test]
     fn datas_de_referencia() {
