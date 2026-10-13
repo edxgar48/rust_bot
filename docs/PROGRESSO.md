@@ -2012,3 +2012,9 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - 2026-10-13 — Usuário aceitou as sugestões (1)–(9) da 3.6, com o caminho recomendado para o item 5 (trava
   ocupada sai com código 3 e o `.ps1` chama `sync alerta --geral`; binário ausente só no `agendador.log`).
   Regras registradas na 3.6 do plano.
+- 2026-10-13 — Primeira execução manual do `scripts/ciclo_agendado.ps1` (pedido do usuário, antes de
+  registrar a tarefa), às 12:27 na sessão do usuário (não sob S4U): release recompilado, uma passada só (fora
+  da janela), exit 0 em 31 s; `agendador.log` com início e fim; `logs/sync_2026-10-13.log` com fechamento
+  "sucesso". Lotofácil e Quina sem o concurso de 2026-10-12 (feriado de N. Sra. Aparecida) → aviso, sem
+  falha; três `publicar` com "Nada a publicar" (o fetch por SSH em `BatchMode=yes` passou). Falta: registrar
+  a tarefa e conferir sob S4U (navegador, chave SSH).
