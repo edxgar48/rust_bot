@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo};
+use rust_spider::orquestracao::{
+    carregar_existentes, descrever_faixa, faixas_faltando, validar_lote, PastasAtualizar,
+};
 use rust_spider::{
-    backup, config, correcoes, dataset, db, downloader, exportacao, manuais, orquestracao, parser,
-    perfil, publicacao, registros, tabela, tempo, validacao, SpiderError,
+    backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil, publicacao,
+    registros, tabela, tempo, validacao, SpiderError,
 };
 use std::path::PathBuf;
 
@@ -347,9 +350,6 @@ impl From<FormatoDataset> for dataset::Formato {
 const MOTIVO_DATASET_UMA_LOTERIA: &str =
     "gere o dataset de uma loteria por vez (cada uma tem seu banco, suas features e seu corte)";
 
-/// Quantos problemas imprimir antes de resumir o restante numa contagem.
-const LIMITE_PROBLEMAS_IMPRESSOS: usize = 50;
-
 /// Por que `evidencia` não aceita `todas`.
 const MOTIVO_EVIDENCIA_UMA_LOTERIA: &str =
     "calcule uma loteria por vez (cada uma tem seu banco e suas dezenas)";
@@ -392,7 +392,13 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let cfg = buscar_config_unica(&loteria, "importar", "o arquivo é de uma loteria só")?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
-            processar_e_salvar(&arquivo, cfg, &db_caminho, &cache)?;
+            orquestracao::processar_e_salvar(
+                &arquivo,
+                cfg,
+                &db_caminho,
+                &cache,
+                &mut imprimir_evento,
+            )?;
         }
         Comando::Listar { loteria, db } => {
             let cfg = buscar_config_unica(
@@ -415,13 +421,12 @@ async fn main() -> anyhow::Result<()> {
             let alvos = resolver_alvos(&loteria, db, None)?;
             let mut execucao = alvos.execucao();
             let pastas = PastasAtualizar {
-                downloads: &dir,
                 backups: &backups,
                 cache: &cache,
             };
             for (cfg, db_caminho) in alvos.itens {
                 execucao.cabecalho(cfg);
-                let r = atualizar(cfg, &db_caminho, &pastas, visivel).await;
+                let r = atualizar(cfg, &db_caminho, &dir, &pastas, visivel).await;
                 execucao.registrar(cfg, r)?;
             }
             execucao.concluir()?;
@@ -727,7 +732,17 @@ async fn baixar(
     cache: &std::path::Path,
 ) -> anyhow::Result<()> {
     let arquivo = baixar_planilha(cfg, dir, seletor, visivel).await?;
-    processar_e_salvar(&arquivo, cfg, db_caminho, cache)
+    orquestracao::processar_e_salvar(&arquivo, cfg, db_caminho, cache, &mut imprimir_evento)?;
+    Ok(())
+}
+
+/// Mostra um evento dos fluxos de gravação (`orquestracao`) na hora em que
+/// acontece, na saída certa: a ordem das mensagens é a de sempre.
+fn imprimir_evento(evento: orquestracao::Evento) {
+    match evento.destino() {
+        orquestracao::Destino::Padrao => println!("{evento}"),
+        orquestracao::Destino::Erro => eprintln!("{evento}"),
+    }
 }
 
 /// Só o download da planilha (sem gravar): a parte do `baixar` que o
@@ -737,7 +752,7 @@ async fn baixar_planilha(
     dir: &std::path::Path,
     seletor: Option<&str>,
     visivel: bool,
-) -> anyhow::Result<PathBuf> {
+) -> rust_spider::Result<PathBuf> {
     println!("Baixando resultados de {}...", cfg.nome_exibicao);
     let arquivo = downloader::baixar_resultado(cfg, seletor, dir, !visivel).await?;
     println!("Arquivo salvo em {}", arquivo.display());
@@ -757,192 +772,24 @@ fn listar(
     Ok(db::listar(&conn, cfg.slug)?)
 }
 
-/// Pastas usadas pelo `atualizar`: planilha (se houver salto), backups do
-/// banco e cache de inserções manuais.
-struct PastasAtualizar<'a> {
-    downloads: &'a std::path::Path,
-    backups: &'a std::path::Path,
-    cache: &'a std::path::Path,
-}
-
 async fn atualizar(
     cfg: &'static config::LoteriaConfig,
     db_caminho: &std::path::Path,
+    downloads: &std::path::Path,
     pastas: &PastasAtualizar<'_>,
     visivel: bool,
 ) -> anyhow::Result<()> {
-    println!("Verificando o último resultado de {}...", cfg.nome_exibicao);
-    let mut resultado = downloader::raspar_ultimo_resultado(cfg, !visivel).await?;
-    imprimir_correcoes(&correcoes::aplicar(
-        cfg.slug,
-        std::slice::from_mut(&mut resultado),
-    ));
-    let downloads = pastas.downloads;
-    aplicar_atualizacao(cfg, &resultado, db_caminho, pastas, agora_segundos, || {
-        baixar_planilha(cfg, downloads, None, visivel)
-    })
-    .await
-}
-
-/// O `atualizar` depois de raspar a página: nada a fazer, gravar o próximo
-/// concurso ou, num salto, fazer backup e seguir o caminho do `baixar`
-/// (tarefa 0.8). O relógio (`agora`, lido só no salto com banco) e o download
-/// da planilha (`obter_planilha`) vêm de fora para o fluxo ser testável sem
-/// rede.
-async fn aplicar_atualizacao<F, Fut>(
-    cfg: &config::LoteriaConfig,
-    resultado: &rust_spider::Resultado,
-    db_caminho: &std::path::Path,
-    pastas: &PastasAtualizar<'_>,
-    agora: impl FnOnce() -> anyhow::Result<u64>,
-    obter_planilha: F,
-) -> anyhow::Result<()>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<PathBuf>>,
-{
-    let existentes = carregar_existentes(cfg, db_caminho)?;
-    let ultimo_salvo = existentes.iter().map(|r| r.concurso).max();
-
-    let classificacao = orquestracao::classificar_atualizacao(ultimo_salvo, resultado.concurso);
-    let (ultimo, pagina) = match classificacao {
-        orquestracao::Atualizacao::SemNovidade { ultimo } => {
-            println!(
-                "Já está atualizado: último concurso salvo é {ultimo}, a página mostra {}.",
-                resultado.concurso
-            );
-            // Uma inserção manual do mesmo concurso ainda pode ser conciliada.
-            return conciliar_cache(cfg, pastas.cache, std::slice::from_ref(resultado));
-        }
-        orquestracao::Atualizacao::Proximo => {
-            return gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache);
-        }
-        orquestracao::Atualizacao::Salto { ultimo, pagina } => (ultimo, pagina),
-    };
-
-    // Salto: gravar só o concurso da página deixaria buraco.
-    let copia = if ultimo == 0 {
-        println!(
-            "O banco não tem concursos de {} e a página mostra o {pagina}: \
-             baixando a planilha completa.",
-            cfg.nome_exibicao
-        );
-        if db_caminho.exists() {
-            println!(
-                "O banco {} não tem concursos de {}: nenhum backup feito.",
-                db_caminho.display(),
-                cfg.nome_exibicao
-            );
-        } else {
-            println!(
-                "Não há banco para copiar ({}): nenhum backup feito.",
-                db_caminho.display()
-            );
-        }
-        None
-    } else {
-        println!(
-            "Salto: o último concurso salvo é {ultimo} e a página mostra {pagina} \
-             ({} concurso(s) perdido(s) no meio): baixando a planilha completa.",
-            classificacao.faltando()
-        );
-        let copia = backup::criar(db_caminho, pastas.backups, cfg.slug, agora()?)?;
-        println!("Backup do banco em {}", copia.display());
-        Some(copia)
-    };
-
-    let feito = async {
-        let arquivo = obter_planilha().await?;
-        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache)?;
-
-        // A planilha pode estar atrasada em relação à página.
-        let mut existentes = carregar_existentes(cfg, db_caminho)?;
-        if !existentes.iter().any(|r| r.concurso == resultado.concurso) {
-            println!(
-                "A planilha ainda não traz o concurso {} da página; gravando-o a partir da página.",
-                resultado.concurso
-            );
-            gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache)?;
-            existentes = carregar_existentes(cfg, db_caminho)?;
-        }
-        Ok::<_, anyhow::Error>(existentes)
-    }
-    .await;
-    let existentes = feito.map_err(|e| match &copia {
-        Some(c) => e.context(format!(
-            "{}: o caminho da planilha completa falhou; o backup do banco de antes \
-             da tentativa está em {}",
-            cfg.slug,
-            c.display()
-        )),
-        None => e.context(format!(
-            "{}: o caminho da planilha completa falhou",
-            cfg.slug
-        )),
-    })?;
-
-    // Buraco que sobrou é só aviso (decisão da 0.7): o comando termina bem.
-    // Sem `imprimir_dica_buracos` aqui: o estado final é exatamente o que o
-    // último `validar_lote` (da planilha ou da página) avaliou, e ele reporta
-    // todos os buracos desse estado; logo a dica já saiu se há buraco.
-    let buracos = faixas_faltando(&existentes);
-    if !buracos.is_empty() {
-        let total: u32 = buracos.iter().map(|(i, f)| f - i + 1).sum();
-        let faixas: Vec<String> = buracos
-            .iter()
-            .map(|&(i, f)| descrever_faixa(i, f))
-            .collect();
-        println!(
-            "Atenção: ainda falta(m) {total} concurso(s) de {} no banco (nem a planilha \
-             nem a página os trazem): {}.",
-            cfg.nome_exibicao,
-            faixas.join(", ")
-        );
-    }
+    orquestracao::atualizar(
+        cfg,
+        db_caminho,
+        pastas,
+        &mut imprimir_evento,
+        agora_segundos,
+        || downloader::raspar_ultimo_resultado(cfg, !visivel),
+        || baixar_planilha(cfg, downloads, None, visivel),
+    )
+    .await?;
     Ok(())
-}
-
-/// Grava o concurso lido na página pelo caminho do salto de 1: validação
-/// contra o banco, gravação e conciliação com o cache de inserções manuais.
-fn gravar_da_pagina(
-    cfg: &config::LoteriaConfig,
-    existentes: &[rust_spider::Resultado],
-    resultado: &rust_spider::Resultado,
-    db_caminho: &std::path::Path,
-    cache: &std::path::Path,
-) -> anyhow::Result<()> {
-    let lote = std::slice::from_ref(resultado);
-    validar_lote(cfg, existentes, lote, db_caminho)?;
-
-    // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
-    let mut conn = db::abrir(db_caminho)?;
-    let gravados = db::salvar_resultados(&mut conn, lote)?;
-    println!(
-        "Concurso {} ({}) gravado em {} ({gravados} registro(s) novo(s)/atualizado(s)).",
-        resultado.concurso,
-        resultado.data_sorteio,
-        db_caminho.display()
-    );
-    conciliar_cache(cfg, cache, lote)
-}
-
-/// Faixas de concursos faltando (início, fim), como o `validar` as vê.
-fn faixas_faltando(resultados: &[rust_spider::Resultado]) -> Vec<(u32, u32)> {
-    validacao::validar_sequencia(resultados)
-        .into_iter()
-        .filter_map(|p| match p {
-            validacao::Problema::ConcursosFaltando { inicio, fim } => Some((inicio, fim)),
-            _ => None,
-        })
-        .collect()
-}
-
-fn descrever_faixa(inicio: u32, fim: u32) -> String {
-    if inicio == fim {
-        format!("{inicio}")
-    } else {
-        format!("{inicio}–{fim}")
-    }
 }
 
 fn validar_banco(cfg: &config::LoteriaConfig, db_caminho: &std::path::Path) -> anyhow::Result<()> {
@@ -1017,62 +864,9 @@ impl Saida {
 }
 
 fn imprimir_problemas<P: std::fmt::Display>(rotulo: &str, problemas: &[P], saida: Saida) {
-    if problemas.is_empty() {
-        return;
+    for linha in orquestracao::formatar_problemas(rotulo, problemas) {
+        saida.imprimir(&linha);
     }
-    let imprimir = |linha: String| saida.imprimir(&linha);
-    imprimir(format!("{} {rotulo}:", problemas.len()));
-    for p in problemas.iter().take(LIMITE_PROBLEMAS_IMPRESSOS) {
-        imprimir(format!("  - {p}"));
-    }
-    if problemas.len() > LIMITE_PROBLEMAS_IMPRESSOS {
-        imprimir(format!(
-            "  ... e mais {} não exibido(s).",
-            problemas.len() - LIMITE_PROBLEMAS_IMPRESSOS
-        ));
-    }
-}
-
-/// Valida o lote contra o que já está no banco antes de gravar. Imprime os
-/// avisos; se houver erro, imprime-os e falha sem gravar nada (tudo ou nada).
-fn validar_lote(
-    cfg: &config::LoteriaConfig,
-    existentes: &[rust_spider::Resultado],
-    novos: &[rust_spider::Resultado],
-    db_caminho: &std::path::Path,
-) -> anyhow::Result<validacao::DecisaoGravacao> {
-    let decisao = validacao::avaliar_gravacao(cfg, existentes, novos);
-    imprimir_problemas("aviso(s)", &decisao.avisos, Saida::Padrao);
-    if decisao
-        .avisos
-        .iter()
-        .any(|p| matches!(p, validacao::Problema::ConcursosFaltando { .. }))
-    {
-        imprimir_dica_buracos(cfg);
-    }
-    if !decisao.pode_gravar() {
-        imprimir_problemas("erro(s)", &decisao.erros, Saida::Erro);
-        anyhow::bail!(
-            "{}: lote recusado por {} erro(s) de integridade; nada foi gravado em {}",
-            cfg.slug,
-            decisao.erros.len(),
-            db_caminho.display()
-        );
-    }
-    Ok(decisao)
-}
-
-/// O que já está gravado, sem criar o banco: `db::abrir` cria o arquivo, e um
-/// lote recusado sobre banco inexistente não deve deixar um `.db` vazio.
-fn carregar_existentes(
-    cfg: &config::LoteriaConfig,
-    db_caminho: &std::path::Path,
-) -> anyhow::Result<Vec<rust_spider::Resultado>> {
-    if !db_caminho.exists() {
-        return Ok(Vec::new());
-    }
-    let conn = db::abrir(db_caminho)?;
-    Ok(db::listar(&conn, cfg.slug)?)
 }
 
 /// Para comandos que só fazem sentido com uma loteria (`importar`, `inserir`,
@@ -1108,84 +902,8 @@ fn caminho_db_padrao(slug: &str) -> PathBuf {
     PathBuf::from(format!("resultados_{slug}.db"))
 }
 
-fn processar_e_salvar(
-    arquivo: &std::path::Path,
-    cfg: &config::LoteriaConfig,
-    db_caminho: &std::path::Path,
-    cache_dir: &std::path::Path,
-) -> anyhow::Result<()> {
-    let mut resultados = parser::parsear_arquivo(arquivo, cfg)?;
-    println!("{} concurso(s) extraído(s) do arquivo.", resultados.len());
-    imprimir_correcoes(&correcoes::aplicar(cfg.slug, &mut resultados));
-
-    // Concursos inseridos à mão que a planilha ainda não traz entram no mesmo
-    // lote: assim um banco recriado do zero recupera os manuais.
-    let cache_caminho = manuais::caminho(cache_dir, cfg.slug);
-    let entradas = manuais::carregar(&cache_caminho, cfg.slug)?;
-    let (restantes, mut conciliacoes) = manuais::conciliar(&entradas, &resultados);
-    let existentes = carregar_existentes(cfg, db_caminho)?;
-    let (pendentes, difere_do_banco) =
-        manuais::pendentes(&restantes, &resultados, &existentes, cfg.slug);
-    conciliacoes.extend(difere_do_banco);
-    if !pendentes.is_empty() {
-        println!(
-            "{} concurso(s) inserido(s) à mão reaplicado(s) a partir de {}.",
-            pendentes.len(),
-            cache_caminho.display()
-        );
-        resultados.extend(pendentes);
-    }
-
-    validar_lote(cfg, &existentes, &resultados, db_caminho)?;
-    // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
-    let mut conn = db::abrir(db_caminho)?;
-    let gravados = db::salvar_resultados(&mut conn, &resultados)?;
-    println!(
-        "{gravados} registro(s) novo(s)/atualizado(s) em {}",
-        db_caminho.display()
-    );
-
-    imprimir_conciliacoes(&conciliacoes);
-    if restantes != entradas {
-        manuais::salvar(&cache_caminho, cfg.slug, &restantes)?;
-    }
-    Ok(())
-}
-
-/// Depois de gravar dados oficiais: remove do cache as inserções manuais
-/// confirmadas e avisa as divergentes.
-fn conciliar_cache(
-    cfg: &config::LoteriaConfig,
-    cache_dir: &std::path::Path,
-    oficiais: &[rust_spider::Resultado],
-) -> anyhow::Result<()> {
-    let cache_caminho = manuais::caminho(cache_dir, cfg.slug);
-    let entradas = manuais::carregar(&cache_caminho, cfg.slug)?;
-    let (restantes, conciliacoes) = manuais::conciliar(&entradas, oficiais);
-    imprimir_conciliacoes(&conciliacoes);
-    if restantes != entradas {
-        manuais::salvar(&cache_caminho, cfg.slug, &restantes)?;
-    }
-    Ok(())
-}
-
-fn imprimir_conciliacoes(conciliacoes: &[manuais::Conciliacao]) {
-    for c in conciliacoes {
-        match c {
-            manuais::Conciliacao::Resolvida { .. } => println!("{c}"),
-            manuais::Conciliacao::Divergente { .. }
-            | manuais::Conciliacao::DifereDoBanco { .. } => eprintln!("{c}"),
-        }
-    }
-}
-
 fn imprimir_dica_buracos(cfg: &config::LoteriaConfig) {
-    println!(
-        "Para fechar os buracos: `sync buracos {0}` lista os concursos que faltam e \
-         `sync inserir {0} <concurso> --data AAAA-MM-DD --dezenas ...` fecha um a um \
-         (ou `sync baixar {0}` para o histórico completo).",
-        cfg.slug
-    );
+    imprimir_evento(orquestracao::Evento::DicaBuracos { slug: cfg.slug });
 }
 
 /// Lista cada faixa de concursos faltando com as datas dos vizinhos, que
@@ -1242,7 +960,7 @@ fn inserir_manual(
         );
     }
     let lote = [entrada.para_resultado(cfg.slug)];
-    let decisao = validar_lote(cfg, &existentes, &lote, db_caminho)?;
+    let decisao = validar_lote(cfg, &existentes, &lote, db_caminho, &mut imprimir_evento)?;
     if decisao
         .avisos
         .iter()
@@ -1472,37 +1190,32 @@ fn gravar_dataset(
 }
 
 /// `sync exportar`: gera os arquivos de todas as loterias pedidas na memória
-/// (só lê os bancos) e só então grava. Se uma loteria falhar, nada é gravado.
+/// (só lê os bancos) e só então grava (`orquestracao`). Se uma loteria falhar,
+/// nada é gravado.
 fn exportar(
     alvos: &Alvos,
     raiz_perfis: &std::path::Path,
     saida: &std::path::Path,
 ) -> anyhow::Result<()> {
     let inicio = std::time::Instant::now();
-    let mut lotes = Vec::new();
-    let mut falhas: Vec<(&'static str, anyhow::Error)> = Vec::new();
-    for (cfg, db_caminho) in &alvos.itens {
-        match gerar_exportacao(cfg, db_caminho, raiz_perfis) {
-            Ok(lote) => lotes.push(lote),
-            Err(e) => falhas.push((cfg.slug, e)),
+    let resultado =
+        orquestracao::exportar_tudo_ou_nada(&alvos.itens, raiz_perfis, saida, agora_iso8601_utc)?;
+    let gravados = match resultado {
+        orquestracao::ResultadoExportacao::Gravado(gravados) => gravados,
+        orquestracao::ResultadoExportacao::Cancelado(mut falhas) => {
+            if !alvos.multiplas {
+                return Err(falhas.remove(0).erro.into());
+            }
+            let nomes: Vec<&str> = falhas.iter().map(|f| f.slug).collect();
+            for f in falhas {
+                eprintln!("Erro em {}: {:#}", f.slug, anyhow::Error::from(f.erro));
+            }
+            anyhow::bail!(
+                "exportação cancelada, nada foi gravado: falhou em {}",
+                nomes.join(", ")
+            );
         }
-    }
-    if !falhas.is_empty() {
-        if !alvos.multiplas {
-            return Err(falhas.remove(0).1);
-        }
-        for (slug, e) in &falhas {
-            eprintln!("Erro em {slug}: {e:#}");
-        }
-        let nomes: Vec<&str> = falhas.iter().map(|(s, _)| *s).collect();
-        anyhow::bail!(
-            "exportação cancelada, nada foi gravado: falhou em {}",
-            nomes.join(", ")
-        );
-    }
-
-    let slugs: Vec<&str> = config::LOTERIAS.iter().map(|l| l.slug).collect();
-    let gravados = exportacao::disco::gravar(saida, &lotes, &slugs, &agora_iso8601_utc()?)?;
+    };
     for g in &gravados {
         println!(
             "{} ({} bytes, SHA-256 {})",
@@ -1518,22 +1231,6 @@ fn exportar(
         inicio.elapsed().as_secs_f64()
     );
     Ok(())
-}
-
-/// Lê e confere o banco de uma loteria com o perfil ativo e gera os três
-/// arquivos dela. Não grava nada. Banco inexistente é erro, sem criar arquivo.
-fn gerar_exportacao(
-    cfg: &config::LoteriaConfig,
-    db_caminho: &std::path::Path,
-    raiz_perfis: &std::path::Path,
-) -> anyhow::Result<exportacao::ArquivosLoteria> {
-    if !db_caminho.exists() {
-        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
-    }
-    let carregado = perfil::carregar(raiz_perfis, cfg, cfg.perfil_ativo)?;
-    let mut conn = db::abrir_somente_leitura(db_caminho)?;
-    let dados = orquestracao::dados_para_exportar(&mut conn, cfg, &carregado)?;
-    Ok(exportacao::gerar_loteria(&dados)?)
 }
 
 /// `sync tabela`: monta a tabela geral do concurso (conferências e leitura
@@ -2717,25 +2414,16 @@ fn descrever_janela(janela: u32) -> String {
 }
 
 /// Momento atual em ISO-8601 UTC com segundos, para `perfis.criado_em`.
-fn agora_iso8601_utc() -> anyhow::Result<String> {
+fn agora_iso8601_utc() -> rust_spider::Result<String> {
     Ok(tempo::iso8601_utc(agora_segundos()?))
 }
 
 /// Segundos desde 1970-01-01T00:00:00Z: o único ponto que lê o relógio.
-fn agora_segundos() -> anyhow::Result<u64> {
+fn agora_segundos() -> rust_spider::Result<u64> {
     let desde_1970 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| anyhow::anyhow!("relógio do sistema antes de 1970-01-01; acerte a data"))?;
+        .map_err(|_| SpiderError::RelogioInvalido)?;
     Ok(desde_1970.as_secs())
-}
-
-fn imprimir_correcoes(ocorrencias: &[correcoes::Ocorrencia]) {
-    for o in ocorrencias {
-        match o {
-            correcoes::Ocorrencia::Aplicada(_) => println!("Correção conhecida: {o}"),
-            correcoes::Ocorrencia::Divergente { .. } => eprintln!("{o}"),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -3043,311 +2731,6 @@ mod tests {
         )
         .expect_err("todas é recusado");
         assert!(erro.to_string().contains("features"), "{erro}");
-    }
-
-    // --- `atualizar` (tarefa 0.8), sem rede: a planilha é a fixture da Quina
-    // (concursos 1 a 5) e o concurso "da página" é montado no teste.
-
-    /// 2026-10-04T18:30:00Z.
-    const AGORA: u64 = 1_791_138_600;
-
-    /// Pasta temporária com o banco, o cache, `downloads/` e `backups/`.
-    struct Cenario {
-        raiz: PathBuf,
-        db: PathBuf,
-        cache: PathBuf,
-        downloads: PathBuf,
-        backups: PathBuf,
-    }
-
-    impl Cenario {
-        fn novo(rotulo: &str) -> Self {
-            let unico = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or_default();
-            let raiz = std::env::temp_dir().join(format!(
-                "rust_spider_atualizar_{rotulo}_{}_{unico}",
-                std::process::id()
-            ));
-            std::fs::create_dir_all(&raiz).unwrap();
-            Cenario {
-                db: raiz.join("resultados_quina.db"),
-                cache: raiz.join("cache"),
-                downloads: raiz.join("downloads"),
-                backups: raiz.join("backups"),
-                raiz,
-            }
-        }
-
-        fn pastas(&self) -> PastasAtualizar<'_> {
-            PastasAtualizar {
-                downloads: &self.downloads,
-                backups: &self.backups,
-                cache: &self.cache,
-            }
-        }
-
-        fn gravar(&self, lote: &[rust_spider::Resultado]) {
-            let mut conn = db::abrir(&self.db).unwrap();
-            db::salvar_resultados(&mut conn, lote).unwrap();
-        }
-
-        fn concursos(&self) -> Vec<u32> {
-            let conn = db::abrir(&self.db).unwrap();
-            let mut c: Vec<u32> = db::listar(&conn, "quina")
-                .unwrap()
-                .iter()
-                .map(|r| r.concurso)
-                .collect();
-            c.sort_unstable();
-            c
-        }
-
-        fn backups_feitos(&self) -> Vec<PathBuf> {
-            match std::fs::read_dir(&self.backups) {
-                Ok(it) => it.map(|e| e.unwrap().path()).collect(),
-                Err(_) => Vec::new(),
-            }
-        }
-    }
-
-    impl Drop for Cenario {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.raiz);
-        }
-    }
-
-    fn fixture_quina() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join("quina.xlsx")
-    }
-
-    /// Concursos 1 a 5 da fixture, como a planilha os entrega.
-    fn planilha_quina() -> Vec<rust_spider::Resultado> {
-        parser::parsear_arquivo(&fixture_quina(), quina()).unwrap()
-    }
-
-    fn da_planilha(concurso: u32) -> rust_spider::Resultado {
-        planilha_quina()
-            .into_iter()
-            .find(|r| r.concurso == concurso)
-            .unwrap()
-    }
-
-    /// Concurso que a planilha (fixture) ainda não traz.
-    fn so_na_pagina(concurso: u32) -> rust_spider::Resultado {
-        rust_spider::Resultado {
-            loteria: "quina".to_string(),
-            concurso,
-            data_sorteio: "1994-04-30".to_string(),
-            dezenas: vec![3, 17, 28, 42, 66],
-        }
-    }
-
-    fn relogio_proibido() -> anyhow::Result<u64> {
-        panic!("o relógio só é lido num salto com banco")
-    }
-
-    async fn planilha_proibida() -> anyhow::Result<PathBuf> {
-        panic!("a planilha só é baixada num salto")
-    }
-
-    #[tokio::test]
-    async fn atualizar_sem_novidade_nao_baixa_nem_copia() {
-        let c = Cenario::novo("sem_novidade");
-        c.gravar(&planilha_quina());
-        aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            relogio_proibido,
-            planilha_proibida,
-        )
-        .await
-        .unwrap();
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
-        assert!(!c.backups.exists());
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_de_um_grava_so_o_da_pagina_sem_backup() {
-        let c = Cenario::novo("proximo");
-        c.gravar(&planilha_quina()[..4]);
-        aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            relogio_proibido,
-            planilha_proibida,
-        )
-        .await
-        .unwrap();
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
-        assert!(!c.backups.exists());
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_faz_backup_e_grava_a_planilha_completa() {
-        let c = Cenario::novo("salto");
-        c.gravar(&planilha_quina()[..2]);
-        aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Ok(fixture_quina()) },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
-        let backup = c.backups.join("resultados_quina_20261004-183000.db");
-        assert_eq!(c.backups_feitos(), std::slice::from_ref(&backup));
-        let copia = db::listar_crescente(&db::abrir(&backup).unwrap(), "quina").unwrap();
-        assert_eq!(copia, planilha_quina()[..2].to_vec());
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_com_planilha_atrasada_grava_tambem_o_da_pagina() {
-        let c = Cenario::novo("atrasada");
-        c.gravar(&planilha_quina()[..2]);
-        aplicar_atualizacao(
-            quina(),
-            &so_na_pagina(6),
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Ok(fixture_quina()) },
-        )
-        .await
-        .unwrap();
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5, 6]);
-        assert_eq!(c.backups_feitos().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_que_ainda_deixa_buraco_avisa_e_termina_bem() {
-        let c = Cenario::novo("buraco");
-        c.gravar(&planilha_quina()[..2]);
-        aplicar_atualizacao(
-            quina(),
-            &so_na_pagina(8),
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Ok(fixture_quina()) },
-        )
-        .await
-        .expect("buraco é só aviso");
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5, 8]);
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_com_download_falhando_nao_grava_e_aponta_o_backup() {
-        let c = Cenario::novo("download_falha");
-        c.gravar(&planilha_quina()[..2]);
-        let erro = aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Err(anyhow::anyhow!("sem rede")) },
-        )
-        .await
-        .expect_err("download falhou");
-
-        let backup = c.backups.join("resultados_quina_20261004-183000.db");
-        let texto = format!("{erro:#}");
-        assert!(texto.contains("sem rede"), "{texto}");
-        assert!(texto.contains(&backup.display().to_string()), "{texto}");
-        assert_eq!(c.concursos(), [1, 2]);
-        assert_eq!(c.backups_feitos(), [backup]);
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_com_planilha_ilegivel_nao_grava_nem_o_da_pagina() {
-        let c = Cenario::novo("planilha_ruim");
-        c.gravar(&planilha_quina()[..2]);
-        let corrompida = fixture_quina().with_file_name("corrompida.xlsx");
-        let erro = aplicar_atualizacao(
-            quina(),
-            &so_na_pagina(6),
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Ok(corrompida) },
-        )
-        .await
-        .expect_err("planilha ilegível");
-        assert!(format!("{erro:#}").contains("backup"), "{erro:#}");
-        assert_eq!(c.concursos(), [1, 2]);
-        assert_eq!(c.backups_feitos().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn atualizar_salto_com_lote_reprovado_nao_grava_nada() {
-        let c = Cenario::novo("lote_reprovado");
-        // A página traz um concurso com dezena fora da faixa que a planilha
-        // não traz: a planilha (válida) é gravada e o lote da página, recusado.
-        c.gravar(&planilha_quina()[..2]);
-        let mut invalido = so_na_pagina(6);
-        invalido.dezenas = vec![1, 2, 3, 4, 99];
-        let erro = aplicar_atualizacao(
-            quina(),
-            &invalido,
-            &c.db,
-            &c.pastas(),
-            || Ok(AGORA),
-            || async { Ok(fixture_quina()) },
-        )
-        .await
-        .expect_err("concurso da página inválido");
-        let texto = format!("{erro:#}");
-        assert!(texto.contains("lote recusado"), "{texto}");
-        assert!(texto.contains("backup"), "{texto}");
-        // A planilha (válida) já foi gravada; o concurso inválido, não.
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
-    }
-
-    #[tokio::test]
-    async fn atualizar_banco_inexistente_baixa_a_planilha_sem_backup() {
-        let c = Cenario::novo("sem_banco");
-        aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            relogio_proibido,
-            || async { Ok(fixture_quina()) },
-        )
-        .await
-        .unwrap();
-        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
-        assert!(!c.backups.exists());
-    }
-
-    #[tokio::test]
-    async fn atualizar_banco_inexistente_com_planilha_falhando_nao_cria_o_banco() {
-        let c = Cenario::novo("sem_banco_falha");
-        aplicar_atualizacao(
-            quina(),
-            &da_planilha(5),
-            &c.db,
-            &c.pastas(),
-            relogio_proibido,
-            || async { Err(anyhow::anyhow!("sem rede")) },
-        )
-        .await
-        .expect_err("download falhou");
-        assert!(!c.db.exists());
-        assert!(!c.backups.exists());
     }
 
     #[test]

@@ -26,6 +26,10 @@
 //!
 //! E decide o que o `sync atualizar` faz com o concurso lido na página
 //! ([`classificar_atualizacao`], tarefa 0.8).
+//!
+//! Os fluxos de gravação (`baixar`, `importar`, `atualizar`) ficam em
+//! `gravacao` e a geração/gravação do `sync exportar` em `exportar`
+//! (tarefa 3.1a); a API é reexportada aqui.
 
 use crate::avaliacao::{
     self, Cauda, Classificacao, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte,
@@ -43,6 +47,12 @@ use crate::validacao::{self, Problema, Severidade};
 use rusqlite::Connection;
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+mod exportar;
+mod gravacao;
+
+pub use exportar::*;
+pub use gravacao::*;
 
 /// Por que as features foram recalculadas do zero.
 #[derive(Debug, Clone, PartialEq, Eq)]

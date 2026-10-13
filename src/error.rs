@@ -239,6 +239,35 @@ pub enum SpiderError {
     #[error("backup do banco em `{}`: {motivo}", caminho.display())]
     Backup { caminho: PathBuf, motivo: String },
 
+    /// Comandos que só leem recusam banco inexistente (`db::abrir` criaria
+    /// um arquivo vazio).
+    #[error("banco não encontrado: {}", .0.display())]
+    BancoNaoEncontrado(PathBuf),
+
+    /// O relógio do sistema não serve para carimbar backups e registros.
+    #[error("relógio do sistema antes de 1970-01-01; acerte a data")]
+    RelogioInvalido,
+
+    /// Lote recusado pela validação de gravação (tudo ou nada). Os erros vão
+    /// junto para quem quiser listá-los; nada foi gravado.
+    #[error("{loteria}: lote recusado por {} erro(s) de integridade; nada foi gravado em {}", erros.len(), caminho.display())]
+    LoteRecusado {
+        loteria: String,
+        erros: Vec<crate::validacao::Problema>,
+        caminho: PathBuf,
+    },
+
+    /// O `sync atualizar` com salto segue o caminho da planilha completa; se
+    /// ele falha, o banco ficou como estava e o backup (se houve) aponta o
+    /// estado de antes da tentativa. A causa vem em `origem`.
+    #[error("{loteria}: o caminho da planilha completa falhou{}", backup.as_ref().map_or_else(String::new, |c| format!("; o backup do banco de antes da tentativa está em {}", c.display())))]
+    CaminhoDaPlanilhaFalhou {
+        loteria: String,
+        backup: Option<PathBuf>,
+        #[source]
+        origem: Box<SpiderError>,
+    },
+
     /// Dados do `sync dataset` que não respeitam o que a montagem dos
     /// arquivos pressupõe (ordem, só concursos sorteados, trancado só com
     /// `--trancado`). Só acontece por erro de programação ou tabela mexida por

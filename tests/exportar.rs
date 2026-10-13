@@ -10,7 +10,8 @@ use rust_spider::error::SpiderError;
 use rust_spider::exportacao::{self, disco, ArquivosLoteria};
 use rust_spider::motor::FEATURE_VERSION;
 use rust_spider::orquestracao::{
-    dados_para_exportar, sincronizar_features, sincronizar_indice, DadosExportacao,
+    dados_para_exportar, exportar_tudo_ou_nada, gerar_exportacao, sincronizar_features,
+    sincronizar_indice, DadosExportacao, ResultadoExportacao,
 };
 use rust_spider::perfil::{self, PerfilCarregado};
 use rust_spider::Resultado;
@@ -1055,4 +1056,169 @@ fn toda_chave_dos_json_gerados_esta_documentada_no_contrato() {
         faltando.is_empty(),
         "chaves sem documentação em docs/contrato-v1.md: {faltando:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 9. Tudo ou nada (orquestracao::exportar_tudo_ou_nada, tarefa 3.1a).
+// ---------------------------------------------------------------------------
+
+/// `<pasta>/perfis/<slug>/padrao_v1.toml` para as três loterias.
+fn perfis_em(pasta: &Pasta) -> PathBuf {
+    let raiz = pasta.0.join("perfis");
+    for slug in SLUGS {
+        let dir = raiz.join(slug);
+        std::fs::create_dir_all(&dir).expect("pasta de perfis");
+        std::fs::write(dir.join("padrao_v1.toml"), texto_perfil(slug)).expect("perfil");
+    }
+    raiz
+}
+
+/// Banco em disco da loteria, com features e índice, em `<pasta>/<slug>.db`.
+fn banco_em(pasta: &Pasta, slug: &str) -> PathBuf {
+    let cfg = cfg_de(slug);
+    let caminho = pasta.0.join(format!("{slug}.db"));
+    let mut conn = db::abrir(&caminho).expect("banco");
+    preparar(&mut conn, cfg, &historico(cfg, N));
+    caminho
+}
+
+fn alvo(slug: &str, db: PathBuf) -> (&'static LoteriaConfig, PathBuf) {
+    (cfg_de(slug), db)
+}
+
+fn relogio() -> rust_spider::Result<String> {
+    Ok(GERADO_EM.to_string())
+}
+
+#[test]
+fn tudo_ou_nada_grava_todas_quando_todas_passam() {
+    let p = Pasta::nova("tn_ok");
+    let perfis = perfis_em(&p);
+    let alvos: Vec<_> = SLUGS.iter().map(|s| alvo(s, banco_em(&p, s))).collect();
+    let r = exportar_tudo_ou_nada(&alvos, &perfis, &p.saida(), relogio).expect("exportação");
+    let ResultadoExportacao::Gravado(gravados) = r else {
+        panic!("esperava Gravado, veio {r:?}");
+    };
+    // index.json + 3 arquivos por loteria.
+    assert_eq!(gravados.len(), 10);
+    assert_eq!(listar(&p.saida()).len(), 10);
+    let v = json(&ler(&p.saida(), "index.json"));
+    assert_eq!(v["gerado_em"], GERADO_EM);
+}
+
+#[test]
+fn tudo_ou_nada_com_uma_falha_nao_grava_nada_e_lista_a_falha() {
+    let p = Pasta::nova("tn_falha");
+    let perfis = perfis_em(&p);
+    let alvos = vec![
+        alvo("lotofacil", banco_em(&p, "lotofacil")),
+        alvo("megasena", p.0.join("inexistente.db")),
+        alvo("quina", banco_em(&p, "quina")),
+    ];
+    let r = exportar_tudo_ou_nada(&alvos, &perfis, &p.saida(), || {
+        panic!("o relógio só é lido depois de todas passarem")
+    })
+    .expect("falha de loteria não é Err");
+    let ResultadoExportacao::Cancelado(falhas) = r else {
+        panic!("esperava Cancelado, veio {r:?}");
+    };
+    assert_eq!(falhas.len(), 1);
+    assert_eq!(falhas[0].slug, "megasena");
+    assert!(matches!(falhas[0].erro, SpiderError::BancoNaoEncontrado(_)));
+    assert!(!p.saida().exists(), "nada pode ter sido gravado");
+    assert!(!p.0.join("inexistente.db").exists(), "banco não é criado");
+}
+
+#[test]
+fn tudo_ou_nada_com_features_desatualizadas_cancela_tudo() {
+    let p = Pasta::nova("tn_desatualizada");
+    let perfis = perfis_em(&p);
+    let quina = banco_em(&p, "quina");
+    // Concurso novo sem rodar `sync features`: a quina é recusada.
+    let cfg = cfg_de("quina");
+    let mut conn = db::abrir(&quina).expect("banco");
+    db::salvar_resultados(&mut conn, &historico(cfg, N + 1)[N as usize..]).expect("novo");
+    drop(conn);
+    let alvos = vec![
+        alvo("megasena", banco_em(&p, "megasena")),
+        alvo("quina", quina),
+    ];
+    let ResultadoExportacao::Cancelado(falhas) =
+        exportar_tudo_ou_nada(&alvos, &perfis, &p.saida(), relogio).expect("exportação")
+    else {
+        panic!("esperava Cancelado");
+    };
+    assert_eq!(falhas.len(), 1);
+    assert_eq!(falhas[0].slug, "quina");
+    assert!(matches!(
+        falhas[0].erro,
+        SpiderError::FeaturesDesatualizadas { .. }
+    ));
+    assert!(!p.saida().exists());
+}
+
+#[test]
+fn tudo_ou_nada_uma_loteria_por_vez_preserva_as_outras_e_e_idempotente() {
+    let p = Pasta::nova("tn_uma_por_vez");
+    let perfis = perfis_em(&p);
+    let mega = alvo("megasena", banco_em(&p, "megasena"));
+    let quina = alvo("quina", banco_em(&p, "quina"));
+    let exportar = |a: &(&'static LoteriaConfig, PathBuf)| {
+        exportar_tudo_ou_nada(std::slice::from_ref(a), &perfis, &p.saida(), relogio)
+            .expect("exportação")
+    };
+    assert!(matches!(exportar(&mega), ResultadoExportacao::Gravado(_)));
+    let mega_antes = ler(&p.saida(), "megasena/historico.json");
+    assert!(matches!(exportar(&quina), ResultadoExportacao::Gravado(_)));
+    // A segunda loteria não mexeu na primeira, e ambas aparecem no índice.
+    assert_eq!(ler(&p.saida(), "megasena/historico.json"), mega_antes);
+    let v = json(&ler(&p.saida(), "index.json"));
+    assert!(v["loterias"]["megasena"].is_object() && v["loterias"]["quina"].is_object());
+    assert!(v["loterias"]["lotofacil"].is_null());
+    // Repetir não muda nenhum byte.
+    let antes: Vec<Vec<u8>> = listar(&p.saida())
+        .iter()
+        .map(|f| std::fs::read(f).expect("ler"))
+        .collect();
+    assert!(matches!(exportar(&quina), ResultadoExportacao::Gravado(_)));
+    let depois: Vec<Vec<u8>> = listar(&p.saida())
+        .iter()
+        .map(|f| std::fs::read(f).expect("ler"))
+        .collect();
+    assert_eq!(antes, depois);
+}
+
+#[test]
+fn tudo_ou_nada_com_relogio_falhando_nao_grava() {
+    let p = Pasta::nova("tn_relogio");
+    let perfis = perfis_em(&p);
+    let alvos = vec![alvo("quina", banco_em(&p, "quina"))];
+    let erro = exportar_tudo_ou_nada(&alvos, &perfis, &p.saida(), || {
+        Err(SpiderError::RelogioInvalido)
+    })
+    .expect_err("relógio inválido");
+    assert!(matches!(erro, SpiderError::RelogioInvalido));
+    assert!(!p.saida().exists());
+}
+
+#[test]
+fn gerar_exportacao_banco_inexistente_da_erro_sem_criar_arquivo() {
+    let p = Pasta::nova("gerar_sem_banco");
+    let perfis = perfis_em(&p);
+    let caminho = p.0.join("nao_existe.db");
+    let erro = gerar_exportacao(cfg_de("quina"), &caminho, &perfis).expect_err("sem banco");
+    assert_eq!(
+        erro.to_string(),
+        format!("banco não encontrado: {}", caminho.display())
+    );
+    assert!(!caminho.exists());
+}
+
+#[test]
+fn gerar_exportacao_de_uma_loteria_bate_com_a_geracao_direta() {
+    let p = Pasta::nova("gerar_igual");
+    let perfis = perfis_em(&p);
+    let caminho = banco_em(&p, "quina");
+    let gerado = gerar_exportacao(cfg_de("quina"), &caminho, &perfis).expect("gerar");
+    assert_eq!(gerado, lote("quina", N));
 }

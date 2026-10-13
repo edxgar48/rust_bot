@@ -67,7 +67,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
-- [ ] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
+- [x] 3.1a Mover a lógica de gravação da CLI e o tudo ou nada do `exportar todas` para `orquestracao`
 - [ ] 3.1b Comando `sync ciclo`
 - [ ] 3.2 Calendário de sorteios no `config.rs`
 - [ ] 3.3 Retentativas com backoff
@@ -1639,3 +1639,23 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   (calendário), consumida pela 3.3 e pela 3.6. A pedido, a 3.2 ganhou no plano: dias e horário por loteria,
   conferência do calendário contra os dias da semana dos últimos concursos (divergência = aviso), tolerância
   para feriados e concursos especiais (aviso até o próximo dia de sorteio) e a saída consumida pela 3.3/3.6.
+- 2026-10-13 — 3.1a entregue pelo `engenheiro-operacao`. Lógica de gravação e tudo ou nada do `exportar`
+  saíram de `src/bin/sync.rs` (cerca de 610 linhas a menos) para `src/orquestracao/gravacao.rs` e
+  `src/orquestracao/exportar.rs`. São submódulos de `src/orquestracao.rs`, com `pub use`, e a API atual
+  não muda. Na biblioteca: `atualizar` (leitura da página e planilha injetadas; acréscimo para a 3.1b não
+  duplicar raspagem + correções), `aplicar_atualizacao` -> `RelatorioAtualizacao` (`DesfechoAtualizacao`:
+  `SemNovidade`/`ProximoGravado`/`SaltoResolvido{backup}`, último concurso, buracos), `PastasAtualizar`
+  (`backups`, `cache`; a pasta de downloads fica com quem fornece a planilha), `processar_e_salvar` ->
+  `ResumoGravacao`, `validar_lote`, `conciliar_cache`, `gerar_exportacao`, `exportar_tudo_ou_nada` ->
+  `ResultadoExportacao::{Gravado, Cancelado}` (a 3.1b chama com uma loteria por vez). A biblioteca não
+  imprime: emite `Evento` (Display com o texto antigo, `destino()` Padrao/Erro) para um observador
+  `FnMut(Evento)`. Assim a ordem das mensagens intercaladas com o download fica igual, e a 3.5 pode mandar
+  os eventos para log. `SpiderError` ganhou `BancoNaoEncontrado`, `RelogioInvalido`, `LoteRecusado` e
+  `CaminhoDaPlanilhaFalhou` (`#[source]`, mesma cadeia "Caused by"). Testes: 10 de `atualizar` movidos do
+  binário para a lib com as mesmas asserções, +12 na lib e +7 em `tests/exportar.rs`, sem expectativa
+  existente alterada. `exportar todas` antes/depois: arquivos idênticos byte a byte, exceto `gerado_em`
+  do `index.json`. Revisão: aprovada com ressalvas, sem ALTA nem MÉDIA. As 3 BAIXA foram corrigidas numa
+  rodada: dica de buracos com uma única fonte de texto (`Evento::DicaBuracos`); campo `downloads` fora de
+  `PastasAtualizar`; o caminho do próximo concurso não relê o banco depois de gravar. Antes, uma falha
+  nessa releitura daria erro com o concurso já gravado. Gate: fmt, clippy ok; cargo test verde (lib 592,
+  bin 22, exportar 33, demais inalteradas); pytest 175; `validar todas` ok. **3.1a concluída.**
