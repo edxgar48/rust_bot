@@ -1729,3 +1729,25 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   real (release, 43 s): as três loterias ok, sem concurso novo, "Nada a publicar", exit 0. Na Lotofácil a 1ª
   tentativa do navegador falhou ("falha ao iniciar o Playwright: Failed to initialize") e a 2ª passou —
   falha transitória, a observar na 3.3.
+- 2026-10-13 — 3.3 não iniciada: o plano ("sorteio ~20h, tentativas até ~23h, nova tentativa no dia
+  seguinte") não define pontos que mudam a arquitetura da 3.3 e da 3.7. Perguntas devolvidas ao usuário,
+  com sugestões: (1) **quem repete** — um processo só que fica vivo das 21h às 23h dormindo entre
+  tentativas, ou o Agendador (3.7) dispara o `ciclo` várias vezes e cada execução é curta? sugestão:
+  processo único, `sync ciclo --aguardar` (ou flag equivalente) disparado uma vez por dia às 21h, com a
+  trava da 3.4 cobrindo a janela; (2) **o que dispara retentativa** — só "concurso esperado ainda não
+  saiu" (página mostra o concurso antigo em dia de sorteio, pelo `calendario::situacao`) e falha
+  transitória (navegador/Playwright, rede), não erro de validação/gravação; sugestão: sim, essas duas;
+  (3) **backoff** — intervalos crescentes a partir do horário de procura (ex.: 5, 10, 20, 30, 30… min),
+  limitado a 23h00 de Brasília, só para as loterias que ainda faltam; as que já chegaram seguem para
+  features/índice/exportar e o `publicar` roda uma vez no fim (ou a cada loteria que chegar?); (4) **dia
+  seguinte** = a próxima execução agendada (não um processo que dorme até amanhã); fora de dia de sorteio
+  ou com a loteria `EmDia`, o `ciclo` faz uma passada só, sem esperar; (5) as 3 tentativas curtas de
+  `downloader.rs` (2 s/4 s) ficam como estão, por baixo; (6) relógio e espera injetados na biblioteca
+  (testes sem dormir de verdade); (7) a pendência BAIXA da 3.1b — buraco que persiste refaz backup e
+  download da planilha a cada execução — entra aqui (no máximo uma vez por execução do `ciclo`, mesmo com
+  várias rodadas) ou fica para a 3.6?
+- 2026-10-13 — Respostas do usuário para a 3.3: sugestões (1)–(7) aceitas, com o disparo às **23h00** (não
+  21h); janela até **01h00** do dia seguinte; `publicar` **a cada loteria que chega** (não uma vez no fim);
+  buraco persistente resolvido aqui. Regras registradas na 3.3 do plano; 3.7 passa a disparar
+  `sync ciclo todas --aguardar` às 23h00. O horário de procura do calendário (21h, 3.2) não muda: segue
+  sendo o momento em que o concurso passa a ser esperado.
