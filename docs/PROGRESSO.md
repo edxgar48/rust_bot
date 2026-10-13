@@ -2022,3 +2022,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `registrar_tarefa.ps1` ganhou `-SoConectado` (LogonType Interactive, sem elevação, `-WindowStyle Hidden`,
   só roda com o usuário conectado; desconectado às 23h = roda no próximo login). Plano (3.7), README e +1
   teste (`-Mostrar -SoConectado`).
+- 2026-10-13 — Tarefa "rust_spider ciclo" registrada pelo usuário com `-SoConectado` (Interactive, próxima
+  às 23:00). Primeira execução pelo Agendador (`Start-ScheduledTask`, 13:04): `LastTaskResult` 0, 25 s, uma
+  passada (fora da janela), navegador e SSH ok na sessão do usuário; avisos esperados do concurso de
+  2026-10-12 (feriado) em Lotofácil e Quina; três "Nada a publicar". **3.7 conferida de ponta a ponta.**
