@@ -2018,3 +2018,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   "sucesso". Lotofácil e Quina sem o concurso de 2026-10-12 (feriado de N. Sra. Aparecida) → aviso, sem
   falha; três `publicar` com "Nada a publicar" (o fetch por SSH em `BatchMode=yes` passou). Falta: registrar
   a tarefa e conferir sob S4U (navegador, chave SSH).
+- 2026-10-13 — Registro da tarefa pelo usuário deu "Acesso negado" (S4U exige elevação). A pedido,
+  `registrar_tarefa.ps1` ganhou `-SoConectado` (LogonType Interactive, sem elevação, `-WindowStyle Hidden`,
+  só roda com o usuário conectado; desconectado às 23h = roda no próximo login). Plano (3.7), README e +1
+  teste (`-Mostrar -SoConectado`).

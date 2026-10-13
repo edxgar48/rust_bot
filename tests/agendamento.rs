@@ -198,6 +198,31 @@ fn registrar_tarefa_mostrar_imprime_definicao_sem_registrar() {
 }
 
 #[test]
+fn registrar_tarefa_mostrar_so_conectado_usa_logon_interativo() {
+    if !tem_powershell() {
+        return;
+    }
+    let script = raiz().join("scripts").join("registrar_tarefa.ps1");
+    let o = powershell(&[
+        "-File",
+        script.to_str().unwrap(),
+        "-Mostrar",
+        "-SoConectado",
+    ]);
+    let t = texto(&o);
+    assert!(o.status.success(), "{t}");
+    for esperado in [
+        "LogonType Interactive",
+        "-WindowStyle Hidden",
+        "23:00",
+        "nada foi registrado",
+    ] {
+        assert!(t.contains(esperado), "faltou `{esperado}` em: {t}");
+    }
+    assert!(!t.contains("S4U"), "{t}");
+}
+
+#[test]
 fn registrar_tarefa_mostrar_normaliza_pasta_com_barra_final() {
     if !tem_powershell() {
         return;

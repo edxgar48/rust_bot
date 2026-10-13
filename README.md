@@ -569,6 +569,7 @@ cargo build --release                       # gera target\release\sync.exe
 scripts\registrar_tarefa.ps1 -Mostrar       # só imprime a definição, não registra
 scripts\registrar_tarefa.ps1 [-Pasta C:\...]  # cria ou atualiza a tarefa "rust_spider ciclo"
 scripts\registrar_tarefa.ps1 -Remover       # apaga a tarefa
+scripts\registrar_tarefa.ps1 -SoConectado  # alternativa sem elevação (só roda com você logado)
 ```
 
 Se a política de execução bloquear os scripts, use
@@ -595,7 +596,11 @@ Se a política de execução bloquear os scripts, use
 - `-Pasta` é resolvida para caminho absoluto sem barra final antes de ir para a
   tarefa (pasta inexistente = erro; raiz de unidade como `C:\` é recusada).
 - O gatilho das 23h00 usa o fuso da máquina, que precisa ser o de Brasília.
-  Registrar com S4U pode exigir PowerShell elevado. Chave SSH protegida por
+  Registrar com S4U exige PowerShell elevado ("Executar como administrador");
+  se mesmo assim der "Acesso negado" (ex.: conta Microsoft, política da
+  máquina), use `-SoConectado`: LogonType Interactive, sem elevação, janela
+  oculta, mas só roda com o usuário conectado (desconectado às 23h = roda no
+  próximo login, pelo `StartWhenAvailable`). Chave SSH protegida por
   ssh-agent ou passphrase pode não estar acessível sob S4U: confira na primeira
   execução manual.
 - **Não recompile o release entre 23h e 01h**: com o `sync.exe` em uso o
