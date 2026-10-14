@@ -41,4 +41,14 @@ npm run preview    # serve dist/ localmente
   `volante.ts`, `ranking.ts`, `segmentado.ts`. Catálogo: `npm run dev` e abrir `#catalogo`;
   para vê-lo num build, `npm run build:catalogo && npm run preview:catalogo`
   (`dist-catalogo/`, ignorado pelo git). O build normal não contém o catálogo.
+- Telas e rotas (5.1): `src/lib/rotas.ts` (hash `#/inicio`, `#/forca`, `#/conferir`,
+  `#/estatisticas`, `#/entenda`; padrão `#/inicio`; puro e testado), `src/lib/datas.ts`
+  (AAAA-MM-DD para dd/mm/aaaa sem `Date`), `src/telas/Inicio.svelte` + `inicio.ts` (estado de
+  sincronização -> o que a tela mostra). As outras abas são placeholders.
+- Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
+  `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
+  `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em
+  segundo plano, quando a Início está atualizada: um tipo de arquivo por vez, em
+  `requestIdleCallback`, em silêncio, e nunca com Save-Data ligado. Assim o app inteiro funciona
+  sem rede mesmo que o usuário só tenha aberto a Início.
 - `testes/`: fixtures (cópias de `publico/v1/`) e testes de dados.

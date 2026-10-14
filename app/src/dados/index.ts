@@ -8,3 +8,4 @@ export * from './erros';
 export * from './hash';
 export * from './tipos';
 export * from './validacao';
+export * from './sob-demanda';

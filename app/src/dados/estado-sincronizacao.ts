@@ -1,6 +1,7 @@
 // Estado de sincronização para a interface: função pura que, dado o resultado
 // de `sincronizar` (ou o erro que ele lançou) e o que há no cache, diz em que
 // situação estão os dados e o texto em português (src/lib/textos.ts).
+import { formatarDataSorteio } from '../lib/datas';
 import { textos } from '../lib/textos';
 import type { ResultadoCache, ResultadoSincronizacao } from './cliente';
 import { ErroDados } from './erros';
@@ -37,11 +38,7 @@ export function formatarDataHora(iso: string): string | null {
   return `${partes.day}/${partes.month}/${partes.year} ${partes.hour}:${partes.minute}`;
 }
 
-/** "2026-10-07" -> "07/10/2026" (data de sorteio do contrato, sem fuso). */
-export function formatarDataSorteio(data: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : data;
-}
+export { formatarDataSorteio };
 
 /** Data a exibir quando os dados vêm do cache. */
 function dataDoCache(cache: ResultadoCache | null): string | null {

@@ -10,6 +10,8 @@ export type NomeIcone =
   | 'entenda'
   | 'info'
   | 'erro'
+  | 'atualizar'
+  | 'sem-rede'
   | 'tema-automatico'
   | 'tema-claro'
   | 'tema-escuro';

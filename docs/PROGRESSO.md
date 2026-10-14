@@ -84,14 +84,17 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 4.3 Cache e offline (IndexedDB com queda para memória, índice guardado, estado de sincronização, service worker só do shell; 90 testes; verificado em Chrome em modo avião e com hash falso, 2026-10-14; ícones PNG ficam para a 8.1)
 - [x] 4.4 Sistema de design (tokens, tema automático/claro/escuro, 10 componentes, catálogo em #catalogo só em dev; 168 testes, contraste ≥4,5:1 testado; capturas em 360 e 1280 px conferidas, 2026-10-14; botão do volante 8×10 mede 32,8×44 px em 360 px)
 - [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
-- [ ] 5.1 Início · 5.2 Tabela de força · 5.3 Volante e detalhe da dezena · 5.4 "Entenda" e avisos
+- [x] 5.1 Início (roteamento por hash, 5 estados, abertura baixa só index + ultimo e o resto em segundo plano; 216 testes; capturas 360/1280 px conferidas, 2026-10-14; download de tabela_geral e historico em segundo plano mantido, decisão do usuário)
+- [ ] 5.2 Tabela de força
+- [ ] 5.3 Volante e detalhe da dezena
+- [ ] 5.4 "Entenda" e avisos
 - [ ] 6.1 Histórico · 6.2 Conferir jogo · 6.3 Jogos salvos · 6.4 Conferência automática
 - [ ] 7.1 Funções de estatística · 7.2 Telas e gráficos · 7.3 Comparação com o acaso
 - [ ] 8.1 Instalação PWA · 8.2 Testes ponta a ponta · 8.3 Lighthouse · 8.4 Hospedagem e deploy · 8.5 Runbook · 8.6 Verificação de contrato no build
 
 ## Decisões em aberto
 
-- [ ] Front-end: valor enumerado novo no contrato (grau/direção/normalização) deve recusar o arquivo (hoje) ou mostrar "desconhecido"? O contrato não diz; decidir antes da 5.2
+- [x] Front-end: valor enumerado novo no contrato (grau/direção/normalização) recusa o arquivo e o app mantém o cache; decidido pelo usuário em 2026-10-14 ("deixar como está")
 - [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1), estilo visual (4.5), backup de jogos salvos (6.3)
 - [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)

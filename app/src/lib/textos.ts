@@ -28,8 +28,6 @@ export const textos = {
         ? 'Dado recusado (falha de conferência), mantendo os anteriores.'
         : `Dado recusado (falha de conferência), mantendo os anteriores, de ${data}.`,
     semDados: 'Ainda sem dados. Conecte-se à internet para baixar a primeira vez.',
-    ultimoConcurso: (rotulo: string, concurso: number, data: string) =>
-      `${rotulo}: concurso ${concurso}, sorteado em ${data}`,
     armazenamentoVolatil:
       'Este navegador não permite guardar dados neste aparelho (modo privado ou bloqueado). Os dados valem só até fechar o app.',
     atualizacaoDisponivel: 'Nova versão do app pronta. Ela vale na próxima vez que você abrir.',
@@ -40,9 +38,17 @@ export const textos = {
     quina: 'Quina',
   },
   inicio: {
-    ultimoResultado: 'Último resultado',
-    dezenasSorteadas: 'Dezenas sorteadas',
-    semResultado: 'Sem resultado guardado para esta loteria.',
+    titulo: 'Resultados',
+    concursoData: (concurso: number, data: string) => `Concurso ${concurso} · ${data}`,
+    dezenasSorteadas: (loteria: string) => `Dezenas sorteadas na ${loteria}`,
+    semResultado: 'Sem dezenas guardadas para este concurso.',
+    semLoteria: 'Ainda sem dados desta loteria',
+    carregando: 'Carregando resultados…',
+    atualizar: 'Atualizar',
+    atualizando: 'Atualizando…',
+    tentarDeNovo: 'Tentar de novo',
+    independencia:
+      'Cada sorteio é independente: nenhuma dezena tem mais chance de sair por causa do histórico. Este app não prevê resultados.',
   },
   tema: {
     // `atual` é o rótulo da preferência em uso.
