@@ -21,11 +21,11 @@ export function formatarVariacao(variacao: number | null): string {
   return '0';
 }
 
-/** Índice de força com 2 casas, vírgula decimal e menos tipográfico. */
+/** Índice de força com 3 casas, vírgula decimal e menos tipográfico. */
 export function formatarIndice(indice: number): string {
   const texto = new Intl.NumberFormat('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
   }).format(indice);
   return texto.replace('-', MENOS);
 }

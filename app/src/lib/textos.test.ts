@@ -49,8 +49,8 @@ describe('rótulos dos identificadores do contrato', () => {
       'Forte',
       'Muito forte',
     ]);
-    expect(rotuloEvidenciaDirecao('vies')).toBe('A favor de viés');
-    expect(rotuloEvidenciaDirecao('acaso')).toBe('A favor do acaso');
+    expect(rotuloEvidenciaDirecao('vies')).toBe('viés');
+    expect(rotuloEvidenciaDirecao('acaso')).toBe('acaso');
     expect(rotuloNormalizacao('zscore')).toContain('z-score');
     expect(rotuloNormalizacao('minmax')).toContain('0 a 1');
   });

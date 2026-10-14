@@ -50,6 +50,36 @@ export const textos = {
     independencia:
       'Cada sorteio é independente: nenhuma dezena tem mais chance de sair por causa do histórico. Este app não prevê resultados.',
   },
+  forca: {
+    titulo: 'Tabela de força',
+    subtitulo: (proximo: number, ultimoSorteado: number) =>
+      `Próximo concurso ${proximo}, com dados até o ${ultimoSorteado}`,
+    perfilJanela: (perfil: string, janela: number) =>
+      janela === 0
+        ? `Perfil ${perfil} · histórico total`
+        : `Perfil ${perfil} · janela de ${janela} ${janela === 1 ? 'concurso' : 'concursos'}`,
+    rotuloLoteria: 'Loteria',
+    rotuloVisao: 'Forma de exibição',
+    visaoLista: 'Lista',
+    visaoVolante: 'Volante (em breve)',
+    volanteEmBreve: 'A visão em volante ainda não está pronta. Por enquanto, use a lista.',
+    aviso: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
+    colunas: {
+      posicao: 'Pos.',
+      dezena: 'Dez.',
+      variacao: 'Variação',
+      indice: 'Índice',
+      evidencia: 'Evidência (grau · direção)',
+    },
+    lista: (loteria: string, quantidade: number) =>
+      `Ranking das ${quantidade} dezenas da ${loteria}`,
+    carregando: 'Carregando a tabela de força…',
+    tentarDeNovo: 'Tentar de novo',
+    tentando: 'Tentando…',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    recusadoSemAnterior:
+      'O arquivo desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+  },
   tema: {
     // `atual` é o rótulo da preferência em uso.
     alternar: (atual: string) => `Tema: ${atual}. Toque para trocar.`,
@@ -105,8 +135,8 @@ export const rotulosEvidenciaGrau: Readonly<Record<GrauEvidencia, string>> = {
 };
 
 export const rotulosEvidenciaDirecao: Readonly<Record<DirecaoEvidencia, string>> = {
-  vies: 'A favor de viés',
-  acaso: 'A favor do acaso',
+  vies: 'viés',
+  acaso: 'acaso',
 };
 
 export const rotulosNormalizacao: Readonly<Record<Normalizacao, string>> = {

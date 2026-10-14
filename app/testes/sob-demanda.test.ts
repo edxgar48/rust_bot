@@ -107,7 +107,7 @@ describe('garantirArquivos (sob demanda)', () => {
     const r = await garantirArquivos(cliente(new ServidorFalso(), undefined, false), {
       arquivos: ['historico'],
     });
-    expect(r).toEqual({ cache: null, falhou: true });
+    expect(r).toEqual({ cache: null, falhou: true, falha: 'sem_rede' });
   });
 
   it('arquivo adulterado: falhou, e o guardado não é trocado', async () => {
@@ -124,6 +124,7 @@ describe('garantirArquivos (sob demanda)', () => {
     servidor.arquivos.set('quina/historico.json', trocado);
     const r = await garantirArquivos(cliente(servidor, arm), { arquivos: ['historico'] });
     expect(r.falhou).toBe(true);
+    expect(r.falha).toBe('recusado');
     expect((await arm.ler('quina/historico.json'))?.sha256).toBe(antes?.sha256);
     expect(r.cache?.loterias.quina?.dados.historico).not.toBeNull();
   });

@@ -12,9 +12,22 @@
     indice: number;
     grau: GrauEvidencia | null;
     direcao: DirecaoEvidencia | null;
+    /** Se informado, a linha vira botão e chama isto com a dezena; sem ele, não é interativa. */
+    aoEscolher?: (numero: number) => void;
+    /** `false` quando um cabeçalho de coluna já diz "Evidência" (o leitor de tela ainda ouve). */
+    rotuloEvidenciaVisivel?: boolean;
   }
 
-  let { posicao, numero, variacao, indice, grau, direcao }: Props = $props();
+  let {
+    posicao,
+    numero,
+    variacao,
+    indice,
+    grau,
+    direcao,
+    aoEscolher,
+    rotuloEvidenciaVisivel = true,
+  }: Props = $props();
 
   const sentido = $derived(sentidoVariacao(variacao));
   const setas = { subiu: '▲', caiu: '▼', igual: '■', sem: '' } as const;
@@ -35,7 +48,7 @@
   );
 </script>
 
-<li class="linha">
+{#snippet corpo()}
   <span class="posicao">
     <span aria-hidden="true">{posicao}º</span>
     <span class="so-leitor">{textos.ranking.posicao(posicao)}</span>
@@ -55,20 +68,53 @@
         <span class="segmento" data-aceso={i <= acesos}></span>
       {/each}
     </span>
-    <span>{textos.ranking.evidencia}: {textoEvidencia}</span>
+    {#if rotuloEvidenciaVisivel}
+      <span>{textos.ranking.evidencia}: {textoEvidencia}</span>
+    {:else}
+      <span class="so-leitor">{textos.ranking.evidencia}:</span>
+      <span>{textoEvidencia}</span>
+    {/if}
   </span>
+{/snippet}
+
+<li>
+  {#if aoEscolher}
+    <button type="button" class="linha" onclick={() => aoEscolher(numero)}>
+      {@render corpo()}
+    </button>
+  {:else}
+    <div class="linha">
+      {@render corpo()}
+    </div>
+  {/if}
 </li>
 
 <style>
+  li {
+    border-bottom: 1px solid var(--cor-contorno-var);
+    list-style: none;
+  }
   .linha {
     display: grid;
     grid-template-columns: 2.5rem auto 1fr auto;
     align-items: center;
     column-gap: var(--esp-3);
     row-gap: var(--esp-1);
+    width: 100%;
     padding: var(--esp-2) var(--esp-4);
-    border-bottom: 1px solid var(--cor-contorno-var);
-    list-style: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+  /* Interativa (botão): alvo de toque inteiro e foco por dentro da linha. */
+  button.linha {
+    min-height: var(--alvo-minimo);
+    cursor: pointer;
+  }
+  button.linha:focus-visible {
+    outline-offset: -3px;
   }
   .posicao {
     font: var(--fonte-titulo-m);

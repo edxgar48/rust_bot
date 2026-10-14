@@ -1,0 +1,26 @@
+﻿loteria;perfil;concurso;data_sorteio;dezena;posicao;total;variacao_posicao;saiu;janela;frequencia;maior_espaco;maior_espaco_ocorrencias;menor_espaco;menor_espaco_ocorrencias;soma_variacoes;espaco_final;repeticoes_total;repeticao_atual;evidencia_grau;evidencia_direcao
+lotofacil;padrao_v1;3804;;25;1;4,317952;1;;50;30;5;1;0;21;25;4;21;0;fraca;a favor de viés
+lotofacil;padrao_v1;3804;;3;2;4,177970;-1;;50;37;2;4;0;27;20;0;27;5;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;19;3;2,873403;1;;50;30;4;1;0;20;15;0;20;11;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;5;4;2,207295;2;;50;34;4;1;0;23;25;1;23;0;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;4;5;2,011691;3;;50;34;3;1;0;22;26;2;22;0;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;17;6;1,829876;5;;50;26;7;1;0;13;19;2;13;0;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;15;7;1,790881;2;;50;33;3;2;0;22;20;0;22;4;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;24;8;1,044507;2;;50;33;2;3;0;20;21;1;20;0;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;12;9;0,861734;3;;50;34;2;4;0;21;26;0;21;5;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;11;10;0,774696;3;;50;33;4;1;0;21;26;0;21;3;muito fraca;a favor de viés
+lotofacil;padrao_v1;3804;;8;11;0,484093;-4;;50;34;3;1;0;21;23;0;21;1;fraca;a favor de viés
+lotofacil;padrao_v1;3804;;9;12;0,148059;2;;50;31;4;2;0;20;28;0;20;4;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;18;13;-0,121459;6;;50;24;5;1;0;13;30;4;13;0;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;1;14;-0,178728;4;;50;29;3;1;0;16;28;3;16;0;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;23;15;-0,314162;1;;50;33;3;1;0;21;28;0;21;3;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;16;16;-0,598388;-13;;50;30;5;1;0;19;29;0;19;1;forte;a favor de viés
+lotofacil;padrao_v1;3804;;13;17;-1,066110;-2;;50;30;4;1;0;14;20;0;14;1;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;7;18;-1,506893;-1;;50;30;4;1;0;17;27;0;17;1;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;10;19;-1,575299;2;;50;26;4;2;0;15;25;1;15;0;fraca;a favor de viés
+lotofacil;padrao_v1;3804;;14;20;-1,951457;2;;50;29;3;2;0;14;26;1;14;0;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;21;21;-2,029683;-1;;50;30;3;1;0;16;27;0;16;4;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;22;22;-2,287018;-17;;50;22;7;1;0;12;25;0;12;1;fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;6;23;-3,038205;0;;50;29;3;2;0;15;30;0;15;2;muito fraca;a favor do acaso
+lotofacil;padrao_v1;3804;;20;24;-3,674817;0;;50;27;4;1;0;15;34;0;15;3;moderada;a favor de viés
+lotofacil;padrao_v1;3804;;2;25;-4,179939;0;;50;22;6;2;0;11;37;1;11;0;fraca;a favor do acaso

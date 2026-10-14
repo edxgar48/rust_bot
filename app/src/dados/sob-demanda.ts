@@ -7,6 +7,7 @@
 //     o usuário nunca tenha aberto as outras telas online.
 // Sem Svelte aqui, para testar sem navegador.
 import type { ClienteDados, OpcoesSincronizacao, ResultadoCache } from './cliente';
+import { ErroDados, ehErroDeRede } from './erros';
 import type { ChaveArquivo } from './tipos';
 
 /** O que a abertura sincroniza e lê: só o que a Início usa. */
@@ -15,11 +16,16 @@ export const OPCOES_DA_ABERTURA: OpcoesSincronizacao = { arquivos: ['ultimo'] };
 /** Arquivos baixados em segundo plano, do menor para o maior. */
 export const ARQUIVOS_EM_SEGUNDO_PLANO: readonly ChaveArquivo[] = ['tabela_geral', 'historico'];
 
+/** `sem_rede`: não deu para falar com o servidor; `recusado`: veio, mas falhou na conferência. */
+export type FalhaDaGarantia = 'nenhuma' | 'sem_rede' | 'recusado';
+
 export interface ResultadoGarantia {
   /** O que há guardado para o pedido (pode ser o cache antigo se a rede falhou). */
   readonly cache: ResultadoCache | null;
   /** `true` se o índice ou algum arquivo pedido não pôde ser atualizado. */
   readonly falhou: boolean;
+  /** Por que falhou; recusa (dado inválido) tem precedência sobre falta de rede. */
+  readonly falha: FalhaDaGarantia;
 }
 
 /**
@@ -31,16 +37,21 @@ export async function garantirArquivos(
   cliente: Pick<ClienteDados, 'lerCache' | 'sincronizar'>,
   opcoes: OpcoesSincronizacao,
 ): Promise<ResultadoGarantia> {
-  let falhou = false;
+  const erros: ErroDados[] = [];
   try {
     const resultado = await cliente.sincronizar(opcoes);
-    falhou = Object.values(resultado.loterias).some(
-      (l) => l && Object.values(l.arquivos).some((a) => a?.estado === 'falhou'),
-    );
-  } catch {
-    falhou = true;
+    for (const loteria of Object.values(resultado.loterias)) {
+      if (!loteria) continue;
+      for (const arquivo of Object.values(loteria.arquivos)) {
+        if (arquivo?.estado === 'falhou') erros.push(arquivo.erro);
+      }
+    }
+  } catch (e) {
+    erros.push(e instanceof ErroDados ? e : new ErroDados('rede', String(e)));
   }
-  return { cache: await cliente.lerCache(opcoes), falhou };
+  const falha: FalhaDaGarantia =
+    erros.length === 0 ? 'nenhuma' : erros.every(ehErroDeRede) ? 'sem_rede' : 'recusado';
+  return { cache: await cliente.lerCache(opcoes), falhou: erros.length > 0, falha };
 }
 
 /** Baixa o resto dos arquivos, um tipo por vez, cedendo a vez entre eles. Nunca lança. */

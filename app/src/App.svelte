@@ -8,6 +8,7 @@
   import { idsAbas, textos, type IdAba } from './lib/textos';
   import { registrarServiceWorker } from './pwa';
   import { criarSessao } from './sessao.svelte';
+  import Forca from './telas/Forca.svelte';
   import Inicio from './telas/Inicio.svelte';
 
   const iconesDasAbas: Record<IdAba, NomeIcone> = {
@@ -86,6 +87,8 @@
           ocupada={sessao.ocupada}
           aoAtualizar={() => void sessao.atualizar()}
         />
+      {:else if abaAtual === 'forca'}
+        <Forca fonte={sessao} />
       {:else}
         <h2 id="titulo-aba">{textos.abas[abaAtual]}</h2>
         <p>{textos.placeholder}</p>

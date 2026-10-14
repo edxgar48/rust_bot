@@ -72,9 +72,9 @@ describe('formatação do ranking', () => {
     expect(sentidoVariacao(null)).toBe('sem');
   });
   it('índice com 2 casas, vírgula e menos tipográfico', () => {
-    expect(formatarIndice(4.063717154)).toBe('4,06');
-    expect(formatarIndice(-0.4)).toBe('−0,40');
-    expect(formatarIndice(0)).toBe('0,00');
+    expect(formatarIndice(4.063717154)).toBe('4,064');
+    expect(formatarIndice(-0.4)).toBe('−0,400');
+    expect(formatarIndice(0)).toBe('0,000');
   });
   it('segmentos do grau de evidência', () => {
     expect(segmentosDoGrau('muito_fraca')).toBe(1);

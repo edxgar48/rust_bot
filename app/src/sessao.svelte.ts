@@ -62,6 +62,8 @@ export function criarSessao() {
      * (ou mudou) e devolve o cache; sem rede devolve o que já estava guardado.
      */
     garantir: (opcoes: OpcoesSincronizacao) => garantirArquivos(cliente, opcoes),
+    /** Só o que está guardado, sem rede (para mostrar de imediato antes de `garantir`). */
+    lerCache: (opcoes: OpcoesSincronizacao) => cliente.lerCache(opcoes),
     get situacao() {
       return situacao;
     },

@@ -85,7 +85,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 4.4 Sistema de design (tokens, tema automático/claro/escuro, 10 componentes, catálogo em #catalogo só em dev; 168 testes, contraste ≥4,5:1 testado; capturas em 360 e 1280 px conferidas, 2026-10-14; botão do volante 8×10 mede 32,8×44 px em 360 px)
 - [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
 - [x] 5.1 Início (roteamento por hash, 5 estados, abertura baixa só index + ultimo e o resto em segundo plano; 216 testes; capturas 360/1280 px conferidas, 2026-10-14; download de tabela_geral e historico em segundo plano mantido, decisão do usuário)
-- [ ] 5.2 Tabela de força
+- [x] 5.2 Tabela de força (lista por loteria, 5 estados, conferida contra a saída real do `sync tabela` nas 3 loterias; 273 testes; capturas 360/1280 px, 2026-10-14; visão Volante fica para a 5.3)
 - [ ] 5.3 Volante e detalhe da dezena
 - [ ] 5.4 "Entenda" e avisos
 - [ ] 6.1 Histórico · 6.2 Conferir jogo · 6.3 Jogos salvos · 6.4 Conferência automática

@@ -4,7 +4,7 @@
 import { formatarDataSorteio } from '../lib/datas';
 import { textos } from '../lib/textos';
 import type { ResultadoCache, ResultadoSincronizacao } from './cliente';
-import { ErroDados } from './erros';
+import { ErroDados, ehErroDeRede } from './erros';
 
 export type TipoEstadoSincronizacao =
   'sincronizando' | 'atualizado' | 'sem_rede' | 'recusado' | 'sem_dados';
@@ -76,9 +76,6 @@ export interface EntradaEstado {
   readonly agora: Date;
 }
 
-/** Códigos de erro que significam "não consegui falar com o servidor". */
-const ERROS_DE_REDE = new Set(['rede', 'http']);
-
 function errosDoResultado(resultado: ResultadoSincronizacao): ErroDados[] {
   const erros: ErroDados[] = [];
   for (const loteria of Object.values(resultado.loterias)) {
@@ -112,7 +109,7 @@ export function estadoSincronizacao(entrada: EntradaEstado): EstadoSincronizacao
   }
 
   const data = dataDoCache(cache);
-  const recusado = erros.some((e) => !ERROS_DE_REDE.has(e.codigo));
+  const recusado = erros.some((e) => !ehErroDeRede(e));
   return recusado
     ? { tipo: 'recusado', dataDosDados: data, texto: comData(data, textos.sincronizacao.recusado) }
     : { tipo: 'sem_rede', dataDosDados: data, texto: comData(data, textos.sincronizacao.semRede) };

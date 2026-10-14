@@ -19,6 +19,13 @@ export class ErroDados extends Error {
   }
 }
 
+/** Códigos que significam "não consegui falar com o servidor" (os demais são dado recusado). */
+const CODIGOS_DE_REDE: ReadonlySet<CodigoErro> = new Set<CodigoErro>(['rede', 'http']);
+
+export function ehErroDeRede(erro: ErroDados): boolean {
+  return CODIGOS_DE_REDE.has(erro.codigo);
+}
+
 export class ErroSchemaNaoSuportado extends ErroDados {
   readonly versaoEncontrada: unknown;
 

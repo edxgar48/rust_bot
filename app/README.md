@@ -45,6 +45,16 @@ npm run preview    # serve dist/ localmente
   `#/estatisticas`, `#/entenda`; padrão `#/inicio`; puro e testado), `src/lib/datas.ts`
   (AAAA-MM-DD para dd/mm/aaaa sem `Date`), `src/telas/Inicio.svelte` + `inicio.ts` (estado de
   sincronização -> o que a tela mostra). As outras abas são placeholders.
+- Tabela de força (5.2): `src/telas/Forca.svelte` + `forca.ts` (visão pura: `tabela_geral` validada ->
+  linhas em ordem de posição, subtítulo, perfil/janela e estado). Lê por `sessao.lerCache` (mostra o
+  cache na hora) e `sessao.garantir` (`ResultadoGarantia.falha`: `sem_rede` ou `recusado`). Loteria
+  escolhida: URL `#/forca?loteria=quina` (vale mais), senão a última escolha em localStorage
+  (`lib/loteria-guardada.ts`, tolerante a falha), senão Lotofácil; trocar usa `history.replaceState`
+  (sem poluir o histórico). A visão Volante é da 5.3 (hoje só um aviso "em breve"). O ponto de
+  extensão do detalhe da dezena é a prop `aoEscolher(dezena)`: sem ela as linhas não são interativas.
+  Os CSV em `testes/fixtures/sync-tabela/` são a saída de `sync tabela <loteria> --perfil padrao_v1`
+  (gerada junto das fixtures); regerar com o `sync tabela` quando as fixtures de `publico/v1/` forem
+  renovadas.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

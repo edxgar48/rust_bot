@@ -50,7 +50,6 @@ describe('App: navegação por hash', () => {
   });
 
   it.each([
-    ['#/forca', 'Força'],
     ['#/conferir', 'Conferir'],
     ['#/estatisticas', 'Estatísticas'],
     ['#/entenda', 'Entenda'],
@@ -60,6 +59,27 @@ describe('App: navegação por hash', () => {
     expect(abaAtiva()).toBe(aba);
     expect(document.querySelector('main h2')?.textContent).toBe(aba);
     expect(document.querySelector('main')?.textContent).toContain('em construção');
+  });
+
+  it('abrir direto em #/forca ativa a aba Força e mostra a Tabela de força (sem rede: sem dados)', async () => {
+    montarApp('#/forca');
+    await esperar(60);
+    expect(abaAtiva()).toBe('Força');
+    expect(document.querySelector('main h2')?.textContent).toBe('Tabela de força');
+    expect(document.querySelector('main')?.textContent).not.toContain('em construção');
+    expect(document.querySelector('main')?.textContent).toContain('Ele não prevê o sorteio.');
+    const alertas = Array.from(document.querySelectorAll('main [role="alert"]')).map(
+      (a) => a.textContent,
+    );
+    expect(alertas.some((t) => t?.includes('Ainda sem dados'))).toBe(true);
+  });
+
+  it('#/forca?loteria=quina abre na Quina', async () => {
+    montarApp('#/forca?loteria=quina');
+    await esperar(60);
+    expect(abaAtiva()).toBe('Força');
+    const marcada = document.querySelector('main [role="radio"][aria-checked="true"]');
+    expect(marcada?.textContent).toContain('Quina');
   });
 
   it('hash desconhecido cai na Início', async () => {
