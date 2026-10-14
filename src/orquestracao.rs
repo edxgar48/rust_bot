@@ -29,7 +29,9 @@
 //!
 //! Os fluxos de gravação (`baixar`, `importar`, `atualizar`) ficam em
 //! `gravacao` e a geração/gravação do `sync exportar` em `exportar`
-//! (tarefa 3.1a); a API é reexportada aqui.
+//! (tarefa 3.1a); a API é reexportada aqui. Os alertas do `sync ciclo`
+//! (rascunhos de e-mail após N noites com falha, tarefa 3.6) ficam em
+//! `alertas`.
 
 use crate::avaliacao::{
     self, Cauda, Classificacao, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte,
@@ -49,12 +51,14 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 mod aguardar;
+mod alertas;
 mod calendario;
 mod ciclo;
 mod exportar;
 mod gravacao;
 
 pub use aguardar::*;
+pub use alertas::*;
 pub use calendario::*;
 pub use ciclo::*;
 pub use exportar::*;

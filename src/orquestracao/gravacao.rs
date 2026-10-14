@@ -10,6 +10,7 @@
 //! O relógio, a leitura da página e o download da planilha entram como
 //! funções, para testar sem rede. Nenhum SQL: tudo passa por `db`.
 
+use super::alertas::EventoAlerta;
 use super::ciclo::EventoCiclo;
 use crate::backup;
 use crate::config::LoteriaConfig;
@@ -91,6 +92,8 @@ pub enum Evento {
     },
     /// Passos do `sync ciclo` (3.1b).
     Ciclo(EventoCiclo),
+    /// Alertas do `sync ciclo` (3.6).
+    Alerta(EventoAlerta),
 }
 
 impl Evento {
@@ -100,6 +103,7 @@ impl Evento {
             Evento::Conciliacao(Conciliacao::Resolvida { .. }) => Destino::Padrao,
             Evento::Conciliacao(_) => Destino::Erro,
             Evento::Ciclo(e) => e.destino(),
+            Evento::Alerta(e) => e.destino(),
             _ => Destino::Padrao,
         }
     }
@@ -118,6 +122,7 @@ impl Evento {
             | Evento::Salto { .. }
             | Evento::BuracosRestantes { .. } => Nivel::Aviso,
             Evento::Ciclo(e) => e.nivel(),
+            Evento::Alerta(e) => e.nivel(),
             _ => Nivel::Info,
         }
     }
@@ -217,6 +222,7 @@ impl fmt::Display for Evento {
                 )
             }
             Evento::Ciclo(e) => write!(f, "{e}"),
+            Evento::Alerta(e) => write!(f, "{e}"),
         }
     }
 }

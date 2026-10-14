@@ -23,7 +23,7 @@
 //!
 //! Quem lê o relógio é a CLI; aqui o "agora" sempre entra por parâmetro.
 
-use crate::config::{DiaSemana, LoteriaConfig};
+use crate::config::{DiaSemana, LoteriaConfig, SorteioEspecial};
 use crate::model::Resultado;
 use crate::tempo;
 use std::fmt;
@@ -92,6 +92,20 @@ pub fn consultar_dia(cfg: &LoteriaConfig, dias: i64) -> ConsultaDia {
         eh_dia_de_sorteio: eh_dia_de_sorteio(cfg, dias),
         procurar_desde: procurar_desde(cfg, dias),
     }
+}
+
+/// Sorteio especial cuja janela de parada contém o dia `dias` (tarefa 3.6):
+/// dentro dela a loteria pode estar sem concursos regulares e o `Atrasado` é
+/// aviso, não falha. Olha o ano do dia e os vizinhos, porque a janela da Mega
+/// da Virada atravessa a virada do ano.
+pub fn especial_em(cfg: &LoteriaConfig, dias: i64) -> Option<&'static SorteioEspecial> {
+    let (ano, _, _) = tempo::data_civil(dias);
+    cfg.sorteios_especiais.iter().find(|e| {
+        (ano - 1..=ano + 1).any(|a| {
+            let data = tempo::dias_desde_epoca(a, e.mes, e.dia);
+            dias >= data - e.dias_antes && dias <= data + e.dias_depois
+        })
+    })
 }
 
 /// Instante em texto no relógio de Brasília (`2026-10-13T21:00:00-03:00`).
@@ -909,6 +923,81 @@ mod tests {
             estado(&c, "2026-10-06", brasilia("2026-12-31", 23, 0)),
             EstadoCalendario::EmDia
         );
+    }
+
+    // -------------------------------------------------- sorteios especiais
+
+    fn no_especial(slug: &str, data: &str) -> bool {
+        especial_em(cfg(slug), dia(data)).is_some()
+    }
+
+    #[test]
+    fn janela_do_especial_tem_bordas_inclusivas() {
+        // Lotofácil: 7/9 menos 15 dias = 23/8; mais 8 dias = 15/9.
+        assert!(!no_especial("lotofacil", "2026-08-22"));
+        assert!(no_especial("lotofacil", "2026-08-23"));
+        assert!(no_especial("lotofacil", "2026-09-15"));
+        assert!(!no_especial("lotofacil", "2026-09-16"));
+        // Quina: 24/6 menos 15 dias = 9/6; mais 4 dias = 28/6.
+        assert!(!no_especial("quina", "2026-06-08"));
+        assert!(no_especial("quina", "2026-06-09"));
+        assert!(no_especial("quina", "2026-06-28"));
+        assert!(!no_especial("quina", "2026-06-29"));
+        // Mega: 31/12 menos 20 dias = 11/12; mais 2 dias = 2/1 do ano seguinte.
+        assert!(!no_especial("megasena", "2025-12-10"));
+        assert!(no_especial("megasena", "2025-12-11"));
+        assert!(no_especial("megasena", "2026-01-02"));
+        assert!(!no_especial("megasena", "2026-01-03"));
+        // Um dia comum.
+        assert!(!no_especial("megasena", "2026-10-13"));
+        assert_eq!(
+            especial_em(cfg("quina"), dia("2026-06-20")).map(|e| e.nome),
+            Some("Quina de São João")
+        );
+    }
+
+    #[test]
+    fn cada_loteria_so_tem_a_janela_do_seu_especial() {
+        // O especial de uma loteria não vale para as outras.
+        assert!(!no_especial("lotofacil", "2026-06-20"));
+        assert!(!no_especial("quina", "2026-09-10"));
+        assert!(!no_especial("lotofacil", "2026-12-25"));
+    }
+
+    #[test]
+    fn paradas_vistas_nos_bancos_reais_cabem_na_janela() {
+        // (loteria, último concurso regular antes da parada, data do
+        // especial): conferidas contra os bancos reais em 2026-10-13. Todo dia
+        // da parada, do seguinte ao último concurso até o especial, tem de
+        // estar na janela.
+        let paradas = [
+            ("lotofacil", "2021-08-27", "2021-09-11"),
+            ("lotofacil", "2022-08-26", "2022-09-10"),
+            ("lotofacil", "2023-08-25", "2023-09-09"),
+            ("lotofacil", "2024-08-23", "2024-09-09"),
+            ("lotofacil", "2025-08-26", "2025-09-06"),
+            ("lotofacil", "2026-09-03", "2026-09-15"),
+            ("megasena", "2021-12-18", "2021-12-31"),
+            ("megasena", "2022-12-17", "2022-12-31"),
+            ("megasena", "2023-12-16", "2023-12-31"),
+            ("megasena", "2024-12-17", "2024-12-31"),
+            ("megasena", "2025-12-20", "2026-01-01"),
+            ("quina", "2021-06-14", "2021-06-26"),
+            ("quina", "2022-06-15", "2022-06-25"),
+            ("quina", "2023-06-10", "2023-06-24"),
+            ("quina", "2024-06-08", "2024-06-22"),
+            ("quina", "2025-06-18", "2025-06-28"),
+            ("quina", "2026-06-14", "2026-06-28"),
+        ];
+        for (slug, ultimo, especial) in paradas {
+            for d in dia(ultimo) + 1..=dia(especial) {
+                assert!(
+                    especial_em(cfg(slug), d).is_some(),
+                    "{slug}: {} fora da janela (parada {ultimo} -> {especial})",
+                    tempo::data_iso_de_dias(d)
+                );
+            }
+        }
     }
 
     #[test]

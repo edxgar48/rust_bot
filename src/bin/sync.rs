@@ -453,6 +453,22 @@ enum Comando {
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
     },
+    /// Registra uma falha do "geral" (a execução em si, não uma loteria) no
+    /// histórico de alertas e grava o rascunho de e-mail quando a regra manda
+    /// (2 noites seguidas com o mesmo motivo). É o que o
+    /// `scripts/ciclo_agendado.ps1` chama quando o `sync` sai com código 3
+    /// (trava ocupada) e quando acha uma execução anterior sem fechamento
+    /// (processo morto). Não pega a trava `sync.lock`: roda mesmo com outro
+    /// `sync` em andamento.
+    Alerta {
+        /// Motivo da falha geral, texto livre. A parte antes do primeiro `:`
+        /// identifica o motivo na repetição (ex.: "trava ocupada: PID 4120").
+        #[arg(long)]
+        geral: String,
+    },
+    /// Lista os rascunhos de e-mail de alerta (`alertas/*.eml`) que ainda não
+    /// foram movidos para `alertas/enviados/`. Só lê; não pega a trava.
+    Alertas,
 }
 
 /// Formato do `sync dataset` na linha de comando.
@@ -510,7 +526,32 @@ fn nome_se_grava(comando: &Comando) -> Option<&'static str> {
         | Comando::Tabela { .. }
         | Comando::Calendario { .. }
         | Comando::Aleatoriedade { .. }
-        | Comando::Evidencia { .. } => None,
+        | Comando::Evidencia { .. }
+        | Comando::Alerta { .. }
+        | Comando::Alertas => None,
+    }
+}
+
+/// Código de saída da trava ocupada (3.6): o `ciclo_agendado.ps1` o usa para
+/// chamar `sync alerta --geral`. Qualquer outra falha sai com 1.
+const CODIGO_TRAVA_OCUPADA: u8 = 3;
+
+/// O comando deixa rastro no log do dia: os que gravam (mesma regra da
+/// trava) e o `alerta`, que grava só em `alertas/` e por isso não toma a
+/// trava, mas precisa aparecer no log da noite.
+fn grava_log(comando: &Comando) -> bool {
+    nome_se_grava(comando).is_some() || matches!(comando, Comando::Alerta { .. })
+}
+
+/// Código de saída de uma execução que falhou: 3 só para a trava ocupada.
+fn codigo_de_falha(erro: &anyhow::Error) -> std::process::ExitCode {
+    let trava_ocupada = erro
+        .downcast_ref::<SpiderError>()
+        .is_some_and(|e| matches!(e, SpiderError::TravaOcupada { .. }));
+    if trava_ocupada {
+        std::process::ExitCode::from(CODIGO_TRAVA_OCUPADA)
+    } else {
+        std::process::ExitCode::FAILURE
     }
 }
 
@@ -527,10 +568,9 @@ async fn main() -> std::process::ExitCode {
         eprintln!("Error: {erro:?}");
     }
     fechar_log(resultado.is_ok());
-    if resultado.is_ok() {
-        std::process::ExitCode::SUCCESS
-    } else {
-        std::process::ExitCode::FAILURE
+    match &resultado {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(erro) => codigo_de_falha(erro),
     }
 }
 
@@ -538,7 +578,7 @@ async fn main() -> std::process::ExitCode {
 /// (mesma regra da trava, [`nome_se_grava`]). Qualquer falha vira um aviso na
 /// tela e o comando segue sem log.
 fn abrir_log(comando: &Comando) {
-    if nome_se_grava(comando).is_none() {
+    if !grava_log(comando) {
         return;
     }
     let aberto = LogArquivo::abrir(
@@ -839,6 +879,9 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
             aguardar,
         } => {
             let alvos = resolver_alvos(&loteria, db, None)?;
+            // A noite dos alertas é a do início da execução (o `--aguardar`
+            // atravessa a meia-noite).
+            let inicio = i64::try_from(agora_segundos()?).unwrap_or(i64::MAX);
             let pastas = orquestracao::PastasCiclo {
                 backups: &backups,
                 cache: &cache,
@@ -869,6 +912,9 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
                 )
                 .await?;
                 imprimir_resumo_aguardar(&relatorio);
+                registrar_alertas(inicio, |agora, obs| {
+                    orquestracao::noites_do_aguardar(&alvos.itens, &relatorio, agora, obs)
+                });
                 if !relatorio.sucesso() {
                     anyhow::bail!("o ciclo terminou com falha(s); veja o resumo acima");
                 }
@@ -885,6 +931,9 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
             )
             .await;
             imprimir_resumo_ciclo(&relatorio);
+            registrar_alertas(inicio, |agora, obs| {
+                orquestracao::noites_do_ciclo(&alvos.itens, &relatorio, agora, obs)
+            });
             if !relatorio.sucesso() {
                 anyhow::bail!("o ciclo terminou com falha(s); veja o resumo acima");
             }
@@ -919,8 +968,88 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             evidenciar(cfg, &db_caminho, &perfis, perfil.as_deref())?;
         }
+        Comando::Alerta { geral } => {
+            if geral.trim().is_empty() {
+                anyhow::bail!("`--geral` precisa de um motivo (ex.: \"trava ocupada\")");
+            }
+            let pastas = pastas_de_alertas();
+            orquestracao::registrar_falha_geral(
+                &pastas,
+                &geral,
+                &mut agora_segundos,
+                &mut imprimir_evento,
+            )?;
+        }
+        Comando::Alertas => listar_alertas()?,
     }
 
+    Ok(())
+}
+
+fn pastas_de_alertas() -> orquestracao::PastasAlertas<'static> {
+    orquestracao::PastasAlertas {
+        alertas: std::path::Path::new(orquestracao::PASTA_ALERTAS),
+        logs: std::path::Path::new(log_arquivo::PASTA),
+    }
+}
+
+/// Fim do `sync ciclo` (3.6): conta a noite de cada loteria, grava os
+/// rascunhos devidos e avisa (tela e log) de cada um. `montar` recebe o
+/// instante de agora e o observador e devolve o resultado da noite. Nada
+/// aqui derruba o ciclo: a falha vira aviso e o código de saída segue o do
+/// ciclo.
+fn registrar_alertas(
+    inicio: i64,
+    montar: impl FnOnce(i64, &mut dyn FnMut(orquestracao::Evento)) -> Vec<orquestracao::NoiteAlvo>,
+) {
+    let agora = match agora_segundos() {
+        Ok(s) => i64::try_from(s).unwrap_or(i64::MAX),
+        Err(e) => {
+            emitir(
+                Nivel::Aviso,
+                Destino::Erro,
+                &format!("Aviso: alertas não registrados, relógio inválido: {e}"),
+            );
+            return;
+        }
+    };
+    let noites = montar(agora, &mut imprimir_evento);
+    let pastas = pastas_de_alertas();
+    if let Err(e) = orquestracao::registrar_noite(
+        &pastas,
+        &noites,
+        inicio,
+        &mut agora_segundos,
+        &mut imprimir_evento,
+    ) {
+        emitir(
+            Nivel::Aviso,
+            Destino::Erro,
+            &format!("Aviso: alertas não registrados: {e}"),
+        );
+    }
+}
+
+/// `sync alertas`: os rascunhos que ainda não foram movidos para `enviados/`.
+fn listar_alertas() -> anyhow::Result<()> {
+    let pasta = std::path::Path::new(orquestracao::PASTA_ALERTAS);
+    let pendentes = orquestracao::listar_pendentes(pasta)?;
+    if pendentes.is_empty() {
+        println!("Nenhum rascunho de alerta pendente.");
+        return Ok(());
+    }
+    println!(
+        "{} rascunho(s) de alerta pendente(s); depois de enviar, mova cada um para {}/{}/:",
+        pendentes.len(),
+        orquestracao::PASTA_ALERTAS,
+        orquestracao::PASTA_ENVIADOS
+    );
+    for p in &pendentes {
+        println!("  {}", absoluto(&p.caminho).display());
+        if let Some(assunto) = &p.assunto {
+            println!("    {assunto}");
+        }
+    }
     Ok(())
 }
 

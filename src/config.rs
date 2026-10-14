@@ -50,6 +50,28 @@ pub struct LoteriaConfig {
     /// do dia: o sorteio é por volta das 20h; a folga cobre atraso e a
     /// publicação no site.
     pub procurar_a_partir_das: HoraLocal,
+    /// Sorteios especiais de datas comemorativas (Mega da Virada, Lotofácil da
+    /// Independência, Quina de São João), com a janela em que a loteria pode
+    /// ficar sem concursos regulares. Dentro dela o `Atrasado` do calendário
+    /// é aviso, não falha (alertas, 3.6). Veja [`SorteioEspecial`].
+    pub sorteios_especiais: &'static [SorteioEspecial],
+}
+
+/// Sorteio especial de data fixa e a janela de parada em volta dele.
+///
+/// Antes do especial a Caixa deixa a loteria sem concursos regulares (a
+/// Lotofácil de 2026 ficou de 2026-09-03 a 2026-09-15 sem concursos). A janela
+/// vai de `dias_antes` dias antes da data até `dias_depois` dias depois dela:
+/// o "depois" cobre o especial que sai alguns dias além da data nominal
+/// (Lotofácil em 2026-09-15 para 7/9; Quina em 2026-06-28 para 24/6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SorteioEspecial {
+    pub nome: &'static str,
+    /// Mês (1 a 12) e dia da data nominal do especial.
+    pub mes: u32,
+    pub dia: u32,
+    pub dias_antes: i64,
+    pub dias_depois: i64,
 }
 
 /// Dia da semana, de segunda a domingo (ordem ISO-8601).
@@ -201,6 +223,18 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
             hora: 21,
             minuto: 0,
         },
+        // Paradas antes da Lotofácil da Independência vistas no banco real em
+        // 2026-10-13 (último concurso regular -> especial): 2021 08-27 -> 09-11;
+        // 2022 08-26 -> 09-10; 2023 08-25 -> 09-09; 2024 08-23 -> 09-09 (17
+        // dias, a maior); 2025 08-26 -> 09-06; 2026 09-03 -> 09-15 (a data
+        // do especial varia de 6/9 a 15/9). Janela de 23/8 a 15/9.
+        sorteios_especiais: &[SorteioEspecial {
+            nome: "Lotofácil da Independência",
+            mes: 9,
+            dia: 7,
+            dias_antes: 15,
+            dias_depois: 8,
+        }],
     },
     LoteriaConfig {
         slug: "megasena",
@@ -234,6 +268,19 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
             hora: 21,
             minuto: 0,
         },
+        // Paradas antes da Mega da Virada vistas no banco real em 2026-10-13
+        // (último concurso regular -> especial): 2021 12-18 -> 12-31; 2022
+        // 12-17 -> 12-31; 2023 12-16 -> 12-31 (15 dias, a maior); 2024 12-17 ->
+        // 12-31; 2025 12-20 -> 2026-01-01 (a planilha data o especial de 2025
+        // em 1º/1). 20 dias antes (pedido do plano) cobre todas; 2 depois
+        // cobre o 1º/1.
+        sorteios_especiais: &[SorteioEspecial {
+            nome: "Mega da Virada",
+            mes: 12,
+            dia: 31,
+            dias_antes: 20,
+            dias_depois: 2,
+        }],
     },
     LoteriaConfig {
         slug: "quina",
@@ -274,6 +321,19 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
             hora: 21,
             minuto: 0,
         },
+        // Paradas antes da Quina de São João vistas no banco real em
+        // 2026-10-13 (último concurso regular -> especial): 2021 06-14 ->
+        // 06-26; 2022 06-15 -> 06-25; 2023 06-10 -> 06-24; 2024 06-08 -> 06-22
+        // (a primeira falta é 06-09, 15 dias antes de 24/6); 2025 06-18 ->
+        // 06-28; 2026 06-14 -> 06-28 (a data do especial varia de 22/6 a
+        // 28/6). Janela de 9/6 a 28/6.
+        sorteios_especiais: &[SorteioEspecial {
+            nome: "Quina de São João",
+            mes: 6,
+            dia: 24,
+            dias_antes: 15,
+            dias_depois: 4,
+        }],
     },
 ];
 

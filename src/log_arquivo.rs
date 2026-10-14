@@ -78,6 +78,14 @@ fn nome_do_dia(dias: i64) -> String {
     format!("{PREFIXO}{}{SUFIXO}", tempo::data_iso_de_dias(dias))
 }
 
+/// Caminho do log do dia em que cai o instante `segundos` (Unix), o mesmo
+/// arquivo que [`LogArquivo::abrir`] usa; os alertas (3.6) o citam no e-mail.
+pub fn caminho_do_dia(pasta: &Path, segundos: i64) -> PathBuf {
+    pasta.join(nome_do_dia(
+        (segundos + FUSO_SEGUNDOS).div_euclid(SEGUNDOS_POR_DIA),
+    ))
+}
+
 /// Dia (desde 1970-01-01) de um nome `sync_AAAA-MM-DD.log`; `None` para
 /// qualquer outro nome (esses arquivos nunca são apagados).
 fn dia_do_nome(nome: &str) -> Option<i64> {

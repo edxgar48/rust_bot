@@ -96,6 +96,19 @@ pub struct ResumoAguardar {
     /// Data (`AAAA-MM-DD`) do sorteio cujo concurso não saiu até o fim da
     /// janela: aviso, não falha.
     pub concurso_ausente: Option<String>,
+    /// Em quantas passadas o erro foi de forma de página
+    /// ([`SpiderError::eh_mudanca_de_pagina`]); base do alerta de "mudança
+    /// aparente no site" (3.6).
+    pub erros_de_forma: u32,
+}
+
+impl ResumoAguardar {
+    /// `true` se a loteria terminou em falha e **todas** as passadas da noite
+    /// deram erro de forma de página: o site provavelmente mudou, e esperar
+    /// N noites não acrescenta nada (alerta já na primeira, 3.6).
+    pub fn mudanca_de_pagina_em_todas_as_rodadas(&self) -> bool {
+        !self.resumo.ok() && self.tentativas > 0 && self.erros_de_forma == self.tentativas
+    }
 }
 
 /// Um `publicar` feito durante o `--aguardar`.
@@ -162,6 +175,8 @@ struct Item<'a> {
     /// `None` até a primeira passada, e de novo durante uma passada.
     pendencia: Option<Pendencia>,
     tentativas: u32,
+    /// Passadas que terminaram em erro de forma de página.
+    erros_de_forma: u32,
     /// Preenchido quando a loteria termina (com ou sem falha).
     fim: Option<(ResumoLoteria, Option<String>)>,
 }
@@ -256,6 +271,7 @@ where
             memoria: MemoriaBackfill::default(),
             pendencia: None,
             tentativas: 0,
+            erros_de_forma: 0,
             fim: None,
         })
         .collect();
@@ -348,6 +364,7 @@ where
                     resumo,
                     tentativas: i.tentativas,
                     concurso_ausente,
+                    erros_de_forma: i.erros_de_forma,
                 }
             })
             .collect(),
@@ -463,6 +480,7 @@ fn registrar_passada(
             item.pendencia = Some(Pendencia::Aguardando { esperado_em, pos });
         }
         Passada::Transitoria { falha, pos } => {
+            item.erros_de_forma += u32::from(falha.erro.eh_mudanca_de_pagina());
             obs(Evento::Ciclo(EventoCiclo::FalhaTransitoria {
                 slug: item.cfg.slug,
                 etapa: falha.etapa,
@@ -470,7 +488,10 @@ fn registrar_passada(
             }));
             item.pendencia = Some(Pendencia::Transitoria { falha, pos });
         }
-        Passada::Falhou(falha) => falhar(item, falha, obs),
+        Passada::Falhou(falha) => {
+            item.erros_de_forma += u32::from(falha.erro.eh_mudanca_de_pagina());
+            falhar(item, falha, obs);
+        }
     }
 }
 

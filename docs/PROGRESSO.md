@@ -73,14 +73,14 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.3 Retentativas com backoff
 - [x] 3.4 Trava contra execução simultânea
 - [x] 3.5 Logs em arquivo
-- [ ] 3.6 Alertas (depende de decisão em aberto)
+- [x] 3.6 Alertas (rascunho `.eml`)
 - [x] 3.7 Agendamento no Windows (`.ps1`)
 - [ ] 3.8 Runbook no README
 
 ## Decisões em aberto
 
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
-- [ ] Canal de alerta — bloqueia 3.6
+- [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
 - [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
@@ -2026,3 +2026,44 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   às 23:00). Primeira execução pelo Agendador (`Start-ScheduledTask`, 13:04): `LastTaskResult` 0, 25 s, uma
   passada (fora da janela), navegador e SSH ok na sessão do usuário; avisos esperados do concurso de
   2026-10-12 (feriado) em Lotofácil e Quina; três "Nada a publicar". **3.7 conferida de ponta a ponta.**
+- 2026-10-13 — 3.6 entregue (`engenheiro-operacao`). `src/orquestracao/alertas.rs` (novo): contador de noites
+  por alvo (loteria + "geral"), `alertas/estado.json` (gravação atômica, ilegível = recomeça com aviso),
+  `.eml` com `X-Unsent: 1` e assunto em RFC 2047, `destinatario.txt` opcional, dedup por (alvo, motivo),
+  lembrete a cada 7 noites, `listar_pendentes`. `SpiderError::eh_mudanca_de_pagina()` ao lado de
+  `eh_transitorio` (inalterado). `config.rs`: `sorteios_especiais` (`SorteioEspecial`); `calendario.rs`:
+  `especial_em`. CLI: `sync alerta --geral "<motivo>"` e `sync alertas` (sem trava); trava ocupada sai com
+  código 3; o fim do `ciclo` (com e sem `--aguardar`) registra a noite, alerta nunca derruba o ciclo.
+  `scripts/ciclo_agendado.ps1` (ASCII, mesmos parâmetros): exit 3 → `sync alerta --geral`; processo morto
+  (última linha `inicio` do `agendador.log` com `pid=` de processo inexistente, ou PowerShell nascido depois
+  do início) → alerta geral; aviso de rascunho novo no `agendador.log`; `inicio` passa a gravar `pid=`.
+  README: seção "Alertas e operação". `.gitignore`: `/alertas/`. Testes: `tests/alertas.rs` (23),
+  +7 em `tests/agendamento.rs`, unitários em `alertas.rs`, `calendario.rs`, `error.rs`.
+  **Desvios do plano (decisões de implementação, plano ainda não atualizado — aguarda aprovação do
+  usuário):** (a) nome `alertas/AAAA-MM-DD_HHMMSS_<loteria>-<motivo>.eml` (evita colisão entre alvos no
+  mesmo segundo); (b) janelas dos especiais ganharam `dias_depois`, conferidas nos bancos (somente
+  leitura): Lotofácil 7/9, 15 antes e 8 depois (especiais de 6/9 a 15/9; maior parada 17 dias em 2024);
+  Mega 31/12, 20 antes e 2 depois (o de 2025 está datado 2026-01-01); Quina 24/6, 15 antes e 4 depois
+  (especiais de 22/6 a 28/6); teste confere todas as paradas de 2021–2026 dentro da janela; parada de 8 dias
+  na Mega (2026-05-16 a 05-24) não é especial e ficou fora; (c) "noite" = data do início da execução; duas
+  execuções na mesma noite valem uma; (d) motivo do geral = texto antes do primeiro `:`; (e) falha do
+  `publicar` na passada única conta para cada loteria exportada (até 3 rascunhos iguais); no `--aguardar`,
+  falha do `publicar` final de reenvio conta para o geral; (f) `estado.json` sem trava entre
+  `alerta --geral` e `ciclo` (atômico, corrida de milissegundos aceita).
+  Gate: fmt ok; clippy ok; `cargo test` 1125 passaram, 0 falharam (4 ignorados); pytest 175; `validar todas`
+  ok. Revisão: aprovado com ressalvas, sem ALTA; corrigidos na 2ª rodada: espaços sobrando no AVISO de
+  rascunho, PID reaproveitado por PowerShell mais novo, falha do `publicar` de reenvio sem alvo, teste do
+  binário dependente da virada do dia. Pendências: MÉDIA — levar (a)–(f) ao PLANEJAMENTO (3.6) com
+  aprovação; BAIXA — conferir contra os bancos o intervalo entre o especial e o primeiro concurso regular
+  seguinte (o `dias_depois` da Mega = 2 não foi testado para isso); BAIXA — `ciclo --aguardar` que falha
+  no início (relógio inválido) sai sem registrar a noite. Dúvida aberta: `Planilha`/`TabelaNaoEncontrada`
+  (layout da planilha) entram em "mudança aparente no site"? Hoje não (não estão na lista do plano).
+  Operacional: o `target\release\sync.exe` da tarefa agendada é anterior à 3.6 — o `.ps1` novo funciona com
+  ele (só chama `alerta` com exit 3 ou processo morto; falha vira AVISO no `agendador.log`), mas os alertas
+  só valem depois de `cargo build --release` fora da janela 23h–01h. Execução manual autorizada da falha
+  simulada (trava presa / pasta inexistente) ainda não feita — coberta em pasta temporária nos testes.
+  **3.6 concluída.**
+- 2026-10-13 — Usuário aprovou os desvios da 3.6 (nome do `.eml` com a loteria; janelas dos especiais com
+  `dias_depois`; noite = data do início; falha do `publicar` por loteria/geral), agora na linha da 3.6 do
+  plano, e decidiu que planilha ilegível ou com layout inesperado (`Planilha`, `TabelaNaoEncontrada`) conta
+  como mudança aparente no site (`eh_mudanca_de_pagina`, README e teste ajustados). Release recompilado fora
+  da janela, para a tarefa agendada desta noite já usar a 3.6.

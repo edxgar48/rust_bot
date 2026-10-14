@@ -37,6 +37,7 @@ const MINI: LoteriaConfig = LoteriaConfig {
     perfil_ativo: "mini_v1",
     dias_sorteio: &[],
     procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
+    sorteios_especiais: &[],
 };
 
 fn res(cfg: &LoteriaConfig, concurso: u32, dezenas: &[u32]) -> Resultado {

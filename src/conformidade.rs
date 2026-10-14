@@ -139,6 +139,7 @@ fn config_do_caso(q: Quantidades) -> LoteriaConfig {
         perfil_ativo: "caso_v1",
         dias_sorteio: &[],
         procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
+        sorteios_especiais: &[],
     }
 }
 

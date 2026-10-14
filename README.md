@@ -55,6 +55,7 @@ src/
 ├── orquestracao/calendario.rs # `sync calendario`: banco (somente leitura) + calendário
 ├── orquestracao/ciclo.rs # `sync ciclo`: compõe atualizar, backfill, validar, features, índice, exportar e publicar
 ├── orquestracao/aguardar.rs # `sync ciclo --aguardar` (3.3): rodadas com backoff até 01h00, relógio e espera injetados
+├── orquestracao/alertas.rs # alertas (3.6): noites seguidas com falha, rascunhos `.eml` em `alertas/`, relógio injetado
 ├── dataset.rs     # dataset de ML (Parquet/CSV) e manifesto (`sync dataset`), sem banco
 ├── trava.rs       # `sync.lock` (3.4): trava do SO contra execução simultânea
 ├── log_arquivo.rs # `logs/sync_AAAA-MM-DD.log` (3.5): cópia da tela com hora e nível, abertura e fechamento
@@ -189,8 +190,10 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
-#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim); alertas e agendamento
-#    ainda não existem (3.6 e 3.7). A trava (3.4) e o log em arquivo (3.5) existem: ver "Trava" e "Log".
+#  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim). A trava (3.4), o log em
+#    arquivo (3.5), os alertas (3.6) e o agendamento (3.7) existem: ver "Trava", "Log", "Agendamento" e
+#    "Alertas e operação". No fim, o ciclo conta a noite de cada loteria e grava o rascunho de e-mail de
+#    alerta quando a regra manda (a saída do comando não muda por isso).
 cargo run --bin sync -- ciclo todas
 cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
 
@@ -216,6 +219,13 @@ cargo run --bin sync -- ciclo quina --repo ../rust_spider_dados
 #    da planilha do backfill: um backup por loteria por execução, mesmo com várias rodadas;
 #  - as 3 tentativas curtas do downloader (2 s e 4 s) continuam por baixo de cada passada.
 cargo run --bin sync -- ciclo todas --aguardar
+
+# alertas (3.6; regras em "Alertas e operação"): `alertas` lista os rascunhos de e-mail ainda não movidos
+# para alertas/enviados/ (só lê, sem trava); `alerta --geral` conta uma falha do "geral" (trava ocupada,
+# processo morto) e grava o rascunho quando a regra manda; não pega a trava. O `ciclo` já faz o resto sozinho.
+# `sync` sai com código 3 quando a trava está ocupada (1 nas demais falhas).
+cargo run --bin sync -- alertas
+cargo run --bin sync -- alerta --geral "trava ocupada: PID 4120"
 
 # calendário de sorteios (3.2), só leitura: para hoje (relógio de Brasília, UTC-3 fixo) diz se é dia de
 # sorteio e desde que horário procurar o resultado (21h00 nas três loterias; o sorteio é por volta das
@@ -502,8 +512,9 @@ Ficam livres `listar`, `validar`, `buracos`, `calendario`, `aleatoriedade`,
   `sync` sempre da mesma pasta.
 - Trava ocupada: o comando falha na hora, sem esperar, com saída diferente de
   zero e a mensagem `outra execução em andamento: PID 1234, comando ciclo,
-  desde 23:00` (horário de Brasília). O `ciclo` agendado que a encontrar sai
-  com erro (vira alerta quando a 3.6 existir).
+  desde 23:00` (horário de Brasília). O comando sai com **código 3** (só neste
+  caso; qualquer outra falha sai com 1) e o `ciclo_agendado.ps1` transforma o 3
+  num alerta do "geral" (ver "Alertas e operação").
 - Não existe trava órfã: ela é do sistema operacional e some se o processo
   morrer, for encerrado à força ou a máquina reiniciar. Não apague o
   `sync.lock` à mão para "destravar"; se a mensagem aparece, há mesmo um
@@ -586,13 +597,15 @@ Se a política de execução bloquear os scripts, use
   só). Não acorda o PC, não abre segunda instância, limite de 3 h, roda na
   bateria. Repetir `registrar_tarefa.ps1` atualiza a tarefa, não duplica.
 - **Rastro**: `logs\agendador.log` (duas linhas por execução: uma de início,
-  gravada antes do sync, e uma de fim com código de saída e o erro do próprio
-  script, como binário ou pasta ausentes),
+  gravada antes do sync e com o `pid=` do PowerShell, e uma de fim com código
+  de saída e o erro do próprio script, como binário ou pasta ausentes; mais
+  linhas `AVISO` quando há rascunho de alerta novo ou processo morto),
   `logs\sync_AAAA-MM-DD.log` (o ciclo em si) e "Último resultado" da tarefa no
   Agendador (`Get-ScheduledTaskInfo -TaskName "rust_spider ciclo"`).
 - Linha de início sem linha de fim = processo morto (ex.: limite de 3 h do
-  Agendador). Se a noite seguinte acusar "outra execução em andamento",
-  confira se ficou um `sync.exe` vivo (`Get-Process sync`).
+  Agendador). Na execução seguinte o script percebe isso sozinho (ver
+  "Alertas e operação"). Se a noite seguinte acusar "outra execução em
+  andamento", confira se ficou um `sync.exe` vivo (`Get-Process sync`).
 - `-Pasta` é resolvida para caminho absoluto sem barra final antes de ir para a
   tarefa (pasta inexistente = erro; raiz de unidade como `C:\` é recusada).
 - O gatilho das 23h00 usa o fuso da máquina, que precisa ser o de Brasília.
@@ -611,6 +624,94 @@ Se a política de execução bloquear os scripts, use
   logs.
 - Os `.ps1` são só ASCII (o 5.1 lê UTF-8 sem BOM como ANSI); os testes
   (`tests/agendamento.rs`) usam um binário falso e não tocam no Agendador.
+
+## Alertas e operação
+
+Quando algo dá errado, o sistema **não envia nada**: grava um rascunho de
+e-mail (`.eml`) e avisa. Você abre o rascunho (Outlook, Thunderbird...),
+revisa e envia quando quiser. Não há SMTP nem senha no projeto.
+
+```powershell
+cargo run --bin sync -- alertas                                   # rascunhos ainda não enviados (só lê)
+cargo run --bin sync -- alerta --geral "trava ocupada: PID 4120"  # conta uma falha do "geral"
+```
+
+- **Falha de uma loteria**: a noite em que ela termina em erro no `ciclo`
+  (qualquer etapa, inclusive publicar) ou fica `atrasado` pelo calendário
+  (`sync calendario`, 3.2) fora da janela de um sorteio especial. O concurso
+  que só não saiu até 01h00 é aviso e **não** conta. Sucesso (ou `em_dia`)
+  zera o contador. Duas execuções na mesma noite valem uma falha só.
+- **Quando alerta**: na **2ª noite seguida** de falha (`N = 2`) da mesma
+  loteria. **Mudança aparente no site** alerta já na 1ª noite: todas as
+  rodadas da noite terminaram em erro de forma da página (elemento ou botão
+  não encontrado, página incompleta, linha inválida, planilha ilegível ou com
+  layout inesperado). Erro de rede ou de
+  navegador segue o N.
+- **Repetição**: um rascunho por (alvo, motivo) enquanto o problema durar;
+  lembrete a cada 7 noites seguidas ainda em falha, contadas do último
+  rascunho. Voltar ao normal só escreve uma linha no log.
+- **O "geral"** é a execução em si: *trava ocupada* (o `sync` sai com código 3
+  e o `ciclo_agendado.ps1` chama `sync alerta --geral`) e *processo morto*
+  (abaixo). Conta noites com o mesmo N e um rascunho por motivo e incidente; um
+  `ciclo` que chega ao fim zera o contador. O motivo é o texto antes do
+  primeiro `:` do `--geral` (o resto é detalhe). `sync alerta` **não pega a
+  trava**, roda mesmo com outro `sync` vivo e aparece no log do dia.
+- **Processo morto** (critério do `ciclo_agendado.ps1`): a última linha de
+  início/fim do `logs\agendador.log` é um `inicio` com `pid=` de um processo
+  que não existe mais. O script fecha essa linha (`AVISO processo morto`, para
+  não repetir), chama `sync alerta --geral "processo morto: ..."` e segue.
+  Linha de início sem `pid=` (de antes da 3.6) não é avaliada. Binário ou pasta
+  ausentes ficam **só** no `agendador.log` e no "Último resultado" do
+  Agendador: sem binário não há como gerar o alerta.
+- **Sorteios especiais** (`sorteios_especiais` em `config.rs`): a loteria fica
+  sem concursos regulares antes do especial, e nessa janela o `atrasado` é só
+  aviso. Mega da Virada: 31/12, 20 dias antes e 2 depois; Lotofácil da
+  Independência: 7/9, 15 antes e 8 depois (o de 2026 saiu em 15/9); Quina de
+  São João: 24/6, 15 antes e 4 depois (o de 2026 saiu em 28/6). Conferidas
+  contra as paradas dos bancos reais; se a Caixa mudar a data ou a duração,
+  ajuste a lista.
+- **Onde ficam as coisas** (pasta de trabalho, tudo fora do git):
+  `alertas/AAAA-MM-DD_HHMMSS_<loteria>-<motivo>.eml` (horário de Brasília),
+  `alertas/estado.json` (histórico por alvo: noites seguidas, primeira e última
+  falha, último erro, último alerta; ilegível = recomeça do zero com aviso,
+  nunca derruba o `ciclo`) e `alertas/destinatario.txt` (opcional: o endereço
+  do `To:`, na primeira linha que não seja vazia nem comece com `#`; sem o
+  arquivo o rascunho sai sem `To:` e você preenche).
+- **Como você é avisado**: linha `AVISO: rascunho de e-mail de alerta gravado
+  ...` no console, no log do dia e (linha `AVISO: rascunho de alerta novo`) no
+  `logs\agendador.log`, que compara a lista de `alertas\*.eml` antes e depois
+  do `sync`. `sync alertas` lista os pendentes; depois de enviar, **mova o
+  `.eml` para `alertas\enviados\`**.
+- **O rascunho** é RFC 822 em UTF-8 com `X-Unsent: 1`, assunto
+  `[rust_spider] <loteria>: <motivo>` e corpo em texto: loteria, motivo, noites
+  seguidas, último concurso no banco, etapa e erro com a cadeia de causas, o
+  caminho do log do dia e passos curtos. O runbook completo é a tarefa 3.8.
+
+### Quando o ciclo falha (resumo até o runbook da 3.8)
+
+| Motivo do rascunho | O que olhar |
+|---|---|
+| `falhas seguidas` (rede/navegador) | `logs\sync_<dia>.log`; rode `sync ciclo <loteria>` à mão; confira a internet e o Playwright |
+| `site possivelmente mudou` | abra a página da loteria; compare com os seletores de `src/config.rs`; `sync atualizar <loteria> --visivel` |
+| `trava ocupada` | `sync.lock.dono` (PID, comando, hora) e o Gerenciador de Tarefas; não apague o `sync.lock` |
+| `processo morto` | `logs\agendador.log` e o log do dia: a execução foi interrompida; rode o `ciclo` à mão |
+| falha ao publicar | SSH e clone `../rust_spider_dados`; `sync publicar` reenvia |
+
+### Comportamento nas falhas simuladas
+
+- **Seletor errado** (`ElementoNaoEncontrado` em todas as rodadas): 1ª noite =
+  rascunho `site possivelmente mudou`; nas noites seguintes nada de novo (já
+  avisado), só o lembrete a cada 7 noites. Se o erro virar de rede, vale o N e
+  sai um rascunho `falhas seguidas` à parte.
+- **Rede fora** (erro de navegador em todas as rodadas): 1ª noite só registra
+  em `estado.json`; 2ª noite = rascunho `falhas seguidas (2 noites)`.
+- **Trava ocupada**: com um `sync` em andamento, outro `sync` sai com 3; o
+  agendado conta no "geral" e alerta na 2ª noite.
+- **Disco sem espaço ou `alertas/` sem permissão**: aviso no console e no log
+  (`não foi possível gravar ...`); o ciclo termina com o código de sempre e o
+  alerta é tentado de novo na próxima execução.
+- Os testes (`tests/alertas.rs`, `tests/agendamento.rs`) cobrem esses
+  cenários com loteria falsa e binário falso, em pastas temporárias.
 
 ## Experimentos em Python (`ml/`)
 

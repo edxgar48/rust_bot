@@ -74,6 +74,36 @@ impl Pasta {
         caminho
     }
 
+    /// Binário falso que registra cada chamada (uma linha com os argumentos)
+    /// em `chamadas.txt`. `alerta ...` sai com 0; o resto sai com o código de
+    /// `FALSO_SAIDA` e, se `FALSO_RASCUNHO` estiver definida, cria
+    /// `alertas\<nome>` como o `sync` faria ao gerar um rascunho.
+    fn falso_registrador(&self) -> PathBuf {
+        let caminho = self.0.join("falso.cmd");
+        std::fs::write(
+            &caminho,
+            "@echo off\r\n\
+             echo %* >> chamadas.txt\r\n\
+             if \"%1\"==\"alerta\" exit /b 0\r\n\
+             if defined FALSO_RASCUNHO (\r\n\
+             if not exist alertas mkdir alertas\r\n\
+             echo rascunho> alertas\\%FALSO_RASCUNHO%\r\n\
+             )\r\n\
+             exit /b %FALSO_SAIDA%\r\n",
+        )
+        .unwrap();
+        caminho
+    }
+
+    /// Linhas de `chamadas.txt` (sem espaços nas pontas).
+    fn chamadas(&self) -> Vec<String> {
+        std::fs::read_to_string(self.0.join("chamadas.txt"))
+            .unwrap_or_default()
+            .lines()
+            .map(|l| l.trim().to_string())
+            .collect()
+    }
+
     fn log_agendador(&self) -> String {
         std::fs::read_to_string(self.0.join("logs").join("agendador.log")).unwrap_or_default()
     }
@@ -86,6 +116,16 @@ impl Drop for Pasta {
 }
 
 fn rodar_ciclo(pasta: &Path, binario: &Path, argumentos: &str, saida: &str) -> Output {
+    rodar_ciclo_com(pasta, binario, argumentos, saida, &[])
+}
+
+fn rodar_ciclo_com(
+    pasta: &Path,
+    binario: &Path,
+    argumentos: &str,
+    saida: &str,
+    extras: &[(&str, &str)],
+) -> Output {
     let script = raiz().join("scripts").join("ciclo_agendado.ps1");
     Command::new("powershell.exe")
         .args([
@@ -103,6 +143,8 @@ fn rodar_ciclo(pasta: &Path, binario: &Path, argumentos: &str, saida: &str) -> O
         .args(["-Argumentos", argumentos])
         .env("FALSO_SAIDA", saida)
         .env_remove("GIT_SSH_COMMAND")
+        .env_remove("FALSO_RASCUNHO")
+        .envs(extras.iter().copied())
         .output()
         .expect("powershell.exe")
 }
@@ -269,4 +311,227 @@ fn registrar_tarefa_mostrar_com_pasta_inexistente_falha() {
         inexistente.to_str().unwrap(),
     ]);
     assert_ne!(o.status.code(), Some(0), "{}", texto(&o));
+}
+
+// ---------------------------------------------------------------------------
+// Alertas (3.6): trava ocupada, processo morto e rascunho novo
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ciclo_agendado_com_exit_3_chama_alerta_geral_e_devolve_3() {
+    if !tem_powershell() {
+        return;
+    }
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "3");
+    assert_eq!(o.status.code(), Some(3), "{}", texto(&o));
+
+    let chamadas = pasta.chamadas();
+    assert_eq!(chamadas.len(), 2, "{chamadas:?}");
+    assert_eq!(chamadas[0], "ciclo todas --aguardar");
+    assert!(
+        chamadas[1].starts_with("alerta --geral \"trava ocupada: "),
+        "{}",
+        chamadas[1]
+    );
+    let log = pasta.log_agendador();
+    assert!(log.lines().last().unwrap().contains("exit 3"), "{log}");
+}
+
+#[test]
+fn ciclo_agendado_com_sucesso_ou_outras_falhas_nao_chama_alerta() {
+    if !tem_powershell() {
+        return;
+    }
+    for saida in ["0", "1", "7"] {
+        let pasta = Pasta::nova();
+        let falso = pasta.falso_registrador();
+        let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", saida);
+        assert_eq!(
+            o.status.code(),
+            Some(saida.parse().unwrap()),
+            "{}",
+            texto(&o)
+        );
+        assert_eq!(
+            pasta.chamadas(),
+            ["ciclo todas --aguardar"],
+            "saída {saida}"
+        );
+        assert_eq!(pasta.log_agendador().lines().count(), 2);
+    }
+}
+
+#[test]
+fn ciclo_agendado_acha_processo_morto_avisa_uma_vez_e_segue() {
+    if !tem_powershell() {
+        return;
+    }
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    // Execução anterior que começou e nunca terminou: PID que não existe.
+    std::fs::create_dir_all(pasta.0.join("logs")).unwrap();
+    std::fs::write(
+        pasta.0.join("logs").join("agendador.log"),
+        "2026-10-13 23:00:01 inicio | pasta=x | binario=y | args=z | pid=2147483000\r\n",
+    )
+    .unwrap();
+
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "0");
+    assert_eq!(o.status.code(), Some(0), "{}", texto(&o));
+    let chamadas = pasta.chamadas();
+    assert_eq!(chamadas.len(), 2, "{chamadas:?}");
+    assert!(
+        chamadas[0].starts_with(
+            "alerta --geral \"processo morto: a execucao iniciada em 2026-10-13 23:00:01"
+        ),
+        "{}",
+        chamadas[0]
+    );
+    assert_eq!(chamadas[1], "ciclo todas --aguardar");
+    let log = pasta.log_agendador();
+    assert!(log.contains("AVISO processo morto"), "{log}");
+    assert!(texto(&o).contains("processo morto"), "{}", texto(&o));
+
+    // A linha pendente foi fechada: a próxima execução não avisa de novo.
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "0");
+    assert_eq!(o.status.code(), Some(0), "{}", texto(&o));
+    let alertas = pasta
+        .chamadas()
+        .into_iter()
+        .filter(|c| c.starts_with("alerta "))
+        .count();
+    assert_eq!(alertas, 1, "{:?}", pasta.chamadas());
+}
+
+#[test]
+fn ciclo_agendado_nao_chama_de_morto_um_processo_vivo() {
+    if !tem_powershell() {
+        return;
+    }
+    // Um PowerShell vivo faz o papel da execução anterior ainda em andamento.
+    let mut vivo = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 60",
+        ])
+        .spawn()
+        .expect("powershell vivo");
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    std::fs::create_dir_all(pasta.0.join("logs")).unwrap();
+    std::fs::write(
+        pasta.0.join("logs").join("agendador.log"),
+        // O processo vivo nasceu antes do `inicio` registrado (data futura).
+        format!(
+            "2099-01-01 00:00:01 inicio | pasta=x | binario=y | args=z | pid={}\r\n",
+            vivo.id()
+        ),
+    )
+    .unwrap();
+
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "0");
+    let _ = vivo.kill();
+    let _ = vivo.wait();
+    assert_eq!(o.status.code(), Some(0), "{}", texto(&o));
+    assert_eq!(pasta.chamadas(), ["ciclo todas --aguardar"]);
+    assert!(!pasta.log_agendador().contains("processo morto"));
+}
+
+#[test]
+fn ciclo_agendado_pid_reaproveitado_por_powershell_mais_novo_conta_como_morto() {
+    if !tem_powershell() {
+        return;
+    }
+    // Um PowerShell vivo, mas que nasceu depois do `inicio` registrado: o PID
+    // da execucao anterior foi reaproveitado.
+    let mut intruso = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 60",
+        ])
+        .spawn()
+        .expect("powershell vivo");
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    std::fs::create_dir_all(pasta.0.join("logs")).unwrap();
+    std::fs::write(
+        pasta.0.join("logs").join("agendador.log"),
+        format!(
+            "2000-01-01 00:00:01 inicio | pasta=x | binario=y | args=z | pid={}\r\n",
+            intruso.id()
+        ),
+    )
+    .unwrap();
+
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "0");
+    let _ = intruso.kill();
+    let _ = intruso.wait();
+    assert_eq!(o.status.code(), Some(0), "{}", texto(&o));
+    assert!(
+        pasta.chamadas()[0].starts_with("alerta --geral \"processo morto"),
+        "{:?}",
+        pasta.chamadas()
+    );
+    assert!(pasta.log_agendador().contains("AVISO processo morto"));
+}
+
+#[test]
+fn ciclo_agendado_nao_avalia_linha_de_inicio_sem_pid() {
+    if !tem_powershell() {
+        return;
+    }
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    std::fs::create_dir_all(pasta.0.join("logs")).unwrap();
+    std::fs::write(
+        pasta.0.join("logs").join("agendador.log"),
+        "2026-10-13 23:00:01 inicio | pasta=x | binario=y | args=z\r\n",
+    )
+    .unwrap();
+    let o = rodar_ciclo(&pasta.0, &falso, "ciclo todas --aguardar", "0");
+    assert_eq!(o.status.code(), Some(0), "{}", texto(&o));
+    assert_eq!(pasta.chamadas(), ["ciclo todas --aguardar"]);
+}
+
+#[test]
+fn ciclo_agendado_avisa_so_do_rascunho_novo_no_log_e_na_tela() {
+    if !tem_powershell() {
+        return;
+    }
+    let pasta = Pasta::nova();
+    let falso = pasta.falso_registrador();
+    // Um rascunho antigo, ainda pendente, não é "novo".
+    std::fs::create_dir_all(pasta.0.join("alertas")).unwrap();
+    std::fs::write(pasta.0.join("alertas").join("velho.eml"), "x").unwrap();
+
+    let o = rodar_ciclo_com(
+        &pasta.0,
+        &falso,
+        "ciclo todas --aguardar",
+        "1",
+        &[("FALSO_RASCUNHO", "2026-10-14_000500_quina-site-mudou.eml")],
+    );
+    assert_eq!(o.status.code(), Some(1), "{}", texto(&o));
+    let log = pasta.log_agendador();
+    let linhas: Vec<&str> = log.lines().collect();
+    assert_eq!(linhas.len(), 3, "início, aviso e fim: {log}");
+    assert!(
+        linhas[1].contains(
+            "AVISO: rascunho de alerta novo: alertas\\2026-10-14_000500_quina-site-mudou.eml"
+        ),
+        "{log}"
+    );
+    assert!(!log.contains("velho.eml"), "{log}");
+    assert!(linhas[2].contains("exit 1"), "{log}");
+    assert!(
+        texto(&o).contains("AVISO: rascunho de alerta novo"),
+        "{}",
+        texto(&o)
+    );
 }

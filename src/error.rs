@@ -354,6 +354,30 @@ impl SpiderError {
             _ => false,
         }
     }
+
+    /// `true` se o erro é de *forma da página*: o navegador abriu, mas o que
+    /// ele devia achar não está lá ou não tem o formato esperado (elemento ou
+    /// botão não encontrado, página incompleta, linha inválida, planilha
+    /// ilegível ou com layout inesperado — decisão de 2026-10-13). É o sinal de
+    /// "mudança aparente no site" que dispara o alerta já na primeira noite
+    /// (tarefa 3.6). Rede e navegador (`Navegador`, `DownloadNaoIniciado`) não
+    /// entram: seguem a regra das N noites.
+    ///
+    /// Classificação só para alertas: a retentativa continua governada por
+    /// [`SpiderError::eh_transitorio`], que não muda. Variante nova nasce fora
+    /// da lista (o `_`): só alerta depois de N noites.
+    pub fn eh_mudanca_de_pagina(&self) -> bool {
+        match self {
+            SpiderError::ElementoNaoEncontrado(_)
+            | SpiderError::BotaoDownloadNaoEncontrado(_)
+            | SpiderError::PaginaIncompleta(_)
+            | SpiderError::LinhaInvalida(_)
+            | SpiderError::Planilha { .. }
+            | SpiderError::TabelaNaoEncontrada(_) => true,
+            SpiderError::CaminhoDaPlanilhaFalhou { origem, .. } => origem.eh_mudanca_de_pagina(),
+            _ => false,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, SpiderError>;
@@ -438,5 +462,52 @@ mod tests {
         ] {
             assert!(!erro.eh_transitorio(), "{erro}");
         }
+    }
+
+    #[test]
+    fn mudanca_de_pagina_e_so_erro_de_forma() {
+        for erro in [
+            SpiderError::ElementoNaoEncontrado("#e".into()),
+            SpiderError::BotaoDownloadNaoEncontrado("#b".into()),
+            SpiderError::PaginaIncompleta("sem dezenas".into()),
+            SpiderError::LinhaInvalida("esperava 15 dezenas".into()),
+            SpiderError::Planilha {
+                caminho: PathBuf::from("x.xlsx"),
+                detalhe: "corrompida".into(),
+            },
+            SpiderError::TabelaNaoEncontrada(PathBuf::from("x.xlsx")),
+        ] {
+            assert!(erro.eh_mudanca_de_pagina(), "{erro}");
+        }
+        for erro in [
+            navegador(),
+            SpiderError::DownloadNaoIniciado("#b".into()),
+            SpiderError::RelogioInvalido,
+            SpiderError::TravaOcupada { dono: None },
+            SpiderError::PublicacaoEnvioFalhou("rede".into()),
+            SpiderError::Db(rusqlite::Error::InvalidQuery),
+        ] {
+            assert!(!erro.eh_mudanca_de_pagina(), "{erro}");
+        }
+    }
+
+    #[test]
+    fn mudanca_de_pagina_olha_a_causa_do_caminho_da_planilha() {
+        let embrulhar = |origem: SpiderError| SpiderError::CaminhoDaPlanilhaFalhou {
+            loteria: "quina".into(),
+            backup: None,
+            origem: Box::new(origem),
+        };
+        assert!(embrulhar(SpiderError::ElementoNaoEncontrado("#e".into())).eh_mudanca_de_pagina());
+        assert!(!embrulhar(navegador()).eh_mudanca_de_pagina());
+    }
+
+    #[test]
+    fn a_classificacao_de_alerta_nao_muda_a_retentativa() {
+        // `LinhaInvalida` é mudança de página mas continua definitiva para a
+        // retentativa; `Navegador` é o inverso.
+        let linha = SpiderError::LinhaInvalida("x".into());
+        assert!(linha.eh_mudanca_de_pagina() && !linha.eh_transitorio());
+        assert!(navegador().eh_transitorio() && !navegador().eh_mudanca_de_pagina());
     }
 }

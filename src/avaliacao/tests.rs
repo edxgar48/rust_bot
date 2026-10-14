@@ -25,6 +25,7 @@ pub(super) const MINI: LoteriaConfig = LoteriaConfig {
     perfil_ativo: "mini_v1",
     dias_sorteio: &[],
     procurar_a_partir_das: HoraLocal { hora: 0, minuto: 0 },
+    sorteios_especiais: &[],
 };
 
 pub(super) fn obs(concurso: u32, dezena: u32, posicao: u32, saiu: Option<bool>) -> Observacao {
