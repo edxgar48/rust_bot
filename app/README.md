@@ -31,5 +31,14 @@ npm run preview    # serve dist/ localmente
   Service worker (vite-plugin-pwa) só faz precache do app shell; os dados do
   contrato NÃO passam por ele, o cache deles é o IndexedDB com conferência de
   SHA-256. SW existe só no build (`npm run preview`), nunca em `npm run dev`.
-- `src/app.css`: tokens de cor (Material 3, semente verde-azulada), claro/escuro.
+- Sistema de design (4.4): `src/estilos/tokens.css` (cor claro/escuro, tipografia da
+  escala M3, forma, elevação, espaçamento) e `base.css`. Tema automático/claro/escuro:
+  `src/lib/tema.ts` (preferência em localStorage, tolerante a falha) aplicada em
+  `data-tema` no `<html>`; um script inline em `index.html` evita o flash. Fonte: pilha
+  local (Roboto se existir, senão system-ui), sem CDN.
+- Componentes em `src/componentes/` (BolaDezena, Volante, Cartao, Aviso, Chip,
+  Segmentado, LinhaRanking, BarraNavegacao, SeletorTema, Icone) e lógica pura em
+  `volante.ts`, `ranking.ts`, `segmentado.ts`. Catálogo: `npm run dev` e abrir `#catalogo`;
+  para vê-lo num build, `npm run build:catalogo && npm run preview:catalogo`
+  (`dist-catalogo/`, ignorado pelo git). O build normal não contém o catálogo.
 - `testes/`: fixtures (cópias de `publico/v1/`) e testes de dados.

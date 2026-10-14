@@ -39,6 +39,52 @@ export const textos = {
     megasena: 'Mega-Sena',
     quina: 'Quina',
   },
+  inicio: {
+    ultimoResultado: 'Último resultado',
+    dezenasSorteadas: 'Dezenas sorteadas',
+    semResultado: 'Sem resultado guardado para esta loteria.',
+  },
+  tema: {
+    // `atual` é o rótulo da preferência em uso.
+    alternar: (atual: string) => `Tema: ${atual}. Toque para trocar.`,
+    automatico: 'automático (segue o aparelho)',
+    claro: 'claro',
+    escuro: 'escuro',
+  },
+  aviso: {
+    informativo: 'Aviso',
+    erro: 'Erro',
+  },
+  bola: {
+    dezena: (numero: number) => `Dezena ${numero}`,
+    estados: {
+      neutra: '',
+      sorteada: 'sorteada',
+      destaque: 'em destaque',
+      selecionada: 'selecionada',
+    },
+  },
+  volante: {
+    // Rótulo do grupo de dezenas de uma loteria.
+    grupo: (loteria: string) => `Volante da ${loteria}`,
+    dezenaNaFaixa: (numero: number, posicao: number, faixa: number, faixas: number) =>
+      `Dezena ${numero}, posição ${posicao}, faixa ${faixa} de ${faixas}`,
+    dezenaSemPosicao: (numero: number) => `Dezena ${numero}, sem posição`,
+    emDestaque: 'em destaque',
+    legenda: 'Faixas de posição no ranking',
+    faixa: (faixa: number, de: number, ate: number) => `Faixa ${faixa}: posições ${de} a ${ate}`,
+    faixaCurta: (faixa: number) => `Faixa ${faixa}`,
+  },
+  ranking: {
+    posicao: (posicao: number) => `${posicao}º lugar`,
+    indice: 'Índice',
+    evidencia: 'Evidência',
+    semEvidencia: 'sem evidência calculada',
+    subiu: (n: number) => `subiu ${n} ${n === 1 ? 'posição' : 'posições'}`,
+    caiu: (n: number) => `caiu ${n} ${n === 1 ? 'posição' : 'posições'}`,
+    igual: 'manteve a posição',
+    semVariacao: 'sem concurso anterior para comparar',
+  },
 } as const;
 
 // Rótulos dos identificadores enumerados do contrato v1 ("Valores enumerados").

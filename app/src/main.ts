@@ -1,5 +1,6 @@
 import { mount } from 'svelte';
-import './app.css';
+import './estilos/tokens.css';
+import './estilos/base.css';
 import App from './App.svelte';
 
 const alvo = document.getElementById('app');

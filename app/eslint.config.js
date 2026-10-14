@@ -4,7 +4,7 @@ import svelte from 'eslint-plugin-svelte';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'testes/fixtures/'] },
+  { ignores: ['dist/', 'dist-catalogo/', 'node_modules/', 'testes/fixtures/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...svelte.configs['flat/recommended'],

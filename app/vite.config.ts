@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     svelte(),
     VitePWA({
@@ -37,8 +37,10 @@ export default defineConfig({
   ],
   // Caminhos relativos: o build funciona em qualquer hospedagem de arquivos.
   base: './',
+  // Vitest: o Svelte precisa da build de navegador para montar componentes no jsdom.
+  resolve: mode === 'test' ? { conditions: ['browser'] } : undefined,
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts', 'testes/**/*.test.ts'],
   },
-});
+}));

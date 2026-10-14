@@ -7,6 +7,14 @@
     <meta name="theme-color" content="#006B5E" />
     <link rel="icon" href="icone.svg" type="image/svg+xml" />
     <title>Força das Dezenas</title>
+    <!-- Aplica o tema escolhido antes da primeira pintura (sem flash). A chave 'tema' é a
+         mesma de CHAVE_TEMA em src/lib/tema.ts (um teste confere). Falha = segue o sistema. -->
+    <script>
+      try {
+        var t = localStorage.getItem('tema');
+        if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

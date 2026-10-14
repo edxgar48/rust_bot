@@ -1,0 +1,152 @@
+/*
+ * Tokens de design (Material 3, semente verde-azulada #006B5E).
+ * Cores: o tema claro é o padrão; o escuro vale (a) quando o sistema pede e o
+ * usuário não forçou o claro, e (b) em qualquer elemento com data-tema="escuro".
+ * data-tema="claro|escuro" no <html> força o tema; em outro elemento vale só
+ * para ele (o catálogo mostra os dois temas lado a lado).
+ * Evita light-dark(): o Vite o converte em variáveis que não respeitam
+ * data-tema aninhado, e navegadores sem suporte perderiam todas as cores.
+ * O teste src/estilos/contraste.test.ts lê este arquivo: mantenha um token por linha
+ * e o bloco do escuro dentro de @media idêntico ao [data-tema='escuro'].
+ *
+ * Cores de faixa (volante): 1 = topo do ranking. Nunca são a única pista:
+ * o volante também muda a borda por faixa e rotula cada dezena.
+ */
+:root,
+[data-tema='claro'] {
+  color-scheme: light;
+  --cor-primaria: #006b5e;
+  --cor-sobre-primaria: #ffffff;
+  --cor-primaria-cont: #9ef2e1;
+  --cor-sobre-primaria-cont: #00201b;
+  --cor-secundaria-cont: #cce8e1;
+  --cor-sobre-secundaria-cont: #05201b;
+  --cor-superficie: #f4fbf8;
+  --cor-cont-baixo: #eef5f2;
+  --cor-cont: #e8efec;
+  --cor-cont-altissimo: #dde4e1;
+  --cor-texto: #161d1b;
+  --cor-texto-var: #3f4947;
+  --cor-contorno: #6f7977;
+  --cor-contorno-var: #bec9c6;
+  --cor-erro: #ba1a1a;
+  --cor-sobre-erro: #ffffff;
+  --cor-erro-cont: #ffdad6;
+  --cor-sobre-erro-cont: #410002;
+  --cor-faixa-1: #006b5e;
+  --cor-sobre-faixa-1: #ffffff;
+  --cor-faixa-2: #2f7f72;
+  --cor-sobre-faixa-2: #ffffff;
+  --cor-faixa-3: #7fc4b7;
+  --cor-sobre-faixa-3: #00201b;
+  --cor-faixa-4: #b8e3da;
+  --cor-sobre-faixa-4: #00201b;
+  --cor-faixa-5: #e3f1ed;
+  --cor-sobre-faixa-5: #161d1b;
+}
+
+[data-tema='escuro'] {
+  color-scheme: dark;
+  --cor-primaria: #82d5c5;
+  --cor-sobre-primaria: #00382f;
+  --cor-primaria-cont: #005046;
+  --cor-sobre-primaria-cont: #9ef2e1;
+  --cor-secundaria-cont: #334b46;
+  --cor-sobre-secundaria-cont: #cce8e1;
+  --cor-superficie: #0e1513;
+  --cor-cont-baixo: #161d1b;
+  --cor-cont: #1a211f;
+  --cor-cont-altissimo: #343b3a;
+  --cor-texto: #dde4e1;
+  --cor-texto-var: #bec9c6;
+  --cor-contorno: #899390;
+  --cor-contorno-var: #3f4947;
+  --cor-erro: #ffb4ab;
+  --cor-sobre-erro: #690005;
+  --cor-erro-cont: #93000a;
+  --cor-sobre-erro-cont: #ffdad6;
+  --cor-faixa-1: #82d5c5;
+  --cor-sobre-faixa-1: #00382f;
+  --cor-faixa-2: #4fa697;
+  --cor-sobre-faixa-2: #00201b;
+  --cor-faixa-3: #2c7a6e;
+  --cor-sobre-faixa-3: #ffffff;
+  --cor-faixa-4: #1b4f46;
+  --cor-sobre-faixa-4: #d9f2ec;
+  --cor-faixa-5: #1a211f;
+  --cor-sobre-faixa-5: #dde4e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    color-scheme: dark;
+    --cor-primaria: #82d5c5;
+    --cor-sobre-primaria: #00382f;
+    --cor-primaria-cont: #005046;
+    --cor-sobre-primaria-cont: #9ef2e1;
+    --cor-secundaria-cont: #334b46;
+    --cor-sobre-secundaria-cont: #cce8e1;
+    --cor-superficie: #0e1513;
+    --cor-cont-baixo: #161d1b;
+    --cor-cont: #1a211f;
+    --cor-cont-altissimo: #343b3a;
+    --cor-texto: #dde4e1;
+    --cor-texto-var: #bec9c6;
+    --cor-contorno: #899390;
+    --cor-contorno-var: #3f4947;
+    --cor-erro: #ffb4ab;
+    --cor-sobre-erro: #690005;
+    --cor-erro-cont: #93000a;
+    --cor-sobre-erro-cont: #ffdad6;
+    --cor-faixa-1: #82d5c5;
+    --cor-sobre-faixa-1: #00382f;
+    --cor-faixa-2: #4fa697;
+    --cor-sobre-faixa-2: #00201b;
+    --cor-faixa-3: #2c7a6e;
+    --cor-sobre-faixa-3: #ffffff;
+    --cor-faixa-4: #1b4f46;
+    --cor-sobre-faixa-4: #d9f2ec;
+    --cor-faixa-5: #1a211f;
+    --cor-sobre-faixa-5: #dde4e1;
+  }
+}
+
+/* Demais tokens: independem do tema. */
+:root {
+  /* Tipografia: pilha local (offline primeiro, sem fonte de CDN) */
+  --familia:
+    Roboto, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --fonte-titulo-g: 400 1.375rem/1.75rem var(--familia);
+  --fonte-titulo-m: 500 1rem/1.5rem var(--familia);
+  --fonte-titulo-p: 500 0.875rem/1.25rem var(--familia);
+  --fonte-corpo-g: 400 1rem/1.5rem var(--familia);
+  --fonte-corpo-m: 400 0.875rem/1.25rem var(--familia);
+  --fonte-rotulo-g: 500 0.875rem/1.25rem var(--familia);
+  --fonte-rotulo-m: 500 0.75rem/1rem var(--familia);
+  --fonte-rotulo-p: 500 0.6875rem/1rem var(--familia);
+
+  /* Forma */
+  --raio-xs: 0.25rem;
+  --raio-p: 0.5rem;
+  --raio-m: 0.75rem;
+  --raio-g: 1rem;
+  --raio-gg: 1.75rem;
+  --raio-cheio: 999px;
+
+  /* Elevação */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --elev-2: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --elev-3: 0 1px 3px rgb(0 0 0 / 0.3), 0 4px 8px 3px rgb(0 0 0 / 0.15);
+
+  /* Espaçamento (grade de 4 px) e alvo de toque */
+  --esp-1: 0.25rem;
+  --esp-2: 0.5rem;
+  --esp-3: 0.75rem;
+  --esp-4: 1rem;
+  --esp-5: 1.25rem;
+  --esp-6: 1.5rem;
+  --esp-8: 2rem;
+  --esp-10: 2.5rem;
+  --alvo-minimo: 2.75rem;
+}
