@@ -21,6 +21,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo run --bin sync -- <comando> <loteria>   # ver README.md
 ml/.venv/Scripts/python -m pytest ml/          # a partir da Fase 1.5 (venv em ml/.venv, Python 3.12)
+cd app && npm run lint && npm run check && npm test && npm run build   # app (ver app/README.md)
 ```
 
 ## Regras que valem sempre

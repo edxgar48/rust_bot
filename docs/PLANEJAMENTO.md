@@ -1,9 +1,9 @@
 # Planejamento — back-end de estatísticas de loterias (Fases 0 a 3)
 
 Este documento cobre o back-end: coleta, validação, motor estatístico,
-experimentos de ML e exportação/automação. O front-end (app mobile) terá um
-planejamento próprio; o ponto de contato entre os dois é o contrato de dados
-da Fase 2 (`docs/contrato-v1.md`).
+experimentos de ML e exportação/automação. O front-end (app PWA, Fases 4 a 8)
+tem planejamento próprio em `docs/PLANEJAMENTO-FRONTEND.md`; o ponto de
+contato entre os dois é o contrato de dados da Fase 2 (`docs/contrato-v1.md`).
 
 ## Decisões de arquitetura
 

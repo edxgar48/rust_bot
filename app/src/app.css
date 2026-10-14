@@ -1,0 +1,30 @@
+:root {
+  color-scheme: light dark;
+  --cor-primaria: #006b5e;
+  --cor-superficie: #f4fbf8;
+  --cor-superficie-var: #e3eae6;
+  --cor-texto: #161d1b;
+  --cor-contorno: #6f7976;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cor-primaria: #82d5c5;
+    --cor-superficie: #0e1513;
+    --cor-superficie-var: #1b211f;
+    --cor-texto: #dde4e1;
+    --cor-contorno: #899390;
+  }
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+}

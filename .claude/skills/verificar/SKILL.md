@@ -1,7 +1,7 @@
 ---
 name: verificar
 description: Gate de qualidade do projeto — roda fmt, clippy, testes Rust, pytest (se existir ml/) e validação dos bancos, e devolve um veredito aprovado/reprovado. Use antes de marcar uma tarefa como concluída ou antes de commitar.
-allowed-tools: Bash(cargo fmt *) Bash(cargo clippy *) Bash(cargo test *) Bash(cargo run --bin sync -- validar *) Bash(ml/.venv/Scripts/python -m pytest *)
+allowed-tools: Bash(cargo fmt *) Bash(cargo clippy *) Bash(cargo test *) Bash(cargo run --bin sync -- validar *) Bash(ml/.venv/Scripts/python -m pytest *) Bash(npm --prefix app run *) Bash(npm --prefix app test)
 ---
 
 # Gate de verificação
@@ -15,6 +15,8 @@ Execute em ordem e **não pare no primeiro erro** — colete tudo:
    versões de `ml/pyproject.toml`; se a venv não existir, o gate falha e diz como criá-la)
 5. Se o subcomando `validar` existir e houver `resultados_*.db`:
    `cargo run --bin sync -- validar todas`
+6. Se `app/package.json` existir: `npm --prefix app run lint`, `npm --prefix app run check`,
+   `npm --prefix app test` e `npm --prefix app run build`
 
 ## Relatório
 
@@ -24,6 +26,7 @@ fmt:     ok | N arquivos
 clippy:  ok | N avisos (lista curta)
 testes:  X passaram, Y falharam (nomes dos que falharam)
 pytest:  ... | n/a
+app:     lint/check/testes/build ok | falhas | n/a
 validar: ... | n/a
 ```
 

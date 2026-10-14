@@ -77,8 +77,22 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.7 Agendamento no Windows (`.ps1`)
 - [x] 3.8 Runbook no README
 
+## Front-end (`docs/PLANEJAMENTO-FRONTEND.md`) · `engenheiro-app` (a criar)
+
+- [x] 4.1 Esqueleto do app em `app/` (Vite + Svelte 5 + TypeScript; lint, check, test e build verificados em 2026-10-14; sem conferência visual, fica para a 4.4)
+- [ ] 4.2 Camada de dados (cliente do contrato, hash, tipos)
+- [ ] 4.3 Cache e offline
+- [ ] 4.4 Sistema de design
+- [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
+- [ ] 5.1 Início · 5.2 Tabela de força · 5.3 Volante e detalhe da dezena · 5.4 "Entenda" e avisos
+- [ ] 6.1 Histórico · 6.2 Conferir jogo · 6.3 Jogos salvos · 6.4 Conferência automática
+- [ ] 7.1 Funções de estatística · 7.2 Telas e gráficos · 7.3 Comparação com o acaso
+- [ ] 8.1 Instalação PWA · 8.2 Testes ponta a ponta · 8.3 Lighthouse · 8.4 Hospedagem e deploy · 8.5 Runbook · 8.6 Verificação de contrato no build
+
 ## Decisões em aberto
 
+- [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1), estilo visual (4.5), backup de jogos salvos (6.3)
+- [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
 - [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)

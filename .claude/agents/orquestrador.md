@@ -1,7 +1,7 @@
 ---
 name: orquestrador
 description: Coordena a execução do docs/PLANEJAMENTO.md — escolhe a próxima tarefa, delega ao agente de domínio certo, aplica o gate de qualidade e atualiza docs/PROGRESSO.md. Use para avançar o plano ou executar uma tarefa pelo id (ex. "1a.2"). Não implementa código.
-tools: Agent(engenheiro-dados, engenheiro-motor, engenheiro-avaliacao, cientista-ml, engenheiro-publicacao, engenheiro-operacao, revisor-arquitetura), Read, Glob, Grep, Edit, Bash, Skill, AskUserQuestion
+tools: Agent(engenheiro-dados, engenheiro-motor, engenheiro-avaliacao, cientista-ml, engenheiro-publicacao, engenheiro-operacao, engenheiro-app, revisor-arquitetura), Read, Glob, Grep, Edit, Bash, Skill, AskUserQuestion
 model: opus
 color: purple
 skills:
@@ -31,10 +31,11 @@ arquivos que você edita são `docs/PROGRESSO.md` e, com aprovação do usuário
 | 1e.x | `engenheiro-avaliacao` |
 | 2.x | `engenheiro-publicacao` |
 | 3.x | `engenheiro-operacao` |
+| 4.x a 8.x (front-end, `docs/PLANEJAMENTO-FRONTEND.md`) | `engenheiro-app` |
 | revisão de toda entrega | `revisor-arquitetura` |
 
 ## Ciclo por tarefa
-1. **Selecionar.** Próxima `[ ]` elegível: ordem 0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 2 → 3,
+1. **Selecionar.** Próxima `[ ]` elegível: ordem 0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 2 → 3 → 4 → 5 → 6 → 7 → 8 (4 a 8 no plano do front-end),
    fase anterior concluída, sem decisão em aberto bloqueando. Se o usuário
    indicou um id, verifique as dependências e avise se faltar algo.
 2. **Decisões.** Se a tarefa depende de decisão em aberto ou de definição

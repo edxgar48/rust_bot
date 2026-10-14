@@ -12,3 +12,5 @@ __pycache__/
 /sync.lock.dono
 /logs/
 /alertas/
+/app/node_modules
+/app/dist

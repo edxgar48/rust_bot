@@ -31,6 +31,7 @@ orquestrador (opus) ─ coordena, não programa; único que edita docs/PROGRESSO
 ├── engenheiro-publicacao ─── Fase 2 ───── ├─ auditor-contrato
 │                                          └─ escritor-testes
 ├── engenheiro-operacao ───── Fase 3 ───── └─ escritor-testes
+├── engenheiro-app ────────── Fase 4–8 ─── (front-end em app/, sem sub-agentes)
 └── revisor-arquitetura (opus, só leitura) ─ gate final ─ └─ verificador-vazamento
 ```
 
