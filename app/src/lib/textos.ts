@@ -1,5 +1,10 @@
 // Todos os textos de interface ficam neste módulo.
-import type { DirecaoEvidencia, GrauEvidencia, Normalizacao } from '../dados/tipos';
+import type {
+  ChaveComponente,
+  DirecaoEvidencia,
+  GrauEvidencia,
+  Normalizacao,
+} from '../dados/tipos';
 
 export const textos = {
   appNome: 'Força das Dezenas',
@@ -61,8 +66,7 @@ export const textos = {
     rotuloLoteria: 'Loteria',
     rotuloVisao: 'Forma de exibição',
     visaoLista: 'Lista',
-    visaoVolante: 'Volante (em breve)',
-    volanteEmBreve: 'A visão em volante ainda não está pronta. Por enquanto, use a lista.',
+    visaoVolante: 'Volante',
     aviso: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
     colunas: {
       posicao: 'Pos.',
@@ -79,6 +83,27 @@ export const textos = {
     semLoteria: 'Ainda sem dados desta loteria.',
     recusadoSemAnterior:
       'O arquivo desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+  },
+  detalhe: {
+    titulo: (dezena: number, posicao: number) => `Dezena ${dezena} · ${posicao}º lugar`,
+    fechar: 'Fechar',
+    indice: 'Índice de força',
+    variacao: 'Em relação ao concurso anterior',
+    evidencia: 'Evidência sobre o acaso',
+    semEvidencia: 'Sem evidência calculada para esta dezena.',
+    janela: (janela: number) =>
+      janela === 0
+        ? 'Janela dos componentes: histórico inteiro'
+        : `Janela dos componentes: últimos ${janela} ${janela === 1 ? 'concurso' : 'concursos'}`,
+    componentes: 'Componentes do índice',
+    componentesIntro:
+      'Os nove números abaixo, medidos na janela, são a base do índice. Eles descrevem o passado.',
+    evidenciaNota:
+      'A evidência mede o quanto os dados convencem, não o tamanho do desvio, e nunca prevê o sorteio.',
+    semDados: 'sem dados na janela',
+    nuncaSaiu: '-',
+    aviso:
+      'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
   },
   tema: {
     // `atual` é o rótulo da preferência em uso.
@@ -110,6 +135,9 @@ export const textos = {
     legenda: 'Faixas de posição no ranking',
     faixa: (faixa: number, de: number, ate: number) => `Faixa ${faixa}: posições ${de} a ${ate}`,
     faixaCurta: (faixa: number) => `Faixa ${faixa}`,
+    // Célula do volante da Força: abre o detalhe da dezena.
+    celula: (numero: number, posicao: number) => `Dezena ${numero}, ${posicao}º lugar`,
+    posicaoCurta: (posicao: number) => `${posicao}º`,
   },
   ranking: {
     posicao: (posicao: number) => `${posicao}º lugar`,
@@ -142,6 +170,113 @@ export const rotulosEvidenciaDirecao: Readonly<Record<DirecaoEvidencia, string>>
 export const rotulosNormalizacao: Readonly<Record<Normalizacao, string>> = {
   zscore: 'Padronização (z-score)',
   minmax: 'Escala de 0 a 1 (mínimo e máximo)',
+};
+
+// Frase de cada grau x direção (5 x 2). "Viés" e "acaso" sozinhos não bastam para
+// quem lê: a frase diz o que a evidência significa, sem sugerir previsão. Um
+// teste exige as 10 frases, sem termos de previsão.
+export const frasesEvidencia: Readonly<
+  Record<GrauEvidencia, Readonly<Record<DirecaoEvidencia, string>>>
+> = {
+  muito_fraca: {
+    vies: 'Evidência muito fraca de que esta dezena foge do acaso. Os dados quase não permitem concluir nada.',
+    acaso:
+      'Nada indica que esta dezena fuja do acaso. Isso não prova que ela siga o acaso: só quer dizer que os dados não mostram desvio.',
+  },
+  fraca: {
+    vies: 'Evidência fraca de que esta dezena foge do acaso. É pouco para concluir; o desvio, se existir, é pequeno.',
+    acaso:
+      'Os dados favorecem, de leve, que esta dezena siga o acaso. Nada indica que ela fuja dele.',
+  },
+  moderada: {
+    vies: 'Evidência moderada de que a chance desta dezena seja um pouco diferente da esperada pelo acaso. O desvio pode ser minúsculo.',
+    acaso: 'Os dados favorecem que esta dezena siga o acaso. Nada indica que ela fuja dele.',
+  },
+  forte: {
+    vies: 'Evidência forte de que a chance desta dezena seja um pouco diferente da esperada pelo acaso. Isso não quer dizer que ela vá sair: o desvio pode ser minúsculo.',
+    acaso: 'Os dados favorecem fortemente que esta dezena siga o acaso.',
+  },
+  muito_forte: {
+    vies: 'Evidência muito forte de que a chance desta dezena seja um pouco diferente da esperada pelo acaso. Mesmo assim o desvio pode ser minúsculo, e isso não é previsão.',
+    acaso: 'Os dados favorecem muito fortemente que esta dezena siga o acaso.',
+  },
+};
+
+export const fraseEvidencia = (grau: GrauEvidencia, direcao: DirecaoEvidencia): string =>
+  frasesEvidencia[grau][direcao];
+
+export interface TextoComponente {
+  readonly rotulo: string;
+  readonly explicacao: string;
+  /** Por que o valor pode faltar (só nos componentes que aceitam `null`). */
+  readonly motivoSemDados?: string;
+  /** Valor com unidade ("1 vez", "11 concursos"). */
+  readonly formatar: (valor: number) => string;
+}
+
+const numero = (n: number): string => new Intl.NumberFormat('pt-BR').format(n);
+const vezes = (n: number): string => `${numero(n)} ${n === 1 ? 'vez' : 'vezes'}`;
+const concursos = (n: number): string => `${numero(n)} ${n === 1 ? 'concurso' : 'concursos'}`;
+
+// Um texto por componente do contrato; o tipo Record exige os 9.
+export const textosComponentes: Readonly<Record<ChaveComponente, TextoComponente>> = {
+  frequencia: {
+    rotulo: 'Frequência na janela',
+    explicacao:
+      'Quantas vezes a dezena saiu nos concursos da janela. Zero é um valor real: ela não saiu.',
+    formatar: vezes,
+  },
+  maiorEspaco: {
+    rotulo: 'Maior espaço sem sair',
+    explicacao:
+      'O maior número de concursos que ficaram sem a dezena entre duas aparições seguidas, dentro da janela.',
+    motivoSemDados: 'Precisa de pelo menos 2 aparições na janela.',
+    formatar: concursos,
+  },
+  maiorEspacoOcorrencias: {
+    rotulo: 'Vezes do maior espaço',
+    explicacao: 'Quantas vezes esse maior espaço aconteceu na janela.',
+    motivoSemDados: 'Depende do maior espaço, que não existe na janela.',
+    formatar: vezes,
+  },
+  menorEspaco: {
+    rotulo: 'Menor espaço sem sair',
+    explicacao:
+      'O menor número de concursos que ficaram sem a dezena entre duas aparições seguidas. Zero quer dizer que ela saiu em concursos seguidos.',
+    motivoSemDados: 'Precisa de pelo menos 2 aparições na janela.',
+    formatar: concursos,
+  },
+  menorEspacoOcorrencias: {
+    rotulo: 'Vezes do menor espaço',
+    explicacao: 'Quantas vezes esse menor espaço aconteceu na janela.',
+    motivoSemDados: 'Depende do menor espaço, que não existe na janela.',
+    formatar: vezes,
+  },
+  somaVariacoes: {
+    rotulo: 'Oscilação dos espaços',
+    explicacao:
+      'Soma das diferenças entre espaços seguidos. Quanto maior, mais irregular é o ritmo em que a dezena aparece.',
+    motivoSemDados: 'Precisa de pelo menos 3 aparições na janela.',
+    formatar: numero,
+  },
+  espacoFinal: {
+    rotulo: 'Concursos desde a última vez',
+    explicacao:
+      'Quantos concursos se passaram desde a última vez que a dezena saiu. Este número não se limita à janela e pode ser maior que ela.',
+    motivoSemDados: 'A dezena nunca saiu.',
+    formatar: concursos,
+  },
+  repeticoesTotal: {
+    rotulo: 'Repetições em concursos seguidos',
+    explicacao: 'Quantas vezes a dezena saiu em dois concursos seguidos, dentro da janela.',
+    formatar: vezes,
+  },
+  repeticaoAtual: {
+    rotulo: 'Sequência atual',
+    explicacao:
+      'Quantos concursos seguidos a dezena vem saindo, contando para trás a partir do último sorteado. Zero quer dizer que ela não saiu no último.',
+    formatar: concursos,
+  },
 };
 
 export const rotuloEvidenciaGrau = (grau: GrauEvidencia): string => rotulosEvidenciaGrau[grau];

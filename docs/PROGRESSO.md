@@ -86,7 +86,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
 - [x] 5.1 Início (roteamento por hash, 5 estados, abertura baixa só index + ultimo e o resto em segundo plano; 216 testes; capturas 360/1280 px conferidas, 2026-10-14; download de tabela_geral e historico em segundo plano mantido, decisão do usuário)
 - [x] 5.2 Tabela de força (lista por loteria, 5 estados, conferida contra a saída real do `sync tabela` nas 3 loterias; 273 testes; capturas 360/1280 px, 2026-10-14; visão Volante fica para a 5.3)
-- [ ] 5.3 Volante e detalhe da dezena
+- [x] 5.3 Volante e detalhe da dezena (volante com 5 faixas, detalhe em folha modal, visão e dezena na URL, null como "sem dados na janela"; 336 testes; Chrome 360/1280 px e teclado, 2026-10-14; decisões do usuário: 5 faixas, alvo 32,8×44 px na Quina e teclado por célula mantidos; espaço final de dezena que nunca saiu aparece como "-")
 - [ ] 5.4 "Entenda" e avisos
 - [ ] 6.1 Histórico · 6.2 Conferir jogo · 6.3 Jogos salvos · 6.4 Conferência automática
 - [ ] 7.1 Funções de estatística · 7.2 Telas e gráficos · 7.3 Comparação com o acaso

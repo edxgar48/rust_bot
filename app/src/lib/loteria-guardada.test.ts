@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CHAVE_LOTERIA_FORCA, gravarLoteriaGuardada, lerLoteriaGuardada } from './loteria-guardada';
+import {
+  CHAVE_EXIBICAO_FORCA,
+  CHAVE_LOTERIA_FORCA,
+  gravarExibicaoGuardada,
+  gravarLoteriaGuardada,
+  lerExibicaoGuardada,
+  lerLoteriaGuardada,
+} from './loteria-guardada';
 
 function armazenamento(inicial: Record<string, string> = {}) {
   const dados = new Map(Object.entries(inicial));
@@ -38,5 +45,33 @@ describe('loteria guardada da Força', () => {
     expect(lerLoteriaGuardada(quebrado)).toBeNull();
     expect(gravarLoteriaGuardada('quina', quebrado)).toBe(false);
     expect(gravarLoteriaGuardada('quina', null)).toBe(false);
+  });
+});
+
+describe('forma de exibição guardada da Força', () => {
+  it('grava e lê lista e volante', () => {
+    for (const e of ['lista', 'volante'] as const) {
+      const arm = armazenamento();
+      expect(gravarExibicaoGuardada(e, arm)).toBe(true);
+      expect(arm.dados.get(CHAVE_EXIBICAO_FORCA)).toBe(e);
+      expect(lerExibicaoGuardada(arm)).toBe(e);
+    }
+  });
+
+  it('ausente, estranho ou armazenamento que lança: null / false, sem lançar', () => {
+    expect(lerExibicaoGuardada(armazenamento())).toBeNull();
+    expect(lerExibicaoGuardada(armazenamento({ [CHAVE_EXIBICAO_FORCA]: 'grade' }))).toBeNull();
+    expect(lerExibicaoGuardada(null)).toBeNull();
+    const quebrado = {
+      getItem: () => {
+        throw new Error('bloqueado');
+      },
+      setItem: () => {
+        throw new Error('cheio');
+      },
+    };
+    expect(lerExibicaoGuardada(quebrado)).toBeNull();
+    expect(gravarExibicaoGuardada('volante', quebrado)).toBe(false);
+    expect(gravarExibicaoGuardada('volante', null)).toBe(false);
   });
 });

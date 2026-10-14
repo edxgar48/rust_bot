@@ -45,6 +45,10 @@ export type VisaoForca =
       /** Dado recusado: a linha de estado vira Aviso de erro (a tabela anterior continua abaixo). */
       readonly erro: boolean;
       readonly linhas: readonly LinhaForca[];
+      /** Posição de cada dezena (volante). */
+      readonly posicoes: Readonly<Record<number, number>>;
+      /** Tabela validada, de onde sai o detalhe da dezena. */
+      readonly tabela: TabelaGeralV1;
     };
 
 /** Linhas em ordem de posição (1 = mais forte); não confia na ordem do arquivo. */
@@ -59,6 +63,11 @@ export function linhasDaTabela(tabela: TabelaGeralV1): LinhaForca[] {
       direcao: d.evidenciaDirecao,
     }))
     .sort((a, b) => a.posicao - b.posicao || a.dezena - b.dezena);
+}
+
+/** Dezena -> posição no ranking, como o volante a recebe. */
+export function posicoesDaTabela(tabela: TabelaGeralV1): Record<number, number> {
+  return Object.fromEntries(tabela.dezenas.map((d) => [d.dezena, d.posicao]));
 }
 
 function estadoEData(
@@ -115,5 +124,7 @@ export function montarVisaoForca(
     texto,
     erro: estado === 'recusado',
     linhas: linhasDaTabela(tabela),
+    posicoes: posicoesDaTabela(tabela),
+    tabela,
   };
 }

@@ -50,11 +50,22 @@ npm run preview    # serve dist/ localmente
   cache na hora) e `sessao.garantir` (`ResultadoGarantia.falha`: `sem_rede` ou `recusado`). Loteria
   escolhida: URL `#/forca?loteria=quina` (vale mais), senão a última escolha em localStorage
   (`lib/loteria-guardada.ts`, tolerante a falha), senão Lotofácil; trocar usa `history.replaceState`
-  (sem poluir o histórico). A visão Volante é da 5.3 (hoje só um aviso "em breve"). O ponto de
-  extensão do detalhe da dezena é a prop `aoEscolher(dezena)`: sem ela as linhas não são interativas.
+  (sem poluir o histórico). Forma de exibição (Lista/Volante) e dezena aberta
+  também ficam na URL (`#/forca?loteria=quina&visao=volante&dezena=20`; precedência URL, depois
+  localStorage, depois lista). Ver 5.3 abaixo.
   Os CSV em `testes/fixtures/sync-tabela/` são a saída de `sync tabela <loteria> --perfil padrao_v1`
   (gerada junto das fixtures); regerar com o `sync tabela` quando as fixtures de `publico/v1/` forem
   renovadas.
+- Volante e detalhe da dezena (5.3): `componentes/Volante.svelte` em modo leitura com `aoEscolher`
+  (cada célula é um botão "Dezena 20, 1º lugar", colorida por uma das 5 faixas iguais de
+  `volante.ts`, com legenda). O detalhe é uma folha modal (`componentes/FolhaModal.svelte` + `folha.ts`:
+  foco preso, Esc/Fechar/toque no fundo fecham, foco volta à origem; em tela larga vira janela
+  centralizada), igual para lista e volante. Abrir faz `pushState` (voltar fecha); aberto direto pela
+  URL, Fechar só tira o parâmetro; `dezena` inexistente é ignorada. Conteúdo montado em
+  `telas/detalhe-dezena.ts` (puro, testado): índice com 3 casas, variação, evidência (5 graus x 2
+  direções, frases em `textos.ts`), janela e os 9 componentes com explicação; `null` vira "sem dados na
+  janela" (espaço final nulo = "nunca saiu", porque não depende da janela). A Força não tem mais a prop
+  `aoEscolher`: o detalhe é interno.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

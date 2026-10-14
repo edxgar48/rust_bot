@@ -2,7 +2,7 @@
 // Tolerante a falha: modo privado ou armazenamento bloqueado só significam que
 // a escolha não é lembrada. A URL (#/forca?loteria=...) tem precedência.
 import type { Slug } from '../dados/tipos';
-import { ehSlug } from './rotas';
+import { ehExibicao, ehSlug, type ExibicaoForca } from './rotas';
 import { armazenamentoLocal, type EscritorArmazenamento, type LeitorArmazenamento } from './tema';
 
 export const CHAVE_LOTERIA_FORCA = 'forca.loteria';
@@ -26,6 +26,34 @@ export function gravarLoteriaGuardada(
   try {
     if (!armazenamento) return false;
     armazenamento.setItem(CHAVE_LOTERIA_FORCA, slug);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const CHAVE_EXIBICAO_FORCA = 'forca.visao';
+
+/** Última forma de exibição (lista ou volante); ausente, inválida ou bloqueada = `null`. */
+export function lerExibicaoGuardada(
+  armazenamento: LeitorArmazenamento | null = armazenamentoLocal(),
+): ExibicaoForca | null {
+  try {
+    const valor = armazenamento?.getItem(CHAVE_EXIBICAO_FORCA);
+    return ehExibicao(valor) ? valor : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Devolve `false` se não foi possível guardar (o app segue funcionando). */
+export function gravarExibicaoGuardada(
+  exibicao: ExibicaoForca,
+  armazenamento: Pick<EscritorArmazenamento, 'setItem'> | null = armazenamentoLocal(),
+): boolean {
+  try {
+    if (!armazenamento) return false;
+    armazenamento.setItem(CHAVE_EXIBICAO_FORCA, exibicao);
     return true;
   } catch {
     return false;

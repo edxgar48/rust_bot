@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXIBICAO_PADRAO,
   LOTERIA_PADRAO,
+  dezenaDoHash,
+  exibicaoDoHash,
   ROTA_PADRAO,
   ehSlug,
   hashDaForca,
@@ -78,5 +81,57 @@ describe('loteria na URL da Força', () => {
     expect(ehSlug('QUINA')).toBe(false);
     expect(ehSlug(null)).toBe(false);
     expect(ehSlug(undefined)).toBe(false);
+  });
+});
+
+describe('forma de exibição e dezena na URL da Força', () => {
+  it('padrão é a lista; visao aceita só lista e volante', () => {
+    expect(EXIBICAO_PADRAO).toBe('lista');
+    expect(exibicaoDoHash('#/forca?loteria=quina&visao=volante')).toBe('volante');
+    expect(exibicaoDoHash('#/forca?visao=lista&loteria=quina')).toBe('lista');
+    for (const h of [
+      '',
+      '#/forca',
+      '#/forca?visao=',
+      '#/forca?visao=Volante',
+      '#/forca?visao=grade',
+    ]) {
+      expect(exibicaoDoHash(h)).toBeNull();
+    }
+  });
+
+  it('dezena: inteiro positivo; ausente, zero, negativo, texto ou longo demais = null', () => {
+    expect(dezenaDoHash('#/forca?loteria=quina&visao=volante&dezena=20')).toBe(20);
+    expect(dezenaDoHash('#/forca?dezena=7&loteria=quina')).toBe(7);
+    expect(dezenaDoHash('#/forca?dezena=80#topo')).toBe(80);
+    for (const h of [
+      '',
+      '#/forca?dezena=',
+      '#/forca?dezena=0',
+      '#/forca?dezena=-3',
+      '#/forca?dezena=abc',
+      '#/forca?dezena=2x',
+      '#/forca?dezena=1234',
+      '#/forca?dezena=1.5',
+    ]) {
+      expect(dezenaDoHash(h)).toBeNull();
+    }
+  });
+
+  it('hashDaForca monta loteria, visao e dezena nessa ordem e a ida e volta é identidade', () => {
+    expect(hashDaForca('quina', { visao: 'volante', dezena: 20 })).toBe(
+      '#/forca?loteria=quina&visao=volante&dezena=20',
+    );
+    expect(hashDaForca('megasena', { visao: 'lista' })).toBe(
+      '#/forca?loteria=megasena&visao=lista',
+    );
+    expect(hashDaForca('lotofacil', { visao: 'lista', dezena: null })).toBe(
+      '#/forca?loteria=lotofacil&visao=lista',
+    );
+    const h = hashDaForca('quina', { visao: 'volante', dezena: 20 });
+    expect(rotaDoHash(h)).toBe('forca');
+    expect(loteriaDoHash(h)).toBe('quina');
+    expect(exibicaoDoHash(h)).toBe('volante');
+    expect(dezenaDoHash(h)).toBe(20);
   });
 });

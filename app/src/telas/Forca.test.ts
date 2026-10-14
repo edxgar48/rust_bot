@@ -38,12 +38,12 @@ function criarFonte(
 }
 
 let montado: Record<string, unknown> | null = null;
-function montar(fonte: Fonte, aoEscolher?: (dezena: number) => void): HTMLElement {
+function montar(fonte: Fonte): HTMLElement {
   const alvo = document.createElement('div');
   document.body.appendChild(alvo);
   montado = mount(Forca as unknown as Component<Record<string, unknown>>, {
     target: alvo,
-    props: { fonte, aoEscolher },
+    props: { fonte },
   });
   flushSync();
   return alvo;
@@ -130,21 +130,11 @@ describe('Força: atualizado (Lotofácil, padrão)', () => {
     expect(posicoes).toEqual(Array.from({ length: 25 }, (_, i) => `${i + 1}º`));
   });
 
-  it('sem aoEscolher as linhas não são interativas (nenhum botão na lista)', async () => {
+  it('cada linha é um botão que abre o detalhe da dezena', async () => {
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     await esperarLinhas(alvo, 25);
-    expect(alvo.querySelectorAll('ul.lista button')).toHaveLength(0);
-  });
-
-  it('com aoEscolher cada linha é um botão e entrega a dezena', async () => {
-    const aoEscolher = vi.fn();
-    const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()), aoEscolher);
-    await esperarLinhas(alvo, 25);
-    const botoes = alvo.querySelectorAll<HTMLButtonElement>('ul.lista button');
-    expect(botoes).toHaveLength(25);
-    botoes[0]?.click();
-    botoes[1]?.click();
-    expect(aoEscolher.mock.calls).toEqual([[25], [3]]);
+    expect(alvo.querySelectorAll('ul.lista button')).toHaveLength(25);
+    expect(alvo.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('evidência nula vira "sem evidência calculada" e variação nula vira travessão', async () => {
@@ -173,7 +163,7 @@ describe('Força: troca de loteria', () => {
     await esperarLinhas(alvo, 80);
     expect(texto(alvo)).toContain('Próximo concurso 7142, com dados até o 7141');
     expect(selecionada(alvo)).toContain('✓ Quina');
-    expect(location.hash).toBe('#/forca?loteria=quina');
+    expect(location.hash).toBe('#/forca?loteria=quina&visao=lista');
     expect(localStorage.getItem(CHAVE_LOTERIA_FORCA)).toBe('quina');
     expect(history.length).toBe(historicoAntes); // replaceState: sem entrada nova
     expect(alvo.querySelector('ul.lista')?.getAttribute('aria-label')).toContain('Quina');
@@ -256,19 +246,6 @@ describe('Força: loteria guardada', () => {
     location.hash = '#/forca?loteria=quina';
     await esperarLinhas(alvo, 80);
     expect(selecionada(alvo)).toContain('✓ Quina');
-  });
-});
-
-describe('Força: Lista e Volante', () => {
-  it('Volante mostra o aviso "em breve" no lugar da lista; Lista volta', async () => {
-    const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
-    await esperarLinhas(alvo, 25);
-    radio(alvo, 'Volante')?.click();
-    await vi.waitFor(() => expect(texto(alvo)).toContain(textos.forca.volanteEmBreve));
-    expect(linhas(alvo)).toHaveLength(0);
-    expect(texto(alvo)).toContain('O índice resume o passado de cada dezena');
-    radio(alvo, 'Lista')?.click();
-    await esperarLinhas(alvo, 25);
   });
 });
 

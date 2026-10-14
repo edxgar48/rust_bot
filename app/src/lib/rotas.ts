@@ -34,7 +34,42 @@ export function loteriaDoHash(hash: string): Slug | null {
   return ehSlug(valor) ? valor : null;
 }
 
-/** Hash da Força com a loteria escolhida ("#/forca?loteria=quina"). */
-export function hashDaForca(slug: Slug): string {
-  return `${hashDaRota('forca')}?loteria=${slug}`;
+/** Formas de exibição da Força (alternador Lista/Volante). */
+export const EXIBICOES_FORCA = ['lista', 'volante'] as const;
+export type ExibicaoForca = (typeof EXIBICOES_FORCA)[number];
+export const EXIBICAO_PADRAO: ExibicaoForca = 'lista';
+
+export function ehExibicao(valor: unknown): valor is ExibicaoForca {
+  return EXIBICOES_FORCA.some((e) => e === valor);
+}
+
+/** Parâmetro `visao` ("lista" ou "volante"); ausente ou inválido = `null`. */
+export function exibicaoDoHash(hash: string): ExibicaoForca | null {
+  const m = /[?&]visao=([^&#]*)/.exec(hash);
+  const valor = m?.[1] ?? null;
+  return ehExibicao(valor) ? valor : null;
+}
+
+/** Parâmetro `dezena` (inteiro positivo de até 3 dígitos); ausente ou inválido = `null`. */
+export function dezenaDoHash(hash: string): number | null {
+  const m = /[?&]dezena=(\d{1,3})(?:[&#]|$)/.exec(hash);
+  const n = m?.[1] === undefined ? null : Number(m[1]);
+  return n !== null && n >= 1 ? n : null;
+}
+
+export interface OpcoesHashForca {
+  readonly visao?: ExibicaoForca;
+  /** Dezena com o detalhe aberto. */
+  readonly dezena?: number | null;
+}
+
+/**
+ * Hash da Força: "#/forca?loteria=quina", com "&visao=volante" e "&dezena=20"
+ * quando informados.
+ */
+export function hashDaForca(slug: Slug, opcoes: OpcoesHashForca = {}): string {
+  let hash = `${hashDaRota('forca')}?loteria=${slug}`;
+  if (opcoes.visao !== undefined) hash += `&visao=${opcoes.visao}`;
+  if (opcoes.dezena !== undefined && opcoes.dezena !== null) hash += `&dezena=${opcoes.dezena}`;
+  return hash;
 }

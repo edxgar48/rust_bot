@@ -98,6 +98,20 @@ export interface DezenaDaTabela {
   readonly evidenciaDirecao: DirecaoEvidencia | null;
 }
 
+/** Os 9 componentes brutos de cada dezena, na ordem do contrato. */
+export const CHAVES_COMPONENTES = [
+  'frequencia',
+  'maiorEspaco',
+  'maiorEspacoOcorrencias',
+  'menorEspaco',
+  'menorEspacoOcorrencias',
+  'somaVariacoes',
+  'espacoFinal',
+  'repeticoesTotal',
+  'repeticaoAtual',
+] as const satisfies readonly (keyof DezenaDaTabela)[];
+export type ChaveComponente = (typeof CHAVES_COMPONENTES)[number];
+
 export interface TabelaGeralV1 {
   readonly schemaVersion: 1;
   readonly loteria: Slug;

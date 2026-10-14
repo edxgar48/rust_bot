@@ -79,7 +79,13 @@
 
 <li>
   {#if aoEscolher}
-    <button type="button" class="linha" onclick={() => aoEscolher(numero)}>
+    <button
+      type="button"
+      class="linha"
+      data-dezena={numero}
+      aria-haspopup="dialog"
+      onclick={() => aoEscolher(numero)}
+    >
       {@render corpo()}
     </button>
   {:else}
