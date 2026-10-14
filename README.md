@@ -685,19 +685,507 @@ cargo run --bin sync -- alerta --geral "trava ocupada: PID 4120"  # conta uma fa
 - **O rascunho** é RFC 822 em UTF-8 com `X-Unsent: 1`, assunto
   `[rust_spider] <loteria>: <motivo>` e corpo em texto: loteria, motivo, noites
   seguidas, último concurso no banco, etapa e erro com a cadeia de causas, o
-  caminho do log do dia e passos curtos. O runbook completo é a tarefa 3.8.
+  caminho do log do dia e passos curtos. Os passos completos estão na seção
+  "Runbook" logo abaixo (a tabela de entrada leva do motivo do rascunho ao procedimento).
 
-### Quando o ciclo falha (resumo até o runbook da 3.8)
+## Runbook
 
-| Motivo do rascunho | O que olhar |
+O que fazer quando o ciclo não roda sozinho. Cada procedimento tem **sintoma**,
+**diagnóstico**, **correção** e **como conferir que voltou ao normal**. Convenções:
+
+- Todos os comandos rodam no PowerShell, **na pasta de trabalho** (a raiz do
+  repositório: é ela que fixa `sync.lock`, os bancos, `logs/`, `alertas/`,
+  `cache/` e `registros/`). Abaixo, `sync` é `target\release\sync.exe` (o que o
+  Agendador usa) ou, sem o release compilado, `cargo run --bin sync --`; os
+  dois são equivalentes.
+- `<loteria>` é `lotofacil`, `megasena` ou `quina`. O perfil ativo das três é
+  `padrao_v1` (`perfil_ativo` em `src/config.rs`).
+- Quase tudo o que corrige algo **grava** e por isso toma a trava (`sync.lock`).
+  Faça **fora da janela 23h–01h** (a tarefa agendada segura a trava a noite
+  toda) ou com a tarefa pausada (ver "Pausar a tarefa agendada").
+- O site da Caixa não é nosso: poucas tentativas, nada de laço de repetição. O
+  `ciclo` já repete sozinho dentro da janela, com espera de 5 a 30 min.
+
+### Entrada: de onde você veio
+
+| Motivo do rascunho `.eml` / sintoma | Seção |
 |---|---|
-| `falhas seguidas` (rede/navegador) | `logs\sync_<dia>.log`; rode `sync ciclo <loteria>` à mão; confira a internet e o Playwright |
-| `site possivelmente mudou` | abra a página da loteria; compare com os seletores de `src/config.rs`; `sync atualizar <loteria> --visivel` |
-| `trava ocupada` | `sync.lock.dono` (PID, comando, hora) e o Gerenciador de Tarefas; não apague o `sync.lock` |
-| `processo morto` | `logs\agendador.log` e o log do dia: a execução foi interrompida; rode o `ciclo` à mão |
-| falha ao publicar | SSH e clone `../rust_spider_dados`; `sync publicar` reenvia |
+| `site possivelmente mudou` | 2 (seletor/layout); se a página abre normal no seu navegador mas o robô não acha nada, 1a |
+| `falhas seguidas (N noites)`, erro `erro do navegador ...` / timeout | 1a (primeiro separe "rede fora" de "bloqueio") |
+| `falhas seguidas (N noites)` com etapa `calendario`: `o concurso do sorteio de ... não está no banco e o prazo do calendário passou` (o ciclo terminou sem erro) | "Atrasado pelo calendário", logo abaixo |
+| `elemento não encontrado (seletor ...)` noite após noite | 1a e 2 |
+| `trava ocupada` (código 3, "outra execução em andamento") | 1b |
+| `processo morto`, `logs\agendador.log` com `inicio` sem linha de fim | 1b |
+| `falha ao publicar`, `publicação: ...` | 3c |
+| `... erro(s) de integridade` (`validar` reprovou), buraco na numeração | `sync buracos` + `sync inserir` (seção "Uso"); banco todo suspeito: 3b |
+| `rode sync features`, `índice incoerente`, `dataset incoerente` | 3a |
+| Quer recomeçar do zero | 3 |
 
-### Comportamento nas falhas simuladas
+#### Atrasado pelo calendário
+
+O ciclo pode terminar em exit 0 e mesmo assim contar a noite como falha: se o
+último concurso do banco é anterior ao último sorteio esperado pelo calendário
+e o prazo passou (`verificar_atraso`, etapa `calendario`), o motivo é "o
+concurso do sorteio de ... não está no banco e o prazo do calendário passou
+(último concurso: N de AAAA-MM-DD)". Dentro da janela de um sorteio especial
+conhecido só sai um evento de aviso, sem falha. Procedimento:
+
+1. `sync calendario <loteria>`: mostra o estado (`em_dia`, `aguardando`,
+   `atrasado`) e o que o calendário espera.
+2. Confira no site se esse concurso saiu.
+3. Saiu e o robô não o pega: veja 1a (bloqueio) ou feche o buraco à mão com
+   `sync inserir` (1a, item b).
+4. Não saiu (adiamento, ou sorteio especial que não está na lista): ajuste
+   `sorteios_especiais` da loteria em `src/config.rs` e recompile o release
+   **fora da janela 23h–01h** (`cargo build --release`, ver seção 2, passo 3).
+   Se foi só um atraso pontual, o concurso entra no ciclo seguinte e a
+   contagem zera sozinha.
+
+### Pausar a tarefa agendada
+
+Vale para os procedimentos abaixo que gravam. O nome da tarefa é
+`rust_spider ciclo`.
+
+```powershell
+Disable-ScheduledTask -TaskName "rust_spider ciclo"   # não dispara mais às 23h00
+Get-ScheduledTaskInfo -TaskName "rust_spider ciclo"   # LastTaskResult, NextRunTime
+Get-Process sync -ErrorAction SilentlyContinue        # tem sync vivo agora?
+# ... trabalho manual ...
+Enable-ScheduledTask -TaskName "rust_spider ciclo"    # não esqueça de religar
+```
+
+Se `Disable-ScheduledTask`/`Enable-ScheduledTask` der acesso negado, abra o
+PowerShell como administrador (se a tarefa foi registrada com S4U, sem
+`-SoConectado`, pode exigir PowerShell elevado).
+
+`scripts\registrar_tarefa.ps1 -Remover` apaga a tarefa de vez (para voltar,
+rode `scripts\registrar_tarefa.ps1`, ver "Agendamento"). Desabilitar não
+interrompe uma execução que já começou: se `Get-Process sync` mostrar um `sync`
+vivo, espere ou veja 1b.
+
+### 1. Bloqueio
+
+#### 1a. O site da Caixa barrando o acesso automatizado
+
+**Sintoma.** Nos rascunhos e logs: `elemento não encontrado (seletor ...) — a
+página pode ter mudado de layout ou bloqueado o acesso`, `elemento de download
+não encontrado`, `nenhum download foi iniciado após clicar no seletor ...`,
+`página do último concurso incompleta`, ou `erro do navegador ao acessar ...`
+com timeout (cada espera por elemento dura 20 s; são 3 tentativas curtas por
+passada e o `ciclo --aguardar` repete em rodadas). O que indica bloqueio é ser
+**persistente**: todas as rodadas, várias noites. Erro de forma da página gera o
+rascunho `site possivelmente mudou` já na 1ª noite; erro de navegador/rede,
+`falhas seguidas` na 2ª.
+
+**Diagnóstico.**
+
+1. Separe **rede fora** de **bloqueio**:
+
+   ```powershell
+   Test-NetConnection loterias.caixa.gov.br -Port 443    # TcpTestSucceeded : True?
+   ```
+
+   Abra também a página da loteria no seu navegador (a URL está em
+   `pagina_url`, `src/config.rs`; ex.: `https://loterias.caixa.gov.br/Paginas/Quina.aspx`).
+   Sem rede, ou site fora do ar para você também: é rede/site, não bloqueio;
+   espere e rode `sync ciclo <loteria>` depois (o N = 2 noites do alerta cobre
+   isso).
+2. Se o seu navegador abre normal, rode o robô com a janela visível e olhe o
+   que ele recebe:
+
+   ```powershell
+   sync atualizar quina --visivel
+   ```
+
+   Página de "acesso negado", captcha, verificação de robô, página em branco
+   ou um layout diferente do que você vê no seu navegador = **bloqueio**. A
+   página igual à sua mas o robô não acha o elemento = **seletor mudou**
+   (seção 2). Falhou uma vez e na segunda passou = instabilidade pontual.
+
+**Correção (contorno manual, sem depender do robô).** Enquanto o robô está
+barrado, alimente os bancos à mão, fora da janela 23h–01h (ou com a tarefa
+pausada), e siga o ciclo nos passos que não tocam o site:
+
+```powershell
+# a) Planilha: no seu navegador, na página da loteria, use o botão de download
+#    dos resultados e salve o .xlsx (ex.: downloads\quina_manual.xlsx). Depois:
+sync importar quina downloads\quina_manual.xlsx   # valida e grava (tudo ou nada); reaplica o cache de inserções manuais
+sync validar quina
+
+# b) Um concurso só (a planilha da Caixa demora a atualizar): digite-o
+sync buracos quina                                # só buracos INTERNOS; para o último, use listar/calendario
+sync validar quina                                # imprime "N concurso(s) salvo(s), do X ao Y": Y é o último gravado
+sync calendario quina                             # estado do último concurso e o que se espera
+sync inserir quina 7141 --data 2026-10-14 --dezenas 5,17,33,41,70
+
+# c) Confira o que digitou contra o site (concurso, data e dezenas);
+#    a saída do listar é JSON, um campo por linha (na Lotofácil 15 dezenas
+#    ocupam 15 linhas), então pegue o final com folga
+sync validar quina                                # o último concurso (Y) deve ser o digitado
+sync listar quina | Select-Object -Last 25
+
+# d) Resto do ciclo, sem o site
+sync features quina
+sync indice quina --perfil padrao_v1
+sync exportar quina
+Get-Content publico\v1\quina\ultimo.json          # confira contra o site ANTES de publicar
+sync publicar
+```
+
+**Digitou errado?** `inserir` só fecha buraco: com o concurso já gravado ele
+recusa ("já está no banco; `inserir` só fecha buracos"), então não dá para
+corrigir por ele. Só a planilha oficial corrige, e **apenas** quando você a
+aplica de forma explícita, fora da janela 23h-01h: `sync baixar <loteria>` ou
+`sync importar <loteria> <arquivo>` sobrescrevem a linha do banco (upsert em
+`db.rs`). `sync atualizar` e `sync ciclo` **não** corrigem concurso já
+gravado: se a página traz o mesmo concurso que você digitou, o `atualizar` o
+trata como "sem novidade", só concilia o cache (emitindo o aviso "difere") e
+não grava nada; o backfill do ciclo só roda quando há buraco. Com a tarefa
+habilitada, o ciclo repetiria e publicaria o dado errado noite após noite.
+
+1. Pause a tarefa até corrigir (`Disable-ScheduledTask`, ver "Pausar a tarefa
+   agendada"; religue depois).
+2. Aplique a planilha oficial com `sync baixar <loteria>` ou
+   `sync importar <loteria> <arquivo>`, confira com `sync validar` e
+   `sync listar`, e corrija ou apague a entrada errada em
+   `cache\manuais_<loteria>.json` (senão o aviso se repete).
+3. Refaça `features`, `indice` e `exportar` (obrigatório se já exportou ou
+   publicou o dado errado), confira `publico\v1\<loteria>\ultimo.json` contra
+   o site e só então `publicar`.
+
+Atenção: o texto do aviso "difere" ("o banco fica com o oficial") só vale
+quando vem do `baixar`/`importar`. Vindo do `atualizar`/`ciclo`, o banco **não**
+foi alterado e continua com o valor digitado.
+
+`sync atualizar` e `sync ciclo` consultam o site, então não servem enquanto
+durar o bloqueio; `importar`, `inserir`, `features`, `indice`, `exportar` e
+`publicar` não abrem navegador.
+
+**Tarefa agendada enquanto isso.** Pode ficar habilitada: ela só falha, sem
+estragar nada (loteria que falha não é exportada nem publicada) e deixa o
+rastro (rascunho na 1ª noite com erro de página ou na 2ª com erro de rede, e
+depois só um lembrete a cada 7 noites). Se você está alimentando os bancos à
+mão todo dia, pause-a (`Disable-ScheduledTask`) para ela não tomar a trava às
+23h nem fazer tentativas contra um site que já recusa você. Em qualquer caso,
+**não aumente a frequência**: insistir só piora o bloqueio.
+
+**Correção definitiva.** Não há contorno automático hoje (só `--visivel` e o
+User-Agent fixo em `src/downloader.rs`). O item "Robustez da raspagem" do
+Backlog em `docs/PLANEJAMENTO.md` (XPath em vez de seletores CSS e técnicas
+anti-detecção, "caso o site volte a bloquear o acesso automatizado") é o
+caminho: trate-o como tarefa própria.
+
+**Conferir que voltou.** `sync atualizar <loteria>` termina com "Já está
+atualizado" ou grava o concurso novo; `sync ciclo <loteria>` termina em exit 0
+e `Fim: sucesso` aparece em `logs\sync_<dia>.log`. Na noite seguinte da tarefa,
+sem `.eml` novo (`sync alertas` sem pendências): o sucesso zera o contador de
+falhas sozinho. Mova os rascunhos tratados para `alertas\enviados\`.
+
+#### 1b. Execução travada (`sync.lock` ocupado, processo morto, `sync.exe` órfão)
+
+**Sintoma.** `outra execução em andamento: PID 4120, comando ciclo, desde
+23:00` e saída com **código 3**; rascunho `trava ocupada` (na 2ª noite
+seguida); ou rascunho `processo morto` / `logs\agendador.log` cuja última
+linha é um `inicio | ... pid=...` sem a linha de fim (`->`).
+
+**Diagnóstico.**
+
+```powershell
+Get-Content sync.lock.dono                           # PID, comando e hora de início (só para a mensagem)
+Get-Process sync -ErrorAction SilentlyContinue       # há mesmo um sync vivo? compare o Id com o PID acima
+Get-Content logs\agendador.log -Tail 6               # início/fim de cada execução da tarefa
+Get-Content "logs\sync_$(Get-Date -Format yyyy-MM-dd).log" -Tail 30
+Get-ScheduledTaskInfo -TaskName "rust_spider ciclo"  # último resultado no Agendador
+```
+
+- **Há um `sync` vivo e é legítimo** (rodada longa do `--aguardar` entre 23h e
+  01h, ou um comando seu em outra janela): espere terminar. A trava é do
+  sistema operacional e some quando o processo termina.
+- **Há um `sync.exe` vivo e preso**: o `--aguardar` não passa da janela (até
+  ~01h00), mas o limite de 3 h do Agendador pode deixar um `sync.exe` órfão
+  (o PowerShell da tarefa morre e o filho nem sempre). Um `sync` vivo bem
+  depois de 01h00 que não escreve no log do dia há muito tempo está preso.
+  Confirme que o `Id` é o do `sync.lock.dono` (ou o único `sync`) e encerre:
+
+  ```powershell
+  Stop-Process -Id 4120      # troque pelo PID confirmado
+  ```
+
+- **Não há `sync` vivo mas a mensagem persiste**: não existe trava órfã (a
+  trava é liberada pelo sistema operacional mesmo se o processo morrer à
+  força ou a máquina reiniciar). Confira se o PID não é de um `sync` de
+  **outra pasta de trabalho** e rode de novo; um `sync.lock.dono` velho sozinho
+  não bloqueia nada.
+- **Nunca apague o `sync.lock`.** Apagar o arquivo enquanto um processo o
+  segura permitiria duas execuções gravando ao mesmo tempo. O `sync.lock.dono`
+  é só texto de apoio e pode ser ignorado.
+- **`processo morto`**: a execução anterior foi interrompida (limite de 3 h,
+  queda de energia, `taskkill`, PC desligado). O log do dia (sem `Fim:`) mostra
+  até onde foi. Cada etapa grava tudo ou nada nos bancos e em `publico\v1`,
+  então nada fica gravado pela metade. **Exceção:** o clone `..\rust_spider_dados`.
+  Um processo morto no meio do `publicar` pode deixá-lo sujo, e o próximo
+  `publicar` recusa ("tem alterações locais"); a limpeza está em 3c.
+
+**Correção.** Com a trava livre (nenhum `sync` vivo):
+
+```powershell
+sync ciclo todas        # ou uma loteria; idempotente, completa o que faltou
+```
+
+**Conferir que voltou.** `Get-Process sync` sem resultado depois de 01h00;
+`Fim: sucesso` no log do dia; na noite seguinte, `agendador.log` com a linha de
+início seguida da de fim (`exit 0`); `sync alertas` sem pendências (o rascunho
+de `trava ocupada` só sai na 2ª noite, e um `ciclo` que chega ao fim zera o
+contador do "geral").
+
+### 2. Seletor mudou
+
+**Sintoma.** Rascunho `site possivelmente mudou` na 1ª noite; erros
+`elemento não encontrado (seletor ...)`, `elemento de download não encontrado
+(seletor ...)`, `página do último concurso incompleta` ou, se foi a
+**planilha** que mudou de forma, `tabela de resultados não encontrada ou em
+layout inesperado`, `erro ao ler a planilha`, `dado inválido: ...` (todos viram
+o mesmo motivo).
+
+**Diagnóstico.**
+
+1. Confirme com o robô visível e, em paralelo, com o seu navegador:
+
+   ```powershell
+   sync atualizar quina --visivel
+   ```
+
+   Se a página abre normal e o erro cita um seletor, o elemento mudou de lugar
+   ou de nome (se nem abre, ou pede verificação, é a seção 1a). No seu
+   navegador, abra a página da loteria, F12, inspecione o botão de download
+   dos resultados, o título "Concurso NNNN (dd/mm/aaaa)" e uma dezena do
+   último resultado, e anote o novo seletor CSS de cada um.
+2. Onde ficam os seletores: em `src/config.rs`, um bloco `LoteriaConfig` por
+   loteria, com `pagina_url` e:
+
+   | Campo | O que acha | Lotofácil | Mega-Sena e Quina |
+   |---|---|---|---|
+   | `seletor_botao_download` | botão que baixa a planilha | `#btnResultados` | `#btnResultados` |
+   | `seletor_concurso_data` | texto "Concurso 3794 (01/10/2026)" | `.title-bar h2 span.ng-binding` | `#tituloResultadoConcurso` |
+   | `seletor_dezenas` | cada `<li>` de dezena do último resultado (na página) | `ul.simple-container.lista-dezenas.lotofacil li.dezena` | `#ulDezenas li` |
+
+   A Lotofácil usa o template AngularJS antigo (classes `ng-*`, mais frágeis);
+   Mega-Sena e Quina já usam IDs fixos. A Caixa ainda está migrando os
+   templates, então é de se esperar que a Lotofácil mude primeiro.
+3. **Testar sem recompilar:** só o seletor do **botão de download** tem a
+   opção `--seletor`, e só no `baixar` (`atualizar` e `ciclo` não a têm;
+   `seletor_concurso_data` e `seletor_dezenas` só mudam em `src/config.rs`).
+   Use um banco e uma pasta de teste para não mexer nos reais (`*.db` e
+   `/downloads` estão no `.gitignore`; `downloads_teste` apague depois):
+
+   ```powershell
+   sync baixar quina --seletor "#novoBotao" --visivel --db teste_quina.db --dir downloads_teste --cache cache_teste
+   ```
+
+   O `--cache cache_teste` é para o `baixar` não reaplicar nem limpar o
+   `cache\manuais_*.json` real. `--seletor` não vale com `todas`. Se funcionar, o valor que deu certo vai
+   para `seletor_botao_download` da loteria.
+4. **Layout da planilha** (as colunas mudaram): o erro vem acompanhado de uma
+   mensagem no stderr e no log (nível `ERRO`), como esta:
+
+   ```text
+   [quina] encontrei 7140 linha(s) na planilha, mas nenhuma bateu com o layout
+   configurado (coluna_concurso=0, coluna_data=1, primeira_coluna_dezena=2).
+   Exemplo de linha crua, célula por índice: [...]
+   ```
+
+   O exemplo mostra cada célula pelo índice: veja em que posição estão o
+   número do concurso, a data e a primeira dezena e ajuste `coluna_concurso`,
+   `coluna_data` e `primeira_coluna_dezena` da loteria em `src/config.rs`. Para
+   testar sem rede, com uma planilha já baixada (as do robô ficam em
+   `downloads\<loteria>_<número>.xlsx`), use um banco **e um cache** de teste
+   (sem `--cache`, o `importar` usaria o `cache\` real e o limparia):
+
+   ```powershell
+   $planilha = Get-ChildItem downloads\quina_*.xlsx | Sort-Object LastWriteTime | Select-Object -Last 1
+   sync importar quina $planilha.FullName --db teste_quina.db --cache cache_teste
+   ```
+
+**Correção.**
+
+1. Edite `src/config.rs` (só o campo que mudou, na loteria certa).
+2. Teste sem gravar nos bancos reais:
+
+   ```powershell
+   cargo test
+   Copy-Item resultados_quina.db teste_quina.db     # cópia só para o teste
+   cargo run --bin sync -- atualizar quina --db teste_quina.db --cache cache_teste --visivel
+   ```
+
+   `atualizar` sobre a cópia confere os seletores da página (sai "Já está
+   atualizado" ou grava na cópia). O `--cache cache_teste` evita que o teste
+   mexa no `cache\manuais_*.json` real. Se a cópia estiver atrás da página
+   por mais de um concurso, o `atualizar` baixa a planilha inteira e faz
+   backup da cópia em `backups\`; é só ruído de teste, apague depois. `cargo test` não acessa o site: só garante
+   que a mudança não quebrou o resto; se você mexeu em colunas, testes que
+   usam o layout antigo precisam acompanhar a mudança.
+3. **Recompile o release fora da janela 23h–01h** (com o `sync.exe` em uso o
+   build falha). A tarefa agendada roda o `target\release\sync.exe`; sem este
+   passo ela continua com o seletor velho:
+
+   ```powershell
+   cargo build --release
+   ```
+
+4. Rode o ciclo real, à mão, fora da janela:
+
+   ```powershell
+   sync ciclo quina
+   ```
+
+5. Apague os arquivos de teste e mova o rascunho já tratado:
+
+   ```powershell
+   Remove-Item teste_quina.db
+   Remove-Item downloads_teste -Recurse -ErrorAction SilentlyContinue
+   sync alertas                                          # lista os .eml pendentes
+   New-Item -ItemType Directory -Force alertas\enviados | Out-Null
+   Move-Item alertas\<arquivo>.eml alertas\enviados\    # o nome que o "sync alertas" mostrou
+   ```
+
+**Conferir que voltou.** `sync ciclo <loteria>` com exit 0 e `Fim: sucesso`;
+`sync validar <loteria>` sem erros; `publico\v1\<loteria>\ultimo.json` com o
+último concurso; a tarefa na noite seguinte sem rascunho novo (o sucesso zera
+o contador). Se o site mudou em **todas** as loterias, repita por loteria (ou
+`sync ciclo todas`).
+
+### 3. Reprocessar do zero
+
+Em níveis, do mais leve ao mais pesado: **use o mais leve que resolve**. Todos
+tomam a trava e devem ser feitos com a tarefa agendada fora da janela ou
+pausada (ver "Pausar a tarefa agendada"). As tabelas derivadas
+(`features_dezena`, `motor_estado`, `indice`, `perfis`) são regeneráveis a
+partir de `resultados`; `resultados` não.
+
+#### 3a. Só as derivadas
+
+Quando: features ou índice desatualizados ou incoerentes (mensagens `rode
+sync features`, `regenere com sync features --completo`), `dataset
+incoerente`.
+
+```powershell
+sync features <loteria> --completo         # apaga e recria features_dezena + motor_estado a partir de resultados
+sync indice <loteria> --perfil padrao_v1   # apaga e recalcula o índice do perfil
+sync exportar <loteria>                    # ou: sync exportar todas
+sync publicar                              # "nada a publicar" também é sucesso
+```
+
+Para as três loterias, repita por loteria (`features` e `indice` não aceitam
+`todas`). Não existe comando que apague as tabelas derivadas; `features
+--completo` e `indice` já as refazem do zero, com o mesmo efeito. `features`
+recusa rodar se o `validar` apontar erro (buraco incluso): feche com `sync
+buracos` e `sync inserir`. Se você editou o `.toml` de um perfil já registrado,
+`indice` recusa (perfis são imutáveis): desfaça a edição.
+
+**Conferir.** `sync ciclo <loteria>` com exit 0; rodado de novo, não muda nada
+nem republica ("Nada a publicar").
+
+#### 3b. Banco recriado a partir da planilha
+
+Quando: `resultados` suspeito (dados errados que o `validar` não cobre,
+planilha corrigida pela Caixa com datas antigas alteradas, banco corrompido).
+
+```powershell
+New-Item -ItemType Directory -Force backups | Out-Null
+Copy-Item resultados_quina.db backups\resultados_quina_manual.db   # backup (os bancos não usam WAL: copiar o arquivo basta)
+Get-ChildItem resultados_quina.db*                                 # só o .db? Se houver -journal/-wal, mova-os junto (corrompido)
+Move-Item resultados_quina.db resultados_quina_velho.db            # tira do caminho; guarde até conferir
+sync baixar quina                  # baixa a planilha e cria o banco novo
+sync validar quina
+```
+
+Se a listagem acima mostrar também `resultados_quina.db-journal` ou
+`-wal`, mova-os para `resultados_quina_velho.db-journal` / `-wal` (um resto
+deixado ao lado do banco novo seria aplicado a ele).
+
+O `baixar` reaplica sozinho o cache de inserções manuais
+`cache\manuais_<loteria>.json` (se existir; a entrada que a planilha já traz é
+removida do cache quando igual ou avisada quando diferente) e as correções
+conhecidas (`CORRECOES_DATA` em `src/config.rs`; hoje, a data do concurso 380 da
+Quina). Sem acesso ao site, use a planilha baixada à mão:
+`sync importar quina downloads\quina_manual.xlsx`. O banco novo nasce só com
+`resultados`.
+
+**Confira antes de exportar e publicar.** Compare o banco novo com o velho e
+com o site: a linha "N concurso(s) salvo(s), do X ao Y" de `sync validar quina --db
+resultados_quina_velho.db` contra a de `sync validar quina` (contagem e último
+concurso devem bater, salvo o que a planilha corrigiu de propósito),
+o último concurso contra o site, e `sync validar quina` sem erros. Se algo não
+bater, **não exporte nem publique**: volte atrás com `Move-Item
+resultados_quina_velho.db resultados_quina.db -Force`.
+
+Só então faça **o nível 3a** (o `indice` registra o perfil de novo e o
+`criado_em` do perfil passa a ser o de agora):
+
+```powershell
+sync features quina
+sync indice quina --perfil padrao_v1
+sync exportar quina
+sync publicar
+```
+
+Depois de publicado e com `ultimo.json` conferido, apague
+`resultados_quina_velho.db` e o backup. Para voltar atrás depois de publicar,
+restaure o velho e refaça `features`, `indice`, `exportar` e `publicar`.
+
+#### 3c. `publico/` e o clone de dados
+
+Quando: `publico\v1` apagado ou corrompido, `index.json` que não bate com os
+arquivos, `publicação: ...` recusando, clone de dados sujo.
+
+```powershell
+sync exportar todas        # regrava publico\v1 a partir dos bancos (precisa de features e índice em dia: 3a)
+sync publicar              # copia para ..\rust_spider_dados e envia (push)
+```
+
+`publico/` é só saída: pode ser apagado e o `exportar todas` o refaz com os
+mesmos bytes (exceto `gerado_em`); `publicar` diz "nada a publicar" se só isso
+mudou. Push que falhou deixa o commit local no clone e rodar `sync publicar`
+de novo reenvia. **Clone sujo** (um `publicar` morto no meio da cópia deixa
+arquivos alterados em `..\rust_spider_dados`; o próximo `publicar` recusa com
+"tem alterações locais (git status não está limpo)", sem copiar nada): veja
+`git -C ..\rust_spider_dados status`. O clone é espelho de `publico\v1`, então
+descarte as alterações locais de `v1/` (`git -C ..\rust_spider_dados restore
+--staged --worktree v1` e `git -C ..\rust_spider_dados clean -fd v1`) e rode
+`sync publicar`, que refaz a cópia. Se o `status` mostrar algo fora de `v1/`,
+olhe antes de descartar. Se o clone `..\rust_spider_dados` sumiu, o `publicar` recusa
+e o erro traz o `git clone` a rodar; use esse clone só para a publicação (não
+edite à mão). Ver o comentário do `publicar` em "Uso" e `docs/contrato-v1.md`.
+
+**Conferir.** `sync publicar` termina com sucesso; `git -C ..\rust_spider_dados
+status` limpo e `git -C ..\rust_spider_dados log -1` com a mensagem
+"Dados: ...".
+
+#### 3d. O que NÃO se apaga nem se reseta
+
+- **`registros\trancado_<loteria>.json`**: registra o uso único do conjunto
+  trancado (perfil, hash, até qual concurso, quando). Deve ficar **versionado no
+  git** (hoje `registros\` ainda não está no repositório: commite depois de
+  cada `avaliar --trancado`), não no banco. Apagá-lo ou editá-lo libera um segundo uso do trancado e invalida o
+  Bonferroni. Banco recriado não o afeta.
+- **`cache\manuais_<loteria>.json`**: concursos digitados à mão que a planilha
+  ainda não traz; também deve ficar **versionado no git** (hoje `cache\` ainda
+  não está no repositório: commite depois de cada `inserir`). É o que permite recriar um banco sem
+  perdê-los. Quem o limpa é o próprio `baixar`/`importar`, quando a planilha
+  passa a trazer o concurso igual.
+- **`perfis\`**: os `.toml` de pesos (imutáveis, com hash registrado no banco).
+  Não os edite depois de usados; crie a versão seguinte.
+- **`alertas\estado.json`**: histórico por alvo (noites seguidas de falha,
+  motivos já alertados). É seguro apagar, mas o efeito é: contadores zerados
+  (um problema de rede só volta a alertar na 2ª noite seguinte) e a memória de
+  "já avisei" perdida, então um problema que ainda dure gera um rascunho de
+  novo e o lembrete de 7 noites recomeça. Arquivo ilegível recebe o mesmo
+  tratamento (recomeça do zero, com aviso) sem derrubar o ciclo. Não apague no
+  meio de um incidente que você quer acompanhar.
+- **`resultados_<loteria>.db`**: só pelo procedimento 3b, com backup e com
+  `baixar`/`importar` em seguida.
+
+### Referência: comportamento nas falhas simuladas
 
 - **Seletor errado** (`ElementoNaoEncontrado` em todas as rodadas): 1ª noite =
   rascunho `site possivelmente mudou`; nas noites seguintes nada de novo (já

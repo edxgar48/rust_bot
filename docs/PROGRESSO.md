@@ -75,7 +75,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 3.5 Logs em arquivo
 - [x] 3.6 Alertas (rascunho `.eml`)
 - [x] 3.7 Agendamento no Windows (`.ps1`)
-- [ ] 3.8 Runbook no README
+- [x] 3.8 Runbook no README
 
 ## Decisões em aberto
 
@@ -2067,3 +2067,40 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   plano, e decidiu que planilha ilegível ou com layout inesperado (`Planilha`, `TabelaNaoEncontrada`) conta
   como mudança aparente no site (`eh_mudanca_de_pagina`, README e teste ajustados). Release recompilado fora
   da janela, para a tarefa agendada desta noite já usar a 3.6.
+- 2026-10-13 — 3.8 iniciada (orquestrador rodando como subagente, sem como perguntar). O plano diz só
+  "Runbook no README: bloqueio, seletor mudou, reprocessar do zero". Interpretação adotada (revisável):
+  (1) **bloqueio** cobre os dois sentidos — o site da Caixa barrando o acesso automatizado (Playwright,
+  `--visivel`, `ElementoNaoEncontrado`/timeout persistentes, backlog de robustez) e a execução travada
+  (`sync.lock` ocupado, código 3, processo morto); (2) **seletor mudou** — diagnóstico com `--visivel` e
+  `--seletor`, onde ficam os seletores em `config.rs`, layout da planilha (exemplo de linha crua), rebuild
+  do release fora da janela 23h–01h; (3) **reprocessar do zero** em níveis: derivadas (`features
+  --completo`, `indice`, `exportar`, `publicar`), banco recriado da planilha (backup, `baixar`, cache de
+  inserções manuais e correções reaplicados) e o que nunca se reseta (`registros/trancado_*.json`,
+  `cache/manuais_*.json`, `alertas/estado.json` só com cuidado); (4) a tabela "Quando o ciclo falha
+  (resumo até o runbook da 3.8)" vira parte do runbook, e o texto dos passos do `.eml`
+  (`orquestracao/alertas.rs`) passa a apontar a seção do runbook. Sem mudança de comportamento.
+- 2026-10-13 — 3.8 entregue (`engenheiro-operacao`). README: seção "## Runbook" depois de "Alertas e
+  operação" (absorve a tabela "Quando o ciclo falha"; "Comportamento nas falhas simuladas" vai para o fim
+  como referência): tabela de entrada (motivo do `.eml`/sintoma → procedimento), pausar a tarefa
+  (`Disable-`/`Enable-ScheduledTask`), 1a site barrando o acesso (diferenciar de rede, `--visivel`,
+  contorno manual com `importar`/`inserir` conferindo antes de publicar, "Digitou errado?"), 1b execução
+  travada (código 3, `sync.lock.dono`, processo morto, `sync.exe` órfão, clone de dados sujo), atrasado
+  pelo calendário, 2 seletor mudou (seletores de `config.rs`, `--seletor` só no `baixar`, layout da
+  planilha, testes em cópia do banco com `--cache cache_teste`, rebuild fora de 23h–01h), 3a–3d reprocessar
+  (derivadas; banco recriado da planilha com backup e conferência antes de publicar; `publico/` e clone;
+  o que não se apaga: `registros/trancado_*.json`, `cache/manuais_*.json`, `perfis/`, `alertas/estado.json`).
+  `orquestracao/alertas.rs`: só o texto final de `passos` do `.eml` passa a apontar a seção "Runbook"
+  (ASCII). Sem mudança de comportamento, sem testes novos. Revisão: 1ª rodada aprovada com ressalvas
+  (3 MÉDIA — publicar antes de conferir no 3b e no `inserir`, motivo `atrasado` faltando na tabela — e 7
+  BAIXA), corrigidas; 2ª rodada aprovada com ressalvas (1 MÉDIA — o runbook dizia que bastava esperar a
+  planilha para corrigir um concurso digitado errado, mas `atualizar`/`ciclo` tratam como "sem novidade" e
+  não regravam — e 3 BAIXA), corrigidas e conferidas pelo orquestrador. Gate final: fmt ok; clippy ok;
+  cargo test 1125 passaram, 0 falharam (4 ignorados); pytest 175; `validar todas` ok. **3.8 concluída.**
+  Lacunas documentadas, nada criado: sem comando para limpar derivadas (`features --completo` + `indice`,
+  sem `todas`); seletores de página de `atualizar`/`ciclo` só mudam recompilando; sem contorno automático de
+  bloqueio (Backlog); `sync.exe` órfão após o limite de 3 h só por diagnóstico manual; `cache/` e
+  `registros/` ainda não existem no repositório (commitar após `inserir`/`avaliar --trancado`).
+  **Sugestão de backlog (aguarda o usuário):** o aviso `Conciliacao::Divergente` ("o banco fica com o
+  oficial", `src/manuais.rs`) é falso no caminho `SemNovidade` do `atualizar`, onde nada é gravado.
+  Pendente da Fase 3 (critério de pronto): uma semana rodando agendado sem intervenção e a falha simulada
+  manual disparando o alerta de verdade.

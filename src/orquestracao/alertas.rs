@@ -883,7 +883,7 @@ fn codificar_cabecalho(texto: &str) -> String {
         .join("\r\n ")
 }
 
-/// Passos curtos do que fazer; o runbook completo vem na 3.8.
+/// Passos curtos do que fazer; os procedimentos completos estão na seção "Runbook" do README.
 fn passos(falha: &FalhaNoite, motivo: &str) -> Vec<&'static str> {
     let mut passos = vec![
         "Leia o erro acima e o log do dia (caminho abaixo).",
@@ -914,7 +914,10 @@ fn passos(falha: &FalhaNoite, motivo: &str) -> Vec<&'static str> {
              interrompida (limite de 3 h, queda de energia ou encerramento forcado).",
         );
     }
-    passos.push("Passos completos: secao \"Alertas e operacao\" do README.md.");
+    passos.push(
+        "Passos completos: secao \"Runbook\" do README.md (a tabela de entrada leva do motivo \
+         deste e-mail ao procedimento).",
+    );
     passos.push("Depois de enviar este e-mail, mova o arquivo para alertas/enviados/.");
     passos
 }
