@@ -8,6 +8,7 @@
   import { idsAbas, textos, type IdAba } from './lib/textos';
   import { registrarServiceWorker } from './pwa';
   import { criarSessao } from './sessao.svelte';
+  import Entenda from './telas/Entenda.svelte';
   import Forca from './telas/Forca.svelte';
   import Inicio from './telas/Inicio.svelte';
 
@@ -89,6 +90,13 @@
         />
       {:else if abaAtual === 'forca'}
         <Forca fonte={sessao} />
+      {:else if abaAtual === 'entenda'}
+        <Entenda
+          fonte={sessao}
+          situacao={sessao.situacao}
+          versaoApp={__VERSAO_APP__}
+          {atualizacaoPronta}
+        />
       {:else}
         <h2 id="titulo-aba">{textos.abas[abaAtual]}</h2>
         <p>{textos.placeholder}</p>

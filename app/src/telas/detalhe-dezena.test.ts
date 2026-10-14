@@ -287,7 +287,7 @@ describe('evidência: 5 graus x 2 direções', () => {
   });
 
   it('o aviso permanente diz que o índice descreve o passado e não prevê', () => {
-    expect(textos.detalhe.aviso).toContain('descreve o passado');
-    expect(textos.detalhe.aviso).toContain('não prevê o sorteio');
+    expect(textos.avisos.naoPreveDetalhe).toContain('descreve o passado');
+    expect(textos.avisos.naoPreveDetalhe).toContain('não prevê o sorteio');
   });
 });

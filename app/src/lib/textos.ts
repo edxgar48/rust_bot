@@ -52,8 +52,6 @@ export const textos = {
     atualizar: 'Atualizar',
     atualizando: 'Atualizando…',
     tentarDeNovo: 'Tentar de novo',
-    independencia:
-      'Cada sorteio é independente: nenhuma dezena tem mais chance de sair por causa do histórico. Este app não prevê resultados.',
   },
   forca: {
     titulo: 'Tabela de força',
@@ -67,7 +65,6 @@ export const textos = {
     rotuloVisao: 'Forma de exibição',
     visaoLista: 'Lista',
     visaoVolante: 'Volante',
-    aviso: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
     colunas: {
       posicao: 'Pos.',
       dezena: 'Dez.',
@@ -102,8 +99,117 @@ export const textos = {
       'A evidência mede o quanto os dados convencem, não o tamanho do desvio, e nunca prevê o sorteio.',
     semDados: 'sem dados na janela',
     nuncaSaiu: '-',
-    aviso:
+  },
+  // Avisos permanentes das telas. Ficam juntos para a revisão de linguagem (5.4)
+  // e para o teste de termos proibidos; cada tela escolhe o seu, sem texto próprio.
+  avisos: {
+    naoPreveInicio:
+      'Cada sorteio é independente: nenhuma dezena tem mais chance de sair por causa do histórico. Este app não prevê resultados.',
+    naoPreveForca: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
+    naoPreveDetalhe:
       'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
+    // Telas de jogo (Entenda; a Conferir da fase 6 também usa este).
+    jogoResponsavel: 'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
+  },
+  entenda: {
+    titulo: 'Entenda',
+    destaque: {
+      titulo: 'Este app não prevê sorteios',
+      itens: [
+        'Cada sorteio é independente dos anteriores.',
+        'Nenhum número fica "devendo": uma dezena que não sai há muito tempo não tem mais chance de sair.',
+        'Nenhum método, tabela ou índice aumenta a chance de acertar.',
+      ],
+      fecho: 'O app só organiza o que já aconteceu, para você consultar com clareza.',
+    },
+    indice: {
+      titulo: 'O que é o índice de força',
+      paragrafos: [
+        'O índice de força resume, em um único número, como cada dezena se comportou nos concursos passados.',
+        'Para cada dezena, o app junta nove medidas do histórico (veja abaixo), coloca todas na mesma escala e combina com pesos definidos num perfil. A dezena de maior índice fica em 1º lugar na tabela de força.',
+        'A tabela é só uma forma de ordenar o passado. Ela não diz nada sobre o próximo sorteio.',
+        'Nos testes feitos pelo projeto, o índice não superou o acaso no critério principal de avaliação.',
+      ],
+    },
+    componentes: {
+      resumo: 'Ver as nove medidas do índice',
+      intro:
+        'Todas olham para o passado, dentro de uma janela de concursos. Quando uma medida não pode ser calculada na janela, a tela mostra "sem dados na janela", e nunca zero.',
+    },
+    evidencia: {
+      titulo: 'O que é a evidência',
+      paragrafos: [
+        'A evidência diz o quanto os dados convencem de que uma dezena sai com chance diferente da esperada pelo acaso. Vem de um cálculo estatístico sobre o histórico inteiro da loteria.',
+        'O grau, de muito fraca a muito forte, mede o quanto os dados convencem, e não o tamanho do desvio. Com muitos concursos, até um desvio minúsculo pode dar evidência forte.',
+      ],
+      direcoesTitulo: 'As duas direções',
+      direcoes: {
+        vies: 'Os dados sugerem que a chance da dezena é um pouco diferente da esperada pelo acaso.',
+        acaso: 'Os dados favorecem que a dezena siga o acaso.',
+      },
+      direcoesNota:
+        'Leia grau e direção juntos: "forte, viés" é bem diferente de "forte, acaso". Os dados têm um limite de quanta evidência podem dar a favor do acaso, então graus baixos nessa direção são esperados.',
+      fecho:
+        'Mesmo quando há evidência de viés, o desvio costuma ser minúsculo. Isso não permite prever o próximo sorteio.',
+      grausResumo: 'Ver o significado de cada grau',
+      grausIntro: 'Os cinco graus, do mais fraco ao mais forte, em cada direção.',
+      direcaoRotulo: (direcao: string) => `Direção ${direcao}`,
+    },
+    leitura: {
+      titulo: 'Como ler a tabela de força',
+      itens: {
+        posicao: {
+          rotulo: 'Posição',
+          texto:
+            'O 1º lugar é a dezena de maior índice no concurso. A posição só compara as dezenas entre si.',
+        },
+        variacao: {
+          rotulo: 'Variação',
+          texto:
+            'Quantas posições a dezena subiu ou caiu em relação à tabela do concurso anterior. Sem número: não há concurso anterior para comparar.',
+        },
+        indice: {
+          rotulo: 'Índice',
+          texto:
+            'A nota que combina as nove medidas. Serve para ordenar as dezenas, não para medir chance.',
+        },
+        evidencia: {
+          rotulo: 'Evidência',
+          texto:
+            'Grau e direção, como explicado acima. Responde se os dados convencem de um desvio do acaso.',
+        },
+      },
+      exemploRotulo: 'Exemplo ilustrativo, não é dado real',
+      exemploLeitura:
+        'Neste exemplo, a dezena 7 está em 3º lugar, subiu 2 posições e tem evidência moderada de viés. Isso descreve o passado; não quer dizer que ela vá sair.',
+    },
+    dados: {
+      titulo: 'De onde vêm os dados',
+      resultadosRotulo: 'Resultados',
+      resultadosValor: 'planilhas oficiais da Caixa',
+      atualizadoRotulo: 'Atualizado em',
+      semAtualizacao: 'ainda não atualizado',
+      formatoRotulo: 'Formato dos dados',
+      formatoValor: (versao: number) => `versão ${versao}`,
+      appRotulo: 'Versão do app',
+      appAtualizacaoRotulo: 'Atualização do app',
+      appSemAtualizacao: 'nenhuma esperando',
+      perfilIntro:
+        'O perfil de pesos é a receita que combina as nove medidas no índice. O código do perfil identifica exatamente quais pesos geraram cada tabela.',
+      ultimoConcurso: (concurso: number, data: string | null) =>
+        data === null ? `${concurso}` : `${concurso} (${data})`,
+      ultimoRotulo: 'Último concurso',
+      semResultado: 'ainda sem dados',
+      perfilRotulo: 'Perfil de pesos',
+      janelaRotulo: 'Janela',
+      janelaInteira: 'histórico inteiro',
+      janela: (n: number) => `últimos ${n} ${n === 1 ? 'concurso' : 'concursos'}`,
+      normalizacaoRotulo: 'Normalização',
+      featureRotulo: 'Versão das medidas',
+      codigoRotulo: 'Código do perfil',
+      codigoCompleto: 'Código completo',
+      tabelaAusente: 'tabela de força ainda não baixada',
+    },
   },
   tema: {
     // `atual` é o rótulo da preferência em uso.

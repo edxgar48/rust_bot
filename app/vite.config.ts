@@ -1,6 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+
+// Versão do app = a do package.json, injetada na compilação (constante __VERSAO_APP__).
+// Importar o JSON no código levaria o arquivo inteiro para o pacote.
+const { version: versaoApp } = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf-8'),
+) as { version: string };
 
 export default defineConfig(({ mode }) => ({
   plugins: [
@@ -35,6 +42,7 @@ export default defineConfig(({ mode }) => ({
       },
     }),
   ],
+  define: { __VERSAO_APP__: JSON.stringify(versaoApp) },
   // Caminhos relativos: o build funciona em qualquer hospedagem de arquivos.
   base: './',
   // Vitest: o Svelte precisa da build de navegador para montar componentes no jsdom.

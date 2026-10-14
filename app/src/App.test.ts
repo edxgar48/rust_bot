@@ -52,13 +52,25 @@ describe('App: navegação por hash', () => {
   it.each([
     ['#/conferir', 'Conferir'],
     ['#/estatisticas', 'Estatísticas'],
-    ['#/entenda', 'Entenda'],
   ])('abrir direto em %s ativa a aba %s e mostra o placeholder', async (hash, aba) => {
     montarApp(hash);
     await esperar();
     expect(abaAtiva()).toBe(aba);
     expect(document.querySelector('main h2')?.textContent).toBe(aba);
     expect(document.querySelector('main')?.textContent).toContain('em construção');
+  });
+
+  it('abrir direto em #/entenda mostra a tela Entenda (sem rede: sem tabelas, sem quebrar)', async () => {
+    montarApp('#/entenda');
+    await esperar(60);
+    expect(abaAtiva()).toBe('Entenda');
+    expect(document.querySelectorAll('h1')).toHaveLength(1);
+    expect(document.querySelector('main h2')?.textContent).toBe('Entenda');
+    const t = document.querySelector('main')?.textContent ?? '';
+    expect(t).toContain('Este app não prevê sorteios');
+    expect(t).toContain('Jogue com responsabilidade');
+    expect(t).toContain('tabela de força ainda não baixada');
+    expect(t).not.toContain('em construção');
   });
 
   it('abrir direto em #/forca ativa a aba Força e mostra a Tabela de força (sem rede: sem dados)', async () => {

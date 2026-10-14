@@ -66,6 +66,15 @@ npm run preview    # serve dist/ localmente
   direções, frases em `textos.ts`), janela e os 9 componentes com explicação; `null` vira "sem dados na
   janela" (espaço final nulo = "nunca saiu", porque não depende da janela). A Força não tem mais a prop
   `aoEscolher`: o detalhe é interno.
+- Entenda e avisos (5.4): `src/telas/Entenda.svelte` + `entenda.ts` (visão pura). Conteúdo em
+  `textos.entenda`; frases dos graus/direções e dos 9 componentes são importadas de `textos.ts`
+  (sem duplicar). "De onde vêm os dados" lê só o cache (`sessao.lerCache`, relido quando a situação
+  muda; nunca exige rede): data da atualização, último concurso, e do cabeçalho da tabela_geral o
+  perfil, a janela, a normalização, `feature_version` e o `hash_toml` abreviado (8 caracteres; completo
+  no `title` e num `<details>`). Versão do app: constante `__VERSAO_APP__` injetada pelo Vite
+  (`define`, vinda do package.json; declarada em `src/globais.d.ts`). Avisos centralizados em
+  `textos.avisos` (não prevê / jogo responsável). `src/lib/textos-varredura.test.ts` falha se o
+  módulo de textos tiver linguagem de previsão (lista e exceções documentadas no próprio teste).
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

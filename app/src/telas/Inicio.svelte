@@ -96,7 +96,7 @@
     {/each}
   {/if}
 
-  <Aviso>{textos.inicio.independencia}</Aviso>
+  <Aviso>{textos.avisos.naoPreveInicio}</Aviso>
 </div>
 
 <style>
