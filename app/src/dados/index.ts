@@ -1,4 +1,7 @@
 export * from './armazenamento';
+export * from './abertura';
+export * from './armazenamento-idb';
+export * from './estado-sincronizacao';
 export * from './cliente';
 export * from './config';
 export * from './erros';

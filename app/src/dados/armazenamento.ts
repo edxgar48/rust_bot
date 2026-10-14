@@ -1,5 +1,11 @@
-// Interface de armazenamento do último arquivo válido por caminho. A tarefa 4.3
-// pluga o IndexedDB; aqui há só a implementação em memória (testes).
+// Interface de armazenamento do último arquivo válido por caminho. Implementações:
+// em memória (testes e fallback) aqui; IndexedDB em armazenamento-idb.ts.
+//
+// O index.json válido mais recente também é guardado, sob o caminho reservado
+// CAMINHO_INDICE, para o app abrir offline mostrando o último concurso.
+
+/** Caminho reservado do index.json válido mais recente. */
+export const CAMINHO_INDICE = 'index.json';
 
 export interface ArquivoGuardado {
   /** Caminho relativo a v1/, como no índice (ex.: quina/ultimo.json). */
@@ -8,6 +14,11 @@ export interface ArquivoGuardado {
   readonly sha256: string;
   /** Bytes exatos recebidos (serão reconferidos ao ler). */
   readonly bytes: Uint8Array;
+  /**
+   * Quando este arquivo foi confirmado como o vigente pela última vez (ISO-8601
+   * UTC). Opcional: gravações antigas não o têm (ausência = desconhecido).
+   */
+  readonly sincronizadoEm?: string;
 }
 
 export interface Armazenamento {

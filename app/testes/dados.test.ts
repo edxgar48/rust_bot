@@ -341,7 +341,7 @@ describe('fluxo do cliente', () => {
         expect(l.arquivos[chave]?.estado, `${slug}/${chave}`).toBe('baixado');
       }
     }
-    expect(armazenamento.tamanho).toBe(9);
+    expect(armazenamento.tamanho).toBe(10); // 9 arquivos + o index.json válido
   });
 
   it('segunda sincronização sem mudanças só baixa o índice', async () => {
@@ -489,7 +489,7 @@ describe('dado inválido nunca é aceito nem substitui o cache válido', () => {
     const { cliente, armazenamento } = novoCliente(servidor);
     const r = await cliente.sincronizar({ loterias: ['quina'], arquivos: ['ultimo'] });
     expect(falhou(r.loterias.quina!.arquivos.ultimo).codigo).toBe('json_invalido');
-    expect(armazenamento.tamanho).toBe(0);
+    expect(armazenamento.tamanho).toBe(1); // só o index.json válido
   });
 
   it('bytes que não são UTF-8 são recusados como json_invalido', async () => {
@@ -510,7 +510,7 @@ describe('dado inválido nunca é aceito nem substitui o cache válido', () => {
     const erro = falhou(r.loterias.quina!.arquivos.ultimo);
     expect(erro.codigo).toBe('forma');
     expect(erro.message).toContain('repetida');
-    expect(armazenamento.tamanho).toBe(0);
+    expect(armazenamento.tamanho).toBe(1); // só o index.json válido
   });
 
   it('dezenas fora de ordem no histórico com hash correto: recusa como forma', async () => {

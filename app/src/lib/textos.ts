@@ -12,6 +12,33 @@ export const textos = {
     entenda: 'Entenda',
   },
   placeholder: 'Esta tela ainda está em construção.',
+  sincronizacao: {
+    titulo: 'Situação dos dados',
+    sincronizando: (data: string | null) =>
+      data === null
+        ? 'Verificando atualizações…'
+        : `Verificando atualizações… Mostrando dados de ${data}.`,
+    atualizado: (data: string) => `Atualizado em ${data}.`,
+    semRede: (data: string | null) =>
+      data === null
+        ? 'Sem rede, mostrando os últimos dados salvos.'
+        : `Sem rede, mostrando dados de ${data}.`,
+    recusado: (data: string | null) =>
+      data === null
+        ? 'Dado recusado (falha de conferência), mantendo os anteriores.'
+        : `Dado recusado (falha de conferência), mantendo os anteriores, de ${data}.`,
+    semDados: 'Ainda sem dados. Conecte-se à internet para baixar a primeira vez.',
+    ultimoConcurso: (rotulo: string, concurso: number, data: string) =>
+      `${rotulo}: concurso ${concurso}, sorteado em ${data}`,
+    armazenamentoVolatil:
+      'Este navegador não permite guardar dados neste aparelho (modo privado ou bloqueado). Os dados valem só até fechar o app.',
+    atualizacaoDisponivel: 'Nova versão do app pronta. Ela vale na próxima vez que você abrir.',
+  },
+  loterias: {
+    lotofacil: 'Lotofácil',
+    megasena: 'Mega-Sena',
+    quina: 'Quina',
+  },
 } as const;
 
 // Rótulos dos identificadores enumerados do contrato v1 ("Valores enumerados").

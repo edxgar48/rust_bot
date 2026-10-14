@@ -81,7 +81,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 4.1 Esqueleto do app em `app/` (Vite + Svelte 5 + TypeScript; lint, check, test e build verificados em 2026-10-14; sem conferência visual, fica para a 4.4)
 - [x] 4.2 Camada de dados (cliente do contrato, hash, tipos; 57 testes, gate verificado em 2026-10-14; valor enumerado desconhecido recusa o arquivo e cai no cache, a confirmar)
-- [ ] 4.3 Cache e offline
+- [x] 4.3 Cache e offline (IndexedDB com queda para memória, índice guardado, estado de sincronização, service worker só do shell; 90 testes; verificado em Chrome em modo avião e com hash falso, 2026-10-14; ícones PNG ficam para a 8.1)
 - [ ] 4.4 Sistema de design
 - [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
 - [ ] 5.1 Início · 5.2 Tabela de força · 5.3 Volante e detalhe da dezena · 5.4 "Entenda" e avisos

@@ -1,7 +1,19 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { formatarDataSorteio } from './dados/estado-sincronizacao';
+  import { SLUGS } from './dados/tipos';
   import { idsAbas, textos, type IdAba } from './lib/textos';
+  import { registrarServiceWorker } from './pwa';
+  import { criarSessao } from './sessao.svelte';
 
   let abaAtual = $state<IdAba>('inicio');
+  let atualizacaoPronta = $state(false);
+  const sessao = criarSessao();
+
+  onMount(() => {
+    sessao.iniciar();
+    registrarServiceWorker(() => (atualizacaoPronta = true));
+  });
 </script>
 
 <header class="topo">
@@ -10,7 +22,38 @@
 
 <main id="conteudo" aria-labelledby="titulo-aba">
   <h2 id="titulo-aba">{textos.abas[abaAtual]}</h2>
-  <p>{textos.placeholder}</p>
+  {#if abaAtual === 'inicio'}
+    <section aria-labelledby="titulo-dados">
+      <h3 id="titulo-dados">{textos.sincronizacao.titulo}</h3>
+      <p role="status" class="estado" data-tipo={sessao.situacao?.estado.tipo ?? 'sincronizando'}>
+        {sessao.situacao?.estado.texto ?? textos.sincronizacao.sincronizando(null)}
+      </p>
+      {#if sessao.aviso}
+        <p role="alert" class="aviso">{textos.sincronizacao.armazenamentoVolatil}</p>
+      {/if}
+      {#if atualizacaoPronta}
+        <p class="aviso">{textos.sincronizacao.atualizacaoDisponivel}</p>
+      {/if}
+      {#if sessao.situacao?.cache}
+        <ul>
+          {#each SLUGS as slug (slug)}
+            {@const entrada = sessao.situacao.cache.indice.loterias[slug]}
+            {#if entrada}
+              <li>
+                {textos.sincronizacao.ultimoConcurso(
+                  textos.loterias[slug],
+                  entrada.ultimoConcurso,
+                  formatarDataSorteio(entrada.data),
+                )}
+              </li>
+            {/if}
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {:else}
+    <p>{textos.placeholder}</p>
+  {/if}
 </main>
 
 <nav class="abas" aria-label={textos.navegacao}>
@@ -33,6 +76,20 @@
   h1 {
     margin: 0;
     font-size: 1.25rem;
+  }
+  h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+  }
+  .estado,
+  .aviso {
+    margin: 0 0 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--cor-contorno);
+    border-radius: 0.5rem;
+  }
+  ul {
+    padding-left: 1.25rem;
   }
   main {
     padding: 1rem;

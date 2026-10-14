@@ -5,7 +5,7 @@
 //  - só se baixa o arquivo cujo sha256 mudou em relação ao guardado;
 //  - dado que falhou em qualquer conferência nunca é guardado nem devolvido
 //    como novo: o último arquivo válido continua valendo.
-import type { Armazenamento } from './armazenamento';
+import { CAMINHO_INDICE, type Armazenamento } from './armazenamento';
 import { URL_BASE_PADRAO, normalizarUrlBase } from './config';
 import { ErroDados } from './erros';
 import { sha256Hex } from './hash';
@@ -29,6 +29,8 @@ export interface OpcoesCliente {
   urlBase?: string;
   /** Padrão: fetch global. Injetável para testes (sem rede). */
   fetch?: FetchInjetavel;
+  /** Relógio injetável (testes). Padrão: `new Date()`. */
+  agora?: () => Date;
 }
 
 export interface OpcoesSincronizacao {
@@ -91,10 +93,41 @@ function interpretar<K extends ChaveArquivo>(
   return dados as DadosPorChave[K];
 }
 
+/** O que há guardado, lido sem rede (reconferido contra o sha256 guardado). */
+export interface ResultadoCache {
+  /** index.json válido mais recente guardado. */
+  readonly indice: IndiceV1;
+  /** Quando o índice foi guardado (ISO UTC), se conhecido. */
+  readonly indiceSincronizadoEm: string | null;
+  /**
+   * Instante mais antigo entre as últimas confirmações dos arquivos presentes
+   * no cache (o dado "vale desde" ali); `null` se desconhecido.
+   */
+  readonly sincronizadoEm: string | null;
+  /** Por loteria e arquivo: dados guardados, ou `null` se ausentes/corrompidos. */
+  readonly loterias: {
+    readonly [S in Slug]?: {
+      readonly indice: LoteriaNoIndice;
+      readonly dados: { readonly [K in ChaveArquivo]?: DadosPorChave[K] | null };
+    } | null;
+  };
+}
+
 export function criarCliente(opcoes: OpcoesCliente) {
   const urlBase = normalizarUrlBase(opcoes.urlBase ?? URL_BASE_PADRAO);
   const buscar: FetchInjetavel = opcoes.fetch ?? ((url, init) => globalThis.fetch(url, init));
   const { armazenamento } = opcoes;
+  const agora = opcoes.agora ?? (() => new Date());
+  const instante = () => agora().toISOString();
+
+  /** Gravar nunca derruba nem invalida um dado já conferido. */
+  async function guardarSemFalhar(arquivo: Parameters<Armazenamento['guardar']>[0]): Promise<void> {
+    try {
+      await armazenamento.guardar(arquivo);
+    } catch {
+      /* armazenamento indisponível: o dado conferido segue valendo nesta sessão */
+    }
+  }
 
   async function baixarBytes(caminho: string): Promise<Uint8Array> {
     const url = new URL(caminho, urlBase).href;
@@ -121,7 +154,15 @@ export function criarCliente(opcoes: OpcoesCliente) {
     } catch {
       throw new ErroDados('json_invalido', 'index.json: o conteúdo não é JSON válido.');
     }
-    return validarIndice(valor);
+    const indice = validarIndice(valor);
+    // Só o índice que passou na validação vira o "último índice válido".
+    await guardarSemFalhar({
+      caminho: CAMINHO_INDICE,
+      sha256: await sha256Hex(bytes),
+      bytes,
+      sincronizadoEm: instante(),
+    });
+    return indice;
   }
 
   async function conferirBytes(descritor: DescritorArquivo, bytes: Uint8Array): Promise<void> {
@@ -145,13 +186,23 @@ export function criarCliente(opcoes: OpcoesCliente) {
     chave: K,
     slug: Slug,
     caminho: string,
-  ): Promise<{ dados: DadosPorChave[K]; sha256: string } | null> {
+  ): Promise<{
+    dados: DadosPorChave[K];
+    sha256: string;
+    bytes: Uint8Array;
+    sincronizadoEm: string | null;
+  } | null> {
     try {
       const guardado = await armazenamento.ler(caminho);
       if (!guardado) return null;
       const hash = await sha256Hex(guardado.bytes);
       if (hash !== guardado.sha256) return null;
-      return { dados: interpretar(chave, guardado.bytes, slug), sha256: guardado.sha256 };
+      return {
+        dados: interpretar(chave, guardado.bytes, slug),
+        sha256: guardado.sha256,
+        bytes: guardado.bytes,
+        sincronizadoEm: guardado.sincronizadoEm ?? null,
+      };
     } catch {
       return null;
     }
@@ -165,6 +216,13 @@ export function criarCliente(opcoes: OpcoesCliente) {
     const descritor = entrada.arquivos[chave];
     const guardado = await lerDoCache(chave, slug, descritor.caminho);
     if (guardado && guardado.sha256 === descritor.sha256) {
+      // O índice atual confirma que este arquivo continua o vigente.
+      await guardarSemFalhar({
+        caminho: descritor.caminho,
+        sha256: guardado.sha256,
+        bytes: guardado.bytes,
+        sincronizadoEm: instante(),
+      });
       return { estado: 'em_cache', dados: guardado.dados, sha256: guardado.sha256 };
     }
     try {
@@ -181,7 +239,12 @@ export function criarCliente(opcoes: OpcoesCliente) {
           `${descritor.caminho}: concurso/data não conferem com o índice (${entrada.ultimoConcurso}, ${entrada.data}).`,
         );
       }
-      await armazenamento.guardar({ caminho: descritor.caminho, sha256: descritor.sha256, bytes });
+      await guardarSemFalhar({
+        caminho: descritor.caminho,
+        sha256: descritor.sha256,
+        bytes,
+        sincronizadoEm: instante(),
+      });
       return { estado: 'baixado', dados, sha256: descritor.sha256 };
     } catch (e) {
       const erro =
@@ -231,7 +294,52 @@ export function criarCliente(opcoes: OpcoesCliente) {
     return { indice, loterias };
   }
 
-  return { urlBase, sincronizar };
+  /**
+   * Lê só o armazenamento, sem rede: último índice válido e os arquivos
+   * guardados. `null` se nunca houve sincronização (ou o índice guardado
+   * corrompeu). Nunca lança.
+   */
+  async function lerCache(opcoesCache: OpcoesSincronizacao = {}): Promise<ResultadoCache | null> {
+    let indice: IndiceV1;
+    let indiceSincronizadoEm: string | null;
+    try {
+      const guardado = await armazenamento.ler(CAMINHO_INDICE);
+      if (!guardado || (await sha256Hex(guardado.bytes)) !== guardado.sha256) return null;
+      indice = validarIndice(
+        JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(guardado.bytes)),
+      );
+      indiceSincronizadoEm = guardado.sincronizadoEm ?? null;
+    } catch {
+      return null;
+    }
+    const slugs = opcoesCache.loterias ?? SLUGS;
+    const chaves = opcoesCache.arquivos ?? CHAVES_ARQUIVO;
+    const loterias: { -readonly [S in Slug]?: ResultadoCache['loterias'][S] } = {};
+    const datas: string[] = [];
+    let faltouData = false;
+    for (const slug of slugs) {
+      const entrada = indice.loterias[slug];
+      if (!entrada) {
+        loterias[slug] = null;
+        continue;
+      }
+      const dados: { [K in ChaveArquivo]?: DadosPorChave[K] | null } = {};
+      for (const chave of chaves) {
+        const lido = await lerDoCache(chave, slug, entrada.arquivos[chave].caminho);
+        Object.assign(dados, { [chave]: lido?.dados ?? null });
+        if (lido) {
+          if (lido.sincronizadoEm) datas.push(lido.sincronizadoEm);
+          else faltouData = true;
+        }
+      }
+      loterias[slug] = { indice: entrada, dados };
+    }
+    datas.sort();
+    const sincronizadoEm = faltouData ? null : (datas[0] ?? indiceSincronizadoEm);
+    return { indice, indiceSincronizadoEm, sincronizadoEm, loterias };
+  }
+
+  return { urlBase, sincronizar, lerCache };
 }
 
 export type ClienteDados = ReturnType<typeof criarCliente>;

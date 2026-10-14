@@ -25,5 +25,11 @@ npm run preview    # serve dist/ localmente
 - `src/dados/`: camada de dados do contrato v1 (tipos, validação de forma,
   cliente do `index.json` com conferência de SHA-256/bytes, interface de
   armazenamento). URL base em `src/dados/config.ts`.
+- Cache e offline (4.3): `src/dados/armazenamento-idb.ts` (IndexedDB direto, sem
+  biblioteca; cai para memória com aviso se indisponível), `abertura.ts` (cache
+  primeiro, depois sincroniza), `estado-sincronizacao.ts` (estado + texto).
+  Service worker (vite-plugin-pwa) só faz precache do app shell; os dados do
+  contrato NÃO passam por ele, o cache deles é o IndexedDB com conferência de
+  SHA-256. SW existe só no build (`npm run preview`), nunca em `npm run dev`.
 - `src/app.css`: tokens de cor (Material 3, semente verde-azulada), claro/escuro.
 - `testes/`: fixtures (cópias de `publico/v1/`) e testes de dados.
