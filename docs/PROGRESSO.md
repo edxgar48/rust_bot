@@ -80,7 +80,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Front-end (`docs/PLANEJAMENTO-FRONTEND.md`) · `engenheiro-app` (a criar)
 
 - [x] 4.1 Esqueleto do app em `app/` (Vite + Svelte 5 + TypeScript; lint, check, test e build verificados em 2026-10-14; sem conferência visual, fica para a 4.4)
-- [ ] 4.2 Camada de dados (cliente do contrato, hash, tipos)
+- [x] 4.2 Camada de dados (cliente do contrato, hash, tipos; 57 testes, gate verificado em 2026-10-14; valor enumerado desconhecido recusa o arquivo e cai no cache, a confirmar)
 - [ ] 4.3 Cache e offline
 - [ ] 4.4 Sistema de design
 - [x] 4.5 Mockups aprovados (7 telas em Material 3, semente verde-azulada, https://claude.ai/artifact/7JPkGTXeaVYeDbgrNQXrMW; aprovados pelo usuário em 2026-10-14; números dos mockups são ilustrativos)
@@ -91,6 +91,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Decisões em aberto
 
+- [ ] Front-end: valor enumerado novo no contrato (grau/direção/normalização) deve recusar o arquivo (hoje) ou mostrar "desconhecido"? O contrato não diz; decidir antes da 5.2
 - [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1), estilo visual (4.5), backup de jogos salvos (6.3)
 - [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)

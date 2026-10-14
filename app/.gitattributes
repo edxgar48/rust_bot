@@ -1,0 +1,2 @@
+# O SHA-256 do índice é dos bytes exatos: nunca converter fim de linha nas fixtures.
+testes/fixtures/** -text

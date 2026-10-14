@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "loteria": "quina",
+  "concurso": 7141,
+  "data": "2026-10-13",
+  "dezenas": [1, 18, 19, 33, 56]
+}

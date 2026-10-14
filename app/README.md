@@ -22,5 +22,8 @@ npm run preview    # serve dist/ localmente
 ## Estrutura
 
 - `src/lib/textos.ts`: todos os textos de interface (um só módulo).
+- `src/dados/`: camada de dados do contrato v1 (tipos, validação de forma,
+  cliente do `index.json` com conferência de SHA-256/bytes, interface de
+  armazenamento). URL base em `src/dados/config.ts`.
 - `src/app.css`: tokens de cor (Material 3, semente verde-azulada), claro/escuro.
 - `testes/`: fixtures (cópias de `publico/v1/`) e testes de dados.

@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "gerado_em": "2026-10-14T02:02:29Z",
+  "loterias": {
+    "lotofacil": {
+      "ultimo_concurso": 3803,
+      "data": "2026-10-13",
+      "arquivos": {
+        "ultimo": {
+          "caminho": "lotofacil/ultimo.json",
+          "sha256": "544845fd50a516c52cf4c1f325e1ed4c83c137ccb4e083b130416049a0a6b60c",
+          "bytes": 166
+        },
+        "tabela_geral": {
+          "caminho": "lotofacil/tabela_geral.json",
+          "sha256": "7f209c9f095edc9b80a97fd877d2d37e17cec7d8abb2e9871741496a441a96c6",
+          "bytes": 11319
+        },
+        "historico": {
+          "caminho": "lotofacil/historico.json",
+          "sha256": "f13defe9a4a59807456cfbab1ed61402d3f78a37464dd3d83cba10f6b8cf7e81",
+          "bytes": 313199
+        }
+      }
+    },
+    "megasena": {
+      "ultimo_concurso": 3069,
+      "data": "2026-10-11",
+      "arquivos": {
+        "ultimo": {
+          "caminho": "megasena/ultimo.json",
+          "sha256": "71931cf551c963f64b5e854a740a480c5b841388569995dbcc770f91ebfed5a7",
+          "bytes": 133
+        },
+        "tabela_geral": {
+          "caminho": "megasena/tabela_geral.json",
+          "sha256": "9f42aa79ca339f70ad95967337e0e7e6930ea530336c8bd66dd5609ff5f8c2fc",
+          "bytes": 26931
+        },
+        "historico": {
+          "caminho": "megasena/historico.json",
+          "sha256": "f4b6c7912ba5f3eb6f06d1c156377d4c6ad7e224fa701c812200e3929c7d18eb",
+          "bytes": 155807
+        }
+      }
+    },
+    "quina": {
+      "ultimo_concurso": 7141,
+      "data": "2026-10-13",
+      "arquivos": {
+        "ultimo": {
+          "caminho": "quina/ultimo.json",
+          "sha256": "4c3795ec3d9422285ad1b5a4f8b268490b29d53aa257b5572f11a5de1ebb0476",
+          "bytes": 126
+        },
+        "tabela_geral": {
+          "caminho": "quina/tabela_geral.json",
+          "sha256": "ff23c46499049bd8c8c1aad92e146a914e95a4a695945435fa76476440daf65f",
+          "bytes": 35965
+        },
+        "historico": {
+          "caminho": "quina/historico.json",
+          "sha256": "b6a95e64d75e387781de3b0a762e499cb384b20109baeb905e4ad13f32401dda",
+          "bytes": 337715
+        }
+      }
+    }
+  }
+}
