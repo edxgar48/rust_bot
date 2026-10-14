@@ -2123,3 +2123,9 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   relógio: salto com planilha futura, planilha atrasada + página futura, relógio falhando, backfill,
   `inserir`) e 2 BAIXA (relógio do backfill fora do bloco da planilha, doc-comment > 100 colunas)
   corrigidas na 2ª rodada.
+- 2026-10-14 — Primeira noite agendada (2026-10-13, 23:00): Lotofácil 3803 e Quina 7141 gravados e
+  publicados (`f3dae9d`, `8154e4c` no repositório de dados); Mega-Sena aguardando o 3070. O processo foi
+  encerrado às ~23:16 por logoff e reinício do Windows Update (TrustedInstaller, "atualização planejada"),
+  com `LastTaskResult` 0xC000013A e sem linha de fim no `agendador.log`. Na 1ª tentativa da Lotofácil o
+  Playwright falhou ao iniciar e na 2ª deu timeout; a 3ª passou. Release recompilado às 07:36 (0.3b e texto
+  do `.eml` da 3.8). Sugestão ao usuário: horário ativo do Windows Update cobrindo 23h–01h.

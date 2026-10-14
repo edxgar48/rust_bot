@@ -594,3 +594,8 @@ com o planejamento do front-end.
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores
   CSS e técnicas anti-detecção, caso o site volte a bloquear o acesso
   automatizado.
+- Aviso de inserção manual divergente (`src/manuais.rs`, `Conciliacao::Divergente`):
+  diz "o banco fica com o oficial", o que é falso quando vem do `atualizar`,
+  que nesse caso não grava nada (o banco fica com a inserção manual). Ajustar
+  o texto conforme o caminho, ou fazer o `atualizar` gravar o oficial
+  (registrado em 2026-10-13, achado da revisão da 3.8).
