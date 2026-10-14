@@ -17,7 +17,7 @@
 //! Rede, relógio e destino entram por parâmetro, então tudo roda nos testes
 //! sem rede. A biblioteca não imprime: emite [`Evento::Ciclo`].
 
-use super::gravacao::atualizar_reaproveitando_backup;
+use super::gravacao::{atualizar_reaproveitando_backup, hoje_de};
 use super::{
     carregar_existentes, descrever_faixa, exportar_tudo_ou_nada, faixas_faltando,
     processar_e_salvar, sincronizar_features, sincronizar_indice, DesfechoAtualizacao, Evento,
@@ -774,6 +774,9 @@ where
     obs(Evento::Ciclo(EventoCiclo::BackfillIniciado {
         faixas: faixas.to_vec(),
     }));
+    // Antes do backup e fora do bloco abaixo: erro de relógio não é falha do
+    // caminho da planilha, e sem ele nada deve ser tocado.
+    let hoje = hoje_de(&mut *agora)?;
     let copia = match &memoria.backup {
         Some(copia) => copia.clone(),
         None => {
@@ -788,7 +791,7 @@ where
     // Falha daqui em diante aponta o backup, como no salto do `atualizar`.
     let restantes = async {
         let arquivo = obter_planilha(cfg).await?;
-        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache, obs)?;
+        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache, hoje, obs)?;
         Ok::<_, SpiderError>(faixas_faltando(&carregar_existentes(cfg, db_caminho)?))
     }
     .await

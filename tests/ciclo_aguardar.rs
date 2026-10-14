@@ -1462,7 +1462,9 @@ async fn pagina_parcial_numa_rodada_e_repetida_ate_a_pagina_completa() {
 
 #[tokio::test]
 async fn salto_com_download_transitorio_faz_um_unico_backup() {
-    let a = Amb::novo(false);
+    // Base mais antiga: com a padrão o 14 e o 15 ficariam depois de "hoje"
+    // (terça 13/10), e data no futuro é erro na gravação (0.3b).
+    let a = Amb::com_base(false, "2026-09-20");
     a.semear("quina", N, &[]);
     // A página já mostra o 15 (salto: faltam 13 e 14); a planilha completa
     // existe, mas os 2 primeiros downloads falham de passagem.

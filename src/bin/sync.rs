@@ -3,7 +3,7 @@ use rust_spider::avaliacao::{self, AvaliacaoFaixa, Cauda, Comparacao, Intervalo}
 use rust_spider::log_arquivo::{self, LogArquivo, Nivel};
 use rust_spider::orquestracao::Destino;
 use rust_spider::orquestracao::{
-    carregar_existentes, descrever_faixa, faixas_faltando, validar_lote, PastasAtualizar,
+    carregar_existentes, descrever_faixa, faixas_faltando, hoje_de, validar_lote, PastasAtualizar,
 };
 use rust_spider::{
     backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil, publicacao,
@@ -659,11 +659,13 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
         } => {
             let cfg = buscar_config_unica(&loteria, "importar", "o arquivo é de uma loteria só")?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            let hoje = hoje_de(agora_segundos)?;
             orquestracao::processar_e_salvar(
                 &arquivo,
                 cfg,
                 &db_caminho,
                 &cache,
+                hoje,
                 &mut imprimir_evento,
             )?;
         }
@@ -1174,7 +1176,8 @@ async fn baixar(
     cache: &std::path::Path,
 ) -> anyhow::Result<()> {
     let arquivo = baixar_planilha(cfg, dir, seletor, visivel).await?;
-    orquestracao::processar_e_salvar(&arquivo, cfg, db_caminho, cache, &mut imprimir_evento)?;
+    let hoje = hoje_de(agora_segundos)?;
+    orquestracao::processar_e_salvar(&arquivo, cfg, db_caminho, cache, hoje, &mut imprimir_evento)?;
     Ok(())
 }
 
@@ -1495,7 +1498,15 @@ fn inserir_manual(
         );
     }
     let lote = [entrada.para_resultado(cfg.slug)];
-    let decisao = validar_lote(cfg, &existentes, &lote, db_caminho, &mut imprimir_evento)?;
+    let hoje = hoje_de(agora_segundos)?;
+    let decisao = validar_lote(
+        cfg,
+        &existentes,
+        &lote,
+        hoje,
+        db_caminho,
+        &mut imprimir_evento,
+    )?;
     if decisao
         .avisos
         .iter()
@@ -3125,6 +3136,34 @@ mod tests {
 
         assert!(erro.to_string().contains("banco não encontrado"), "{erro}");
         assert!(!existe, "listar não deve criar {}", caminho.display());
+    }
+
+    #[test]
+    fn inserir_com_data_no_futuro_nao_toca_no_cache_nem_no_banco() {
+        let unico = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let raiz = std::env::temp_dir().join(format!(
+            "rust_spider_inserir_futuro_{}_{unico}",
+            std::process::id()
+        ));
+        let db_caminho = raiz.join("resultados_quina.db");
+        let cache = raiz.join("cache");
+        std::fs::create_dir_all(&raiz).unwrap();
+        let entrada = manuais::EntradaManual {
+            concurso: 1,
+            data_sorteio: "2099-01-01".to_string(),
+            dezenas: vec![1, 2, 3, 4, 5],
+        };
+
+        let erro = inserir_manual(quina(), entrada, &db_caminho, &cache)
+            .expect_err("data no futuro deve recusar");
+        let sobrou = db_caminho.exists() || manuais::caminho(&cache, "quina").exists();
+        let _ = std::fs::remove_dir_all(&raiz);
+
+        assert!(erro.to_string().contains("recusado"), "{erro}");
+        assert!(!sobrou, "nada pode ser criado (banco ou cache)");
     }
 
     #[test]

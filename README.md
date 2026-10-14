@@ -316,6 +316,10 @@ sorteio): `importar`/`baixar` reaplicam essas entradas num banco recriado e,
 quando a planilha oficial passa a trazer o concurso, removem a entrada se for
 igual ou avisam se for diferente.
 
+Concurso com data posterior a hoje (relógio de Brasília) é erro em qualquer gravação
+(`importar`, `baixar`, `atualizar`, `inserir`, `ciclo`) e recusa o lote inteiro; data de
+hoje é aceita, e o `validar` não reporta isso.
+
 `features` calcula, para cada concurso *t*, o snapshot de cada dezena em
 cada janela (10, 50, 100 e total, gravada como `janela = 0`) usando só os
 concursos até *t−1* (definições em `docs/PLANEJAMENTO.md`, "Especificação das
@@ -1173,6 +1177,9 @@ status` limpo e `git -C ..\rust_spider_dados log -1` com a mensagem
   não está no repositório: commite depois de cada `inserir`). É o que permite recriar um banco sem
   perdê-los. Quem o limpa é o próprio `baixar`/`importar`, quando a planilha
   passa a trazer o concurso igual.
+  Uma entrada com data futura (digitada errada) faz toda gravação da
+  loteria ser recusada ("lote recusado"), pois o `baixar`/`importar` a
+  reaplica: corrija a data no arquivo (ou remova a entrada) e rode de novo.
 - **`perfis\`**: os `.toml` de pesos (imutáveis, com hash registrado no banco).
   Não os edite depois de usados; crie a versão seguinte.
 - **`alertas\estado.json`**: histórico por alvo (noites seguidas de falha,

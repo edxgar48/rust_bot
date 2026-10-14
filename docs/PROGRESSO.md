@@ -83,7 +83,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)
 - [x] Tamanho do conjunto trancado → 10%, corte fixo por número de concurso (ver nota de 2026-10-05)
 - [x] Buraco já existente no banco deve bloquear `importar`/`baixar`? → não: só aviso (ver nota 0.7)
-- [ ] Regra "data posterior a hoje" ao gravar (ver nota 0.2)
+- [x] Regra "data posterior a hoje" ao gravar → recusar a gravação (nota de 2026-10-13)
 - [x] Ambiente Python, dependências e definição do "baseline" da `ml/` → resolvidos (ver notas de 2026-10-06)
 - [x] Definição do walk-forward em Rust, dobras e uso do trancado — bloqueia 1c.3 → resolvida (ver notas de 2026-10-05)
 - [x] Nível de significância e correção por múltiplas dezenas na 1c.4 → α = 5% por família, Holm (ver nota de 2026-10-05)
@@ -2104,3 +2104,22 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   oficial", `src/manuais.rs`) é falso no caminho `SemNovidade` do `atualizar`, onde nada é gravado.
   Pendente da Fase 3 (critério de pronto): uma semana rodando agendado sem intervenção e a falha simulada
   manual disparando o alerta de verdade.
+- 2026-10-13 — Decisão do usuário sobre a pendência da 0.2: concurso com data posterior a hoje (Brasília)
+  é **erro** ao gravar e bloqueia o lote. Registrado na 0.3 do plano.
+- 2026-10-13 — 0.3b `[x]` (entrega pequena da Fase 0, sem linha nova no plano): data posterior a hoje
+  (Brasília, UTC−3 fixo) é erro na gravação. `Problema::DataNoFuturo { concurso, data, hoje }` em
+  `validacao.rs`; `avaliar_gravacao`, `validar_lote` e `processar_e_salvar` recebem `hoje: i64` (dias desde
+  1970 no fuso de Brasília), obtido por `orquestracao::hoje_de(agora)` (usa `calendario::dia_local`); a
+  biblioteca não lê `SystemTime`. Só os registros novos do lote são checados; data igual a hoje passa;
+  `validar` do banco inteiro não muda; `CORRECOES_DATA` e manuais reaplicados entram antes da validação.
+  Cobre `importar`, `baixar`, `inserir` (lê o relógio real na CLI), `atualizar` (salto de 1 e salto com
+  planilha; relógio lido antes do backup) e `ciclo` (inclusive backfill, relógio lido antes do backup).
+  Desvios: na cadeia do `atualizar`, `agora` passou de `FnOnce` a `FnMut` (lido também no salto de 1);
+  `tests/ciclo_aguardar.rs::salto_com_download_transitorio_faz_um_unico_backup` passou a usar base
+  2026-09-20 (o histórico sintético gerava concursos depois da "terça 13/10" simulada). README: regra no
+  texto da validação e, no Runbook, como resolver entrada de `cache\manuais_<loteria>.json` com data
+  futura (bloqueia toda gravação da loteria). Gate: fmt/clippy ok, 1138 testes Rust e 175 pytest ok,
+  `validar todas` sem problemas. Revisor: aprovado com ressalvas; 1 MÉDIA (testes do encanamento do
+  relógio: salto com planilha futura, planilha atrasada + página futura, relógio falhando, backfill,
+  `inserir`) e 2 BAIXA (relógio do backfill fora do bloco da planilha, doc-comment > 100 colunas)
+  corrigidas na 2ª rodada.

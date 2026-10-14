@@ -278,17 +278,28 @@ pub fn carregar_existentes(cfg: &LoteriaConfig, db_caminho: &Path) -> Result<Vec
     db::listar(&conn, cfg.slug)
 }
 
-/// Valida o lote contra o que já está no banco antes de gravar. Emite os
+/// Dia de hoje em Brasília (dias desde 1970-01-01) a partir do relógio
+/// injetado: a regra "data no futuro é erro" (0.3b) precisa dele em todo
+/// caminho que grava.
+pub fn hoje_de(agora: impl FnOnce() -> Result<u64>) -> Result<i64> {
+    Ok(crate::calendario::dia_local(
+        i64::try_from(agora()?).unwrap_or(i64::MAX),
+    ))
+}
+
+/// Valida o lote contra o que já está no banco antes de gravar. `hoje` é o
+/// dia de Brasília (ver [`hoje_de`]): data posterior a ele é erro. Emite os
 /// avisos; se houver erro, emite-os e falha sem gravar nada (tudo ou nada,
 /// [`SpiderError::LoteRecusado`]).
 pub fn validar_lote(
     cfg: &LoteriaConfig,
     existentes: &[Resultado],
     novos: &[Resultado],
+    hoje: i64,
     db_caminho: &Path,
     obs: &mut dyn FnMut(Evento),
 ) -> Result<DecisaoGravacao> {
-    let decisao = validacao::avaliar_gravacao(cfg, existentes, novos);
+    let decisao = validacao::avaliar_gravacao(cfg, existentes, novos, hoje);
     if !decisao.avisos.is_empty() {
         obs(Evento::Avisos(decisao.avisos.clone()));
     }
@@ -326,6 +337,7 @@ pub fn processar_e_salvar(
     cfg: &LoteriaConfig,
     db_caminho: &Path,
     cache_dir: &Path,
+    hoje: i64,
     obs: &mut dyn FnMut(Evento),
 ) -> Result<ResumoGravacao> {
     let mut resultados = parser::parsear_arquivo(arquivo, cfg)?;
@@ -355,7 +367,7 @@ pub fn processar_e_salvar(
         resultados.extend(pendentes);
     }
 
-    validar_lote(cfg, &existentes, &resultados, db_caminho, obs)?;
+    validar_lote(cfg, &existentes, &resultados, hoje, db_caminho, obs)?;
     // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
     let mut conn = db::abrir(db_caminho)?;
     let gravados = db::salvar_resultados(&mut conn, &resultados)?;
@@ -433,7 +445,7 @@ pub async fn atualizar<P, FutP, F, Fut>(
     db_caminho: &Path,
     pastas: &PastasAtualizar<'_>,
     obs: &mut dyn FnMut(Evento),
-    agora: impl FnOnce() -> Result<u64>,
+    agora: impl FnMut() -> Result<u64>,
     ler_pagina: P,
     obter_planilha: F,
 ) -> Result<RelatorioAtualizacao>
@@ -466,7 +478,7 @@ pub(super) async fn atualizar_reaproveitando_backup<P, FutP, F, Fut>(
     db_caminho: &Path,
     pastas: &PastasAtualizar<'_>,
     obs: &mut dyn FnMut(Evento),
-    agora: impl FnOnce() -> Result<u64>,
+    agora: impl FnMut() -> Result<u64>,
     ler_pagina: P,
     obter_planilha: F,
     backup_previo: &mut Option<PathBuf>,
@@ -499,9 +511,9 @@ where
 
 /// O `atualizar` depois de raspar a página: nada a fazer, gravar o próximo
 /// concurso ou, num salto, fazer backup e seguir o caminho do `baixar`
-/// (tarefa 0.8). O relógio (`agora`, lido só no salto com banco) e o download
-/// da planilha (`obter_planilha`) vêm de fora para o fluxo ser testável sem
-/// rede. Falha no caminho da planilha vira
+/// (tarefa 0.8). O relógio (`agora`, lido ao gravar: no salto de 1 e no salto
+/// com planilha) e o download da planilha (`obter_planilha`) vêm de fora para
+/// o fluxo ser testável sem rede. Falha no caminho da planilha vira
 /// [`SpiderError::CaminhoDaPlanilhaFalhou`], que aponta o backup.
 pub async fn aplicar_atualizacao<F, Fut>(
     cfg: &LoteriaConfig,
@@ -509,7 +521,7 @@ pub async fn aplicar_atualizacao<F, Fut>(
     db_caminho: &Path,
     pastas: &PastasAtualizar<'_>,
     obs: &mut dyn FnMut(Evento),
-    agora: impl FnOnce() -> Result<u64>,
+    agora: impl FnMut() -> Result<u64>,
     obter_planilha: F,
 ) -> Result<RelatorioAtualizacao>
 where
@@ -538,7 +550,7 @@ async fn aplicar_atualizacao_reaproveitando_backup<F, Fut>(
     db_caminho: &Path,
     pastas: &PastasAtualizar<'_>,
     obs: &mut dyn FnMut(Evento),
-    agora: impl FnOnce() -> Result<u64>,
+    mut agora: impl FnMut() -> Result<u64>,
     obter_planilha: F,
     backup_previo: &mut Option<PathBuf>,
 ) -> Result<RelatorioAtualizacao>
@@ -564,7 +576,16 @@ where
             ));
         }
         super::Atualizacao::Proximo => {
-            gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache, obs)?;
+            let hoje = hoje_de(&mut agora)?;
+            gravar_da_pagina(
+                cfg,
+                &existentes,
+                resultado,
+                db_caminho,
+                pastas.cache,
+                hoje,
+                obs,
+            )?;
             // Sem reler o banco: a gravação já deu certo e uma falha de leitura
             // só para montar o relatório não pode virar erro do comando.
             let mut finais = existentes;
@@ -574,7 +595,9 @@ where
         super::Atualizacao::Salto { ultimo, pagina } => (ultimo, pagina),
     };
 
-    // Salto: gravar só o concurso da página deixaria buraco.
+    // Salto: gravar só o concurso da página deixaria buraco. O relógio é lido
+    // antes do backup: sem ele não há como validar a data, e nada foi tocado.
+    let hoje = hoje_de(&mut agora)?;
     let copia = if ultimo == 0 {
         obs(Evento::BancoSemConcursos {
             nome: cfg.nome_exibicao,
@@ -612,7 +635,7 @@ where
 
     let feito = async {
         let arquivo = obter_planilha().await?;
-        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache, obs)?;
+        processar_e_salvar(&arquivo, cfg, db_caminho, pastas.cache, hoje, obs)?;
 
         // A planilha pode estar atrasada em relação à página.
         let mut existentes = carregar_existentes(cfg, db_caminho)?;
@@ -620,7 +643,15 @@ where
             obs(Evento::PlanilhaAtrasada {
                 concurso: resultado.concurso,
             });
-            gravar_da_pagina(cfg, &existentes, resultado, db_caminho, pastas.cache, obs)?;
+            gravar_da_pagina(
+                cfg,
+                &existentes,
+                resultado,
+                db_caminho,
+                pastas.cache,
+                hoje,
+                obs,
+            )?;
             existentes = carregar_existentes(cfg, db_caminho)?;
         }
         Ok::<_, SpiderError>(existentes)
@@ -666,10 +697,11 @@ fn gravar_da_pagina(
     resultado: &Resultado,
     db_caminho: &Path,
     cache: &Path,
+    hoje: i64,
     obs: &mut dyn FnMut(Evento),
 ) -> Result<()> {
     let lote = std::slice::from_ref(resultado);
-    validar_lote(cfg, existentes, lote, db_caminho, obs)?;
+    validar_lote(cfg, existentes, lote, hoje, db_caminho, obs)?;
 
     // Só depois de aprovado: `db::abrir` cria o arquivo se não existir.
     let mut conn = db::abrir(db_caminho)?;
@@ -695,6 +727,11 @@ mod tests {
 
     /// 2026-10-04T18:30:00Z.
     const AGORA: u64 = 1_791_138_600;
+
+    /// O dia de Brasília de [`AGORA`] (2026-10-04), como `hoje` dos lotes.
+    fn hoje() -> i64 {
+        crate::calendario::dia_local(i64::try_from(AGORA).unwrap())
+    }
 
     /// Pasta temporária com o banco, o cache e `backups/`.
     struct Cenario {
@@ -820,7 +857,7 @@ mod tests {
     async fn aplicar<F, Fut>(
         c: &Cenario,
         pagina: &Resultado,
-        agora: impl FnOnce() -> Result<u64>,
+        agora: impl FnMut() -> Result<u64>,
         planilha: F,
     ) -> (Result<RelatorioAtualizacao>, Vec<Evento>)
     where
@@ -865,7 +902,7 @@ mod tests {
     async fn atualizar_salto_de_um_grava_so_o_da_pagina_sem_backup() {
         let c = Cenario::novo("proximo");
         c.gravar(&planilha_quina()[..4]);
-        let (r, eventos) = aplicar(&c, &da_planilha(5), relogio_proibido, planilha_proibida).await;
+        let (r, eventos) = aplicar(&c, &da_planilha(5), || Ok(AGORA), planilha_proibida).await;
         let r = r.unwrap();
         assert_eq!(r.desfecho, DesfechoAtualizacao::ProximoGravado);
         assert_eq!(r.ultimo_concurso, Some(5));
@@ -998,6 +1035,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn atualizar_salto_com_planilha_de_data_futura_recusa_e_aponta_o_backup() {
+        let c = Cenario::novo("planilha_futura_salto");
+        c.gravar(&planilha_quina()[..2]);
+        // 1990-01-01T00:00:00Z: todas as datas da planilha (1994+) são futuras.
+        let (r, eventos) = aplicar(
+            &c,
+            &da_planilha(5),
+            || Ok(631_152_000),
+            || async { Ok(fixture_quina()) },
+        )
+        .await;
+        let erro = r.expect_err("planilha com data no futuro");
+        assert!(matches!(erro, SpiderError::CaminhoDaPlanilhaFalhou { .. }));
+        let backup = c.backups.join("resultados_quina_19900101-000000.db");
+        let texto = cadeia(&erro);
+        assert!(texto.contains("lote recusado"), "{texto}");
+        assert!(texto.contains(&backup.display().to_string()), "{texto}");
+        assert_eq!(c.concursos(), [1, 2]);
+        assert_eq!(c.backups_feitos(), [backup]);
+        assert!(matches!(eventos.last(), Some(Evento::Erros(e)) if !e.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_planilha_atrasada_e_pagina_futura_grava_so_a_planilha() {
+        let c = Cenario::novo("pagina_futura_salto");
+        c.gravar(&planilha_quina()[..2]);
+        let mut pagina = so_na_pagina(6);
+        pagina.data_sorteio = "2026-10-05".to_string(); // um dia depois de `hoje()`
+        let (r, eventos) =
+            aplicar(&c, &pagina, || Ok(AGORA), || async { Ok(fixture_quina()) }).await;
+        let erro = r.expect_err("concurso da página com data no futuro");
+        assert!(matches!(erro, SpiderError::CaminhoDaPlanilhaFalhou { .. }));
+        let texto = cadeia(&erro);
+        assert!(texto.contains("lote recusado"), "{texto}");
+        assert!(texto.contains("backup"), "{texto}");
+        // A planilha (válida) já foi gravada; o concurso futuro, não.
+        assert_eq!(c.concursos(), [1, 2, 3, 4, 5]);
+        assert!(eventos.contains(&Evento::PlanilhaAtrasada { concurso: 6 }));
+        assert!(matches!(eventos.last(), Some(Evento::Erros(e)) if !e.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_com_relogio_falhando_nao_cria_backup_nem_grava() {
+        let c = Cenario::novo("relogio_falha");
+        c.gravar(&planilha_quina()[..2]);
+        let (r, _) = aplicar(&c, &da_planilha(5), || Err(sem_rede()), planilha_proibida).await;
+        let erro = r.expect_err("relógio falhou");
+        // Erro do relógio, não "falha no caminho da planilha".
+        assert!(!matches!(erro, SpiderError::CaminhoDaPlanilhaFalhou { .. }));
+        assert!(cadeia(&erro).contains("sem rede"), "{}", cadeia(&erro));
+        assert_eq!(c.concursos(), [1, 2]);
+        assert!(c.backups_feitos().is_empty());
+    }
+
+    #[tokio::test]
     async fn atualizar_salto_com_lote_reprovado_nao_grava_nada() {
         let c = Cenario::novo("lote_reprovado");
         // A página traz um concurso com dezena fora da faixa que a planilha
@@ -1026,9 +1118,12 @@ mod tests {
     #[tokio::test]
     async fn atualizar_banco_inexistente_baixa_a_planilha_sem_backup() {
         let c = Cenario::novo("sem_banco");
-        let (r, eventos) = aplicar(&c, &da_planilha(5), relogio_proibido, || async {
-            Ok(fixture_quina())
-        })
+        let (r, eventos) = aplicar(
+            &c,
+            &da_planilha(5),
+            || Ok(AGORA),
+            || async { Ok(fixture_quina()) },
+        )
         .await;
         assert_eq!(
             r.unwrap().desfecho,
@@ -1049,9 +1144,12 @@ mod tests {
     #[tokio::test]
     async fn atualizar_banco_inexistente_com_planilha_falhando_nao_cria_o_banco() {
         let c = Cenario::novo("sem_banco_falha");
-        let (r, _) = aplicar(&c, &da_planilha(5), relogio_proibido, || async {
-            Err(sem_rede())
-        })
+        let (r, _) = aplicar(
+            &c,
+            &da_planilha(5),
+            || Ok(AGORA),
+            || async { Err(sem_rede()) },
+        )
         .await;
         let erro = r.expect_err("download falhou");
         assert!(!cadeia(&erro).contains("o backup do banco"), "{erro}");
@@ -1069,7 +1167,7 @@ mod tests {
             &c.db,
             &c.pastas(),
             &mut |e| eventos.borrow_mut().push(e),
-            relogio_proibido,
+            || Ok(AGORA),
             || async { Ok(da_planilha(5)) },
             planilha_proibida,
         )
@@ -1124,7 +1222,7 @@ mod tests {
     fn processar_e_salvar_grava_a_planilha_e_resume() {
         let c = Cenario::novo("processar");
         let (r, eventos) =
-            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, o));
+            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, hoje(), o));
         let r = r.unwrap();
         assert_eq!(
             r,
@@ -1170,7 +1268,7 @@ mod tests {
         manuais::salvar(&cache, "quina", &[entrada(&tres), entrada(&nove)]).unwrap();
 
         let (r, eventos) =
-            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, o));
+            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, hoje(), o));
         let r = r.unwrap();
         assert_eq!(r.manuais_reaplicados, 1);
         assert_eq!(c.concursos(), [1, 2, 3, 4, 5, 9]);
@@ -1197,7 +1295,7 @@ mod tests {
         manuais::salvar(&cache, "quina", std::slice::from_ref(&entrada)).unwrap();
 
         let (r, eventos) =
-            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, o));
+            coletar(|o| processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, hoje(), o));
         r.unwrap();
         let divergente = eventos
             .iter()
@@ -1212,7 +1310,7 @@ mod tests {
         let c = Cenario::novo("ilegivel");
         let corrompida = fixture_quina().with_file_name("corrompida.xlsx");
         let (r, eventos) =
-            coletar(|o| processar_e_salvar(&corrompida, quina(), &c.db, &c.cache, o));
+            coletar(|o| processar_e_salvar(&corrompida, quina(), &c.db, &c.cache, hoje(), o));
         r.expect_err("planilha ilegível");
         assert!(eventos.is_empty());
         assert!(!c.db.exists());
@@ -1223,7 +1321,7 @@ mod tests {
         let c = Cenario::novo("reprova");
         let mut ruim = so_na_pagina(1);
         ruim.dezenas = vec![1, 2, 3, 4, 99];
-        let (r, eventos) = coletar(|o| validar_lote(quina(), &[], &[ruim], &c.db, o));
+        let (r, eventos) = coletar(|o| validar_lote(quina(), &[], &[ruim], hoje(), &c.db, o));
         let erro = r.expect_err("dezena fora da faixa");
         match &erro {
             SpiderError::LoteRecusado {
@@ -1243,11 +1341,58 @@ mod tests {
     }
 
     #[test]
+    fn validar_lote_com_data_no_futuro_recusa_sem_criar_o_banco() {
+        let c = Cenario::novo("data_futura");
+        let mut futuro = so_na_pagina(1);
+        futuro.data_sorteio = "2026-10-05".to_string(); // um dia depois de `hoje()`
+        let (r, eventos) = coletar(|o| validar_lote(quina(), &[], &[futuro], hoje(), &c.db, o));
+        match r.expect_err("data no futuro") {
+            SpiderError::LoteRecusado { erros, .. } => assert!(matches!(
+                erros[..],
+                [Problema::DataNoFuturo { concurso: 1, .. }]
+            )),
+            outro => panic!("esperava LoteRecusado, veio {outro:?}"),
+        }
+        assert!(matches!(eventos.as_slice(), [Evento::Erros(_)]));
+        assert!(!c.db.exists());
+    }
+
+    #[test]
+    fn processar_e_salvar_recusa_o_lote_inteiro_se_algum_concurso_e_futuro() {
+        let c = Cenario::novo("planilha_futura");
+        // As datas da fixture são de 1994+: com "hoje" em 1990 todas são futuras.
+        let hoje_antigo = crate::tempo::dias_desde_epoca(1990, 1, 1);
+        let (r, _) = coletar(|o| {
+            processar_e_salvar(&fixture_quina(), quina(), &c.db, &c.cache, hoje_antigo, o)
+        });
+        assert!(matches!(
+            r.expect_err("datas no futuro"),
+            SpiderError::LoteRecusado { .. }
+        ));
+        assert!(!c.db.exists());
+    }
+
+    #[tokio::test]
+    async fn atualizar_salto_de_um_com_data_no_futuro_nao_grava() {
+        let c = Cenario::novo("proximo_futuro");
+        c.gravar(&planilha_quina()[..4]);
+        let mut pagina = da_planilha(5);
+        pagina.data_sorteio = "2026-10-05".to_string();
+        let (r, eventos) = aplicar(&c, &pagina, || Ok(AGORA), planilha_proibida).await;
+        assert!(matches!(
+            r.expect_err("data no futuro"),
+            SpiderError::LoteRecusado { .. }
+        ));
+        assert_eq!(c.concursos(), [1, 2, 3, 4]);
+        assert!(matches!(eventos.last(), Some(Evento::Erros(e)) if !e.is_empty()));
+    }
+
+    #[test]
     fn validar_lote_aprovado_com_buraco_avisa_e_sugere_como_fechar() {
         let c = Cenario::novo("aviso_buraco");
         let existentes = planilha_quina()[..2].to_vec();
         let (r, eventos) =
-            coletar(|o| validar_lote(quina(), &existentes, &[so_na_pagina(6)], &c.db, o));
+            coletar(|o| validar_lote(quina(), &existentes, &[so_na_pagina(6)], hoje(), &c.db, o));
         assert!(r.unwrap().pode_gravar());
         assert!(matches!(
             eventos.as_slice(),

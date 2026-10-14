@@ -12,10 +12,12 @@
 //!
 //! [`validar`] aplica as duas (comando `validar`); [`avaliar_gravacao`]
 //! aplica as duas a um lote antes de gravá-lo (`importar`, `baixar`,
-//! `atualizar`).
+//! `atualizar`, `inserir`, `ciclo`) e acrescenta a regra que só vale ao gravar:
+//! concurso com data posterior a hoje (relógio de Brasília, injetado) é erro.
 
 use crate::config::LoteriaConfig;
 use crate::model::Resultado;
+use crate::tempo;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -49,6 +51,14 @@ pub enum Problema {
     DataInvalida {
         concurso: u32,
         data: String,
+    },
+    /// A data do concurso é posterior a hoje (relógio de Brasília). Só é
+    /// checada ao gravar ([`avaliar_gravacao`]); o `validar` do banco não a
+    /// reporta. `data` e `hoje` em ISO `AAAA-MM-DD`.
+    DataNoFuturo {
+        concurso: u32,
+        data: String,
+        hoje: String,
     },
     /// O mesmo concurso aparece mais de uma vez na entrada. Não ocorre no
     /// banco (chave primária), mas pode ocorrer num lote a gravar.
@@ -99,6 +109,7 @@ impl Problema {
             | Problema::DezenaForaDaFaixa { concurso, .. }
             | Problema::DezenaRepetida { concurso, .. }
             | Problema::DataInvalida { concurso, .. }
+            | Problema::DataNoFuturo { concurso, .. }
             | Problema::ConcursoDuplicado { concurso, .. }
             | Problema::DataForaDeOrdem { concurso, .. } => *concurso,
             Problema::ConcursosFaltando { inicio, .. } => *inicio,
@@ -141,6 +152,14 @@ impl fmt::Display for Problema {
             Problema::DataInvalida { concurso, data } => write!(
                 f,
                 "concurso {concurso}: data `{data}` não é uma data ISO AAAA-MM-DD válida"
+            ),
+            Problema::DataNoFuturo {
+                concurso,
+                data,
+                hoje,
+            } => write!(
+                f,
+                "concurso {concurso}: data {data} é posterior a hoje ({hoje})"
             ),
             Problema::ConcursoDuplicado {
                 concurso,
@@ -361,17 +380,34 @@ impl DecisaoGravacao {
 ///   2026-10-03): não impede gravar o que chegou, e pode ser fechado depois
 ///   com `sync inserir`. No `validar`, continua sendo erro.
 ///
+/// - Data posterior a `hoje` é erro (decisão do usuário, 2026-10-13): um
+///   concurso não pode ter sido sorteado no futuro. `hoje` é o dia de Brasília
+///   em dias desde 1970-01-01 (ver `calendario::dia_local`), injetado para
+///   testar sem relógio real. Data igual a hoje é permitida. Só os registros
+///   novos são checados; data inválida já é [`Problema::DataInvalida`] e não
+///   gera um segundo erro.
+///
 /// Os registros existentes não são revalidados individualmente: problemas
-/// antigos são assunto do `validar`, não do lote atual.
+/// antigos (inclusive data no futuro) são assunto do `validar`, não do lote
+/// atual.
 pub fn avaliar_gravacao(
     cfg: &LoteriaConfig,
     existentes: &[Resultado],
     novos: &[Resultado],
+    hoje: i64,
 ) -> DecisaoGravacao {
     let mut problemas: Vec<Problema> = novos
         .iter()
         .flat_map(|r| validar_resultado(cfg, r))
         .collect();
+    problemas.extend(novos.iter().filter_map(|r| {
+        let dias = tempo::dias_da_data_iso(&r.data_sorteio)?;
+        (dias > hoje).then(|| Problema::DataNoFuturo {
+            concurso: r.concurso,
+            data: r.data_sorteio.clone(),
+            hoje: tempo::data_iso_de_dias(hoje),
+        })
+    }));
     problemas.extend(
         validar_sequencia(novos)
             .into_iter()
@@ -440,6 +476,11 @@ pub fn data_iso_valida(data: &str) -> bool {
 mod tests {
     use super::*;
     use crate::config;
+
+    /// 2026-10-13, o "hoje" injetado nos testes.
+    fn hoje() -> i64 {
+        tempo::dias_desde_epoca(2026, 10, 13)
+    }
 
     fn mega() -> &'static LoteriaConfig {
         config::buscar("megasena").expect("loteria configurada")
@@ -740,17 +781,17 @@ mod tests {
 
     #[test]
     fn gravacao_valida_sobre_banco_vazio() {
-        let d = avaliar_gravacao(mega(), &[], &validos());
+        let d = avaliar_gravacao(mega(), &[], &validos(), hoje());
         assert!(d.pode_gravar());
         assert_eq!(d, DecisaoGravacao::default());
     }
 
     #[test]
     fn gravacao_de_lote_vazio() {
-        let d = avaliar_gravacao(mega(), &[], &[]);
+        let d = avaliar_gravacao(mega(), &[], &[], hoje());
         assert!(d.pode_gravar());
         assert_eq!(d, DecisaoGravacao::default());
-        let d = avaliar_gravacao(mega(), &validos(), &[]);
+        let d = avaliar_gravacao(mega(), &validos(), &[], hoje());
         assert!(d.pode_gravar());
         assert_eq!(d, DecisaoGravacao::default());
     }
@@ -760,7 +801,7 @@ mod tests {
         let mut novos = validos();
         novos[1].dezenas = vec![9, 37, 39, 41, 43, 61];
         {
-            let d = avaliar_gravacao(mega(), &[], &novos);
+            let d = avaliar_gravacao(mega(), &[], &novos, hoje());
             assert!(!d.pode_gravar());
             assert_eq!(
                 d.erros,
@@ -779,7 +820,7 @@ mod tests {
     fn registro_de_outra_loteria_bloqueia() {
         let mut novos = validos();
         novos[2].loteria = "quina".to_string();
-        let d = avaliar_gravacao(mega(), &[], &novos);
+        let d = avaliar_gravacao(mega(), &[], &novos, hoje());
         assert!(!d.pode_gravar());
         assert!(matches!(
             d.erros[..],
@@ -791,7 +832,7 @@ mod tests {
     fn concurso_duplicado_no_lote_bloqueia() {
         let mut novos = validos();
         novos.push(res(2, "1996-03-18", &[1, 2, 3, 4, 5, 6]));
-        let d = avaliar_gravacao(mega(), &[], &novos);
+        let d = avaliar_gravacao(mega(), &[], &novos, hoje());
         assert_eq!(
             d.erros,
             vec![Problema::ConcursoDuplicado {
@@ -807,7 +848,7 @@ mod tests {
             res(1, "1996-03-11", &[4, 5, 30, 33, 41, 52]),
             res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
         ];
-        let d = avaliar_gravacao(mega(), &[], &novos);
+        let d = avaliar_gravacao(mega(), &[], &novos, hoje());
         assert!(d.pode_gravar());
         assert_eq!(d.erros, vec![]);
         assert_eq!(
@@ -820,7 +861,7 @@ mod tests {
     fn buraco_entre_banco_e_lote_so_avisa() {
         let existentes = &validos()[..2];
         let novos = [res(5, "1996-04-15", &[1, 2, 3, 4, 5, 6])];
-        let d = avaliar_gravacao(mega(), existentes, &novos);
+        let d = avaliar_gravacao(mega(), existentes, &novos, hoje());
         assert!(d.pode_gravar());
         assert_eq!(d.erros, vec![]);
         assert_eq!(
@@ -832,7 +873,7 @@ mod tests {
     #[test]
     fn buraco_nao_tolera_outros_erros() {
         let novos = [res(5, "1996-04-15", &[1, 2, 3, 4, 5])];
-        let d = avaliar_gravacao(mega(), &validos(), &novos);
+        let d = avaliar_gravacao(mega(), &validos(), &novos, hoje());
         assert!(!d.pode_gravar());
         assert!(matches!(
             d.erros[..],
@@ -851,7 +892,7 @@ mod tests {
             res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
         ];
         let novos = [res(2, "1996-03-18", &[9, 37, 39, 41, 43, 49])];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert_eq!(d, DecisaoGravacao::default());
     }
 
@@ -860,7 +901,7 @@ mod tests {
         let mut novos = validos();
         novos[2].data_sorteio = "1996-03-01".to_string();
         {
-            let d = avaliar_gravacao(mega(), &[], &novos);
+            let d = avaliar_gravacao(mega(), &[], &novos, hoje());
             assert!(d.pode_gravar());
             assert_eq!(d.erros, vec![]);
             assert!(matches!(
@@ -876,12 +917,12 @@ mod tests {
         let mut existentes = validos();
         existentes[2].data_sorteio = "1996-03-01".to_string();
         let novos = [res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47])];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert_eq!(d, DecisaoGravacao::default());
 
         // E o contrário: o lote traz a data errada sobre um banco correto.
         let novos = [res(3, "1996-03-01", &[10, 11, 29, 30, 36, 47])];
-        let d = avaliar_gravacao(mega(), &validos(), &novos);
+        let d = avaliar_gravacao(mega(), &validos(), &novos, hoje());
         assert!(d.pode_gravar());
         assert!(matches!(
             d.avisos[..],
@@ -891,13 +932,18 @@ mod tests {
 
     #[test]
     fn existente_igual_ao_novo_nao_conta_como_duplicado() {
-        let d = avaliar_gravacao(mega(), &validos(), &validos());
+        let d = avaliar_gravacao(mega(), &validos(), &validos(), hoje());
         assert_eq!(d, DecisaoGravacao::default());
     }
 
     #[test]
     fn primeiro_concurso_em_banco_vazio_avisa_buraco() {
-        let d = avaliar_gravacao(mega(), &[], &[res(5, "1996-04-15", &[1, 2, 3, 4, 5, 6])]);
+        let d = avaliar_gravacao(
+            mega(),
+            &[],
+            &[res(5, "1996-04-15", &[1, 2, 3, 4, 5, 6])],
+            hoje(),
+        );
         assert!(d.pode_gravar());
         assert_eq!(d.erros, vec![]);
         assert_eq!(
@@ -914,7 +960,7 @@ mod tests {
             res(3, "1996-03-25", &[10, 11, 29, 30, 36, 47]),
         ];
         let novos = [res(4, "1996-04-01", &[1, 2, 3, 4, 5, 6])];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert!(d.pode_gravar());
         assert_eq!(d.erros, vec![]);
         assert_eq!(
@@ -928,7 +974,7 @@ mod tests {
         let mut novo = validos()[1].clone();
         novo.loteria = "quina".to_string();
         {
-            let d = avaliar_gravacao(mega(), &validos(), std::slice::from_ref(&novo));
+            let d = avaliar_gravacao(mega(), &validos(), std::slice::from_ref(&novo), hoje());
             assert!(!d.pode_gravar());
             assert!(matches!(
                 d.erros[..],
@@ -945,12 +991,12 @@ mod tests {
 
         // Lote que não toca o 1 nem o 2: o aviso antigo não aparece.
         let novos = [res(4, "1996-04-01", &[1, 2, 3, 4, 5, 6])];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert_eq!(d, DecisaoGravacao::default());
 
         // Lote cujo concurso novo fica fora de ordem: aparece.
         let novos = [res(4, "1996-03-20", &[1, 2, 3, 4, 5, 6])];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert!(d.pode_gravar());
         assert_eq!(
             d.avisos,
@@ -965,7 +1011,7 @@ mod tests {
         // Lote que regrava o concurso anterior ao par fora de ordem (o 1)
         // também o envolve: aparece.
         let novos = [validos()[0].clone()];
-        let d = avaliar_gravacao(mega(), &existentes, &novos);
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
         assert!(matches!(
             d.avisos[..],
             [Problema::DataForaDeOrdem {
@@ -990,5 +1036,63 @@ mod tests {
             Problema::ConcursosFaltando { inicio: 7, fim: 7 }.to_string(),
             "concurso 7 faltando"
         );
+    }
+
+    #[test]
+    fn data_posterior_a_hoje_e_erro_e_bloqueia_o_lote() {
+        let novos = [res(1, "2026-10-14", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), &[], &novos, hoje());
+        assert!(!d.pode_gravar());
+        assert_eq!(
+            d.erros,
+            vec![Problema::DataNoFuturo {
+                concurso: 1,
+                data: "2026-10-14".to_string(),
+                hoje: "2026-10-13".to_string(),
+            }]
+        );
+        assert_eq!(
+            d.erros[0].to_string(),
+            "concurso 1: data 2026-10-14 é posterior a hoje (2026-10-13)"
+        );
+        assert_eq!(d.erros[0].severidade(), Severidade::Erro);
+    }
+
+    #[test]
+    fn data_de_hoje_ou_anterior_e_aceita() {
+        for data in ["2026-10-13", "2026-10-12", "1996-03-11"] {
+            let novos = [res(1, data, &[1, 2, 3, 4, 5, 6])];
+            let d = avaliar_gravacao(mega(), &[], &novos, hoje());
+            assert_eq!(d, DecisaoGravacao::default(), "{data}");
+        }
+    }
+
+    #[test]
+    fn data_no_futuro_de_existente_nao_bloqueia_outro_concurso() {
+        let existentes = [res(1, "2030-01-01", &[1, 2, 3, 4, 5, 6])];
+        let novos = [res(2, "2030-01-02", &[1, 2, 3, 4, 5, 6])];
+        // O novo também está no futuro: erro só nele.
+        let d = avaliar_gravacao(mega(), &existentes, &novos, hoje());
+        assert_eq!(d.erros.len(), 1);
+        assert_eq!(d.erros[0].concurso(), 2);
+        // Lote vazio sobre banco com data futura: nada a reclamar.
+        let d = avaliar_gravacao(mega(), &existentes, &[], hoje());
+        assert!(d.pode_gravar());
+    }
+
+    #[test]
+    fn data_invalida_nao_gera_data_no_futuro() {
+        let novos = [res(1, "2026-02-30", &[1, 2, 3, 4, 5, 6])];
+        let d = avaliar_gravacao(mega(), &[], &novos, hoje());
+        assert!(matches!(
+            d.erros[..],
+            [Problema::DataInvalida { concurso: 1, .. }]
+        ));
+    }
+
+    #[test]
+    fn validar_do_banco_inteiro_nao_reporta_data_no_futuro() {
+        let v = [res(1, "2999-12-31", &[1, 2, 3, 4, 5, 6])];
+        assert!(validar(mega(), &v).is_empty());
     }
 }

@@ -675,6 +675,39 @@ async fn buraco_fechado_pelo_backfill_com_a_planilha_inteira() {
 }
 
 #[tokio::test]
+async fn backfill_com_planilha_de_data_futura_recusa_o_lote_e_deixa_o_banco() {
+    let a = Amb::novo(false);
+    a.semear("quina", N, &[5]);
+    // O relógio do ambiente é de 2026-10: o último concurso da planilha, em 2099, é futuro.
+    let mut cheia = historico(cfg_de("quina"), N);
+    cheia.last_mut().unwrap().data_sorteio = "2099-01-01".to_string();
+    let planilha = gravar_planilha(&a.raiz.join("downloads"), cfg_de("quina"), &cheia);
+    let chamadas = Rc::new(Cell::new(0));
+    let mut destino = DestinoFalso::default();
+
+    let (r, eventos) = a
+        .rodar(
+            &["quina"],
+            &mut destino,
+            pagina_em(N + 1),
+            planilha_fixa(vec![("quina", planilha)], chamadas.clone()),
+        )
+        .await;
+
+    assert!(!r.sucesso());
+    assert_eq!(falha_de(&r, "quina").etapa, EtapaCiclo::Backfill);
+    assert!(!r.loterias[0].backfill);
+    // Banco intacto: só o concurso novo do atualizar; o buraco continua.
+    let mut esperado: Vec<u32> = (1..=13).collect();
+    esperado.retain(|c| *c != 5);
+    assert_eq!(a.concursos("quina"), esperado);
+    assert_eq!(a.backups(), 1);
+    let mensagem = mensagem_de_falha(&eventos, "quina");
+    assert!(mensagem.contains("backup"), "{mensagem}");
+    assert!(mensagem.contains("lote recusado"), "{mensagem}");
+}
+
+#[tokio::test]
 async fn buraco_que_persiste_so_avisa_e_o_validar_reprova_a_loteria() {
     exige_git!();
     let a = Amb::novo(true);

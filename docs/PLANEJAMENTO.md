@@ -238,7 +238,7 @@ Volume estimado: Quina ≈ 2,3 milhões de linhas em `features_dezena`.
 |---|---|
 | 0.1 | `LoteriaConfig` ganha faixa de dezenas (`dezena_min`/`dezena_max`) e layout do volante (grade linhas × colunas: Lotofácil 5×5, Mega-Sena 6×10, Quina 8×10; dezenas em ordem crescente, preenchendo linha por linha) |
 | 0.2 | Comando `validar <loteria>`: quantidade de dezenas, faixa, repetidas no concurso, buracos na numeração, datas fora de ordem (esta última é **aviso**, não erro). Erros conhecidos da planilha da Caixa ficam numa lista de correções por loteria + concurso (`CORRECOES_DATA`), aplicada antes de gravar |
-| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`). Buraco na numeração é só aviso na gravação (decisão de 2026-10-03); no `validar`, continua sendo erro |
+| 0.3 | Mesma validação aplicada ao gravar (`importar`, `baixar`, `atualizar`). Buraco na numeração é só aviso na gravação (decisão de 2026-10-03); no `validar`, continua sendo erro. Concurso com data posterior a hoje (relógio de Brasília) é **erro** na gravação e bloqueia o lote, em todo caminho que grava (`importar`, `baixar`, `atualizar`, `inserir`, `ciclo`) (decisão de 2026-10-13) |
 | 0.4 | Testes do parser com fixtures pequenas de cada loteria (`tests/fixtures/`) |
 | 0.5 | `todas` aceito no lugar do slug em `baixar`, `atualizar`, `validar` e `buracos` (e, na Fase 2, `exportar`): roda o comando em cada banco, um por vez, sem juntar bancos. `importar`, `inserir` e `listar` aceitam só uma loteria (decisão de 2026-10-04) |
 | 0.6 | Corrigir textos da CLI que ainda falam em ".htm" |
