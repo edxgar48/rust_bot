@@ -68,6 +68,8 @@ export interface EstatisticasJanela {
   } | null;
   /** Esperado ao acaso: k · (total + 1) / 2. */
   readonly somaEsperada: number;
+  /** `distribuicaoSoma[s]` = sorteios da janela cuja soma foi s (s de 0 a k · total). */
+  readonly distribuicaoSoma: readonly number[];
 
   /**
    * Dezenas repetidas do concurso anterior. Só entram sorteios que têm o anterior
@@ -114,6 +116,7 @@ export function calcularEstatisticas(
   const ultimaPosicao = new Array<number>(total).fill(-1);
   const distribuicaoPares = new Array<number>(k + 1).fill(0);
   const distribuicaoRepetidas = new Array<number>(k + 1).fill(0);
+  const distribuicaoSoma = new Array<number>(k * total + 1).fill(0);
   // Marca das dezenas do sorteio anterior: valor = posição relativa + 1 (0 = nunca).
   const marcaAnterior = new Uint32Array(total + 1);
 
@@ -146,6 +149,7 @@ export function calcularEstatisticas(
     }
 
     if (pares <= k) distribuicaoPares[pares]!++;
+    if (soma <= k * total) distribuicaoSoma[soma]!++;
     somaPares += pares;
     somaTotal += soma;
     if (soma < somaMin) somaMin = soma;
@@ -189,6 +193,7 @@ export function calcularEstatisticas(
     paresEsperado: (k * paresDoVolante(total)) / total,
     soma: tamanho > 0 ? { media: somaTotal / tamanho, minimo: somaMin, maximo: somaMax } : null,
     somaEsperada: (k * (total + 1)) / 2,
+    distribuicaoSoma,
     repetidas: {
       comparacoes,
       distribuicao: distribuicaoRepetidas,

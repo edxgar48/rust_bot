@@ -223,10 +223,10 @@ describe('Estatísticas: gráfico de frequência', () => {
     expect(detalhes.open).toBe(false);
     expect(texto(detalhes.querySelector('summary'))).toBe('Ver como tabela');
     const cab = Array.from(detalhes.querySelectorAll('thead th')).map(texto);
-    expect(cab).toEqual(['Dezena', 'Vezes', 'Diferença']);
-    expect(detalhes.querySelectorAll('thead th[scope="col"]')).toHaveLength(3);
+    expect(cab).toEqual(['Dezena', 'Vezes', 'Diferença', 'Dentro da faixa?']);
+    expect(detalhes.querySelectorAll('thead th[scope="col"]')).toHaveLength(4);
     expect(detalhes.querySelectorAll('tbody th[scope="row"]')).toHaveLength(80);
-    expect(detalhes.querySelector('caption')?.textContent).toBe(
+    expect(texto(detalhes.querySelector('caption'))).toContain(
       'Vezes que cada dezena da Quina saiu. Esperado ao acaso: 3,1 vezes por dezena.',
     );
     const regiao = detalhes.querySelector('[role="region"]')!;
@@ -236,7 +236,7 @@ describe('Estatísticas: gráfico de frequência', () => {
     const freq = frequenciaIndependente('quina', 50);
     const linhas = linhasTabela(alvo);
     expect(linhas[0]!.slice(0, 2)).toEqual(['01', String(freq[0])]);
-    expect(linhas[0]).toHaveLength(3);
+    expect(linhas[0]).toHaveLength(4);
     for (const [i, l] of linhas.entries()) {
       const dif = freq[i]! - 3.125;
       if (Math.abs(dif) >= 0.05) expect(l[2]![0]).toBe(dif > 0 ? '+' : '−');
@@ -298,7 +298,12 @@ describe('Estatísticas: pares, repetidas, soma e atraso', () => {
       .sort((a, b) => b[1] - a[1] || a[0] - b[0])
       .slice(0, 5)
       .map(([d, a]) => ({ d: String(d).padStart(2, '0'), a }));
-    const itens = Array.from(alvo.querySelectorAll('.atrasos li')).map(texto);
+    // A frase da chance ao acaso é conferida em Estatisticas.acaso.test.ts; aqui só o atraso.
+    const itens = Array.from(alvo.querySelectorAll('.atrasos li')).map((li) => {
+      const copia = li.cloneNode(true) as Element;
+      copia.querySelectorAll('[data-chance-atraso]').forEach((c) => c.remove());
+      return texto(copia);
+    });
     expect(itens).toHaveLength(5);
     expect(itens).toEqual(
       esperado.map(

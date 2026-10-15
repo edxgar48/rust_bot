@@ -151,4 +151,18 @@ describe('varredura de linguagem: nada sugere previsão', () => {
       'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
     );
   });
+
+  it('legenda da faixa: 95% é a chance de CADA dezena, não a fração de dezenas dentro', () => {
+    const legenda = textos.estatisticas.frequencia.legendaFaixa(4, 12);
+    expect(legenda).toBe(
+      'Faixa sombreada: de 4 a 12 vezes. Só por acaso, cada dezena tem pelo menos 95% de chance de ficar aqui.',
+    );
+    expect(legenda).not.toMatch(/95% das dezenas/);
+  });
+
+  it('o resumo de dezenas fora da faixa nunca julga a contagem como normal', () => {
+    for (const fora of [0, 1, 4, 30]) {
+      expect(textos.estatisticas.frequencia.resumoAcaso(fora, '0,5')).not.toMatch(/normal/i);
+    }
+  });
 });

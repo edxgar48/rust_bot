@@ -179,6 +179,30 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   Testes: `estatisticas/grafico.test.ts`, `telas/visao-estatisticas.test.ts`, `telas/Estatisticas.test.ts`
   (contagens conferidas contra leitura independente das fixtures). Capturas 360/1280 px, claro e escuro, das 3
   loterias e da Quina janela 10 conferidas (2026-10-15).
+- Comparação com o acaso (7.3), `src/estatisticas/acaso.ts` (puro) + camada dentro da aba Estatísticas. Frequência
+  de uma dezena em N concursos = binomial(N, K/total), com pmf exata (log-fatorial por Stirling, sem soma
+  acumulada) e faixa central por quantis acumulados (menor x com CDF >= 2,5% e menor x com CDF >= 97,5%; a
+  cobertura real é sempre >= 95% e é ela que define quantas dezenas se esperam fora da faixa, total x (1 -
+  cobertura real), exato por linearidade). Pares por sorteio e repetidas do anterior = hipergeométrica exata em
+  BigInt, a mesma de `avaliacao::Hipergeometrica` (src/avaliacao/topk.rs); repetidas = `da_loteria(cfg, K)`.
+  A faixa usa o tamanho EFETIVO da janela. UI: faixa hachurada com bordas pontilhadas atrás das barras, traço grosso
+  no topo das barras fora da faixa, legenda em texto, coluna "Dentro da faixa?" na tabela, texto-resumo ("N
+  dezenas ficaram fora da faixa; ao acaso se esperam cerca de M ...") e, em Pares e Repetidas, mini-barras
+  emparelhadas observado (cheia) x esperado (vazada com hachura) com percentuais escritos e tabela em `<details>`
+  (valores com < 0,05% ao acaso e nenhuma ocorrência só aparecem na tabela). Janela 10 mostra a faixa larga e avisa.
+  Conferência: `py -3.12 app/testes/gerar-esperado-acaso.py` (raiz do repositório) gera
+  `testes/fixtures/acaso-esperado.json`: a hipergeométrica é calculada em Python exato E pelo back-end Rust de
+  verdade (programa temporário que depende do crate por caminho, `--offline`, sem mexer no repositório) e o script
+  exige igualdade inteiro a inteiro; a binomial (que o back-end não tem) é Python exato em inteiros. Testes:
+  `estatisticas/acaso.test.ts` (tolerância 1e-9, 3 loterias, vários N), `grafico-comparacao.test.ts`,
+  `telas/resumo-acaso.test.ts`, `telas/Estatisticas.acaso.test.ts`. Capturas 360/1280 px, claro e escuro,
+  3 loterias e Quina janela 10 conferidas (2026-10-15).
+  Revisão 7.3: legenda da faixa diz que 95% é a chance de CADA dezena; o resumo de dezenas fora da faixa é
+  neutro (só o esperado ao acaso, sem julgar "normal", pois as dezenas de um sorteio não são independentes);
+  aviso antes das listas; Soma das dezenas ganhou régua com faixa de 95% pela distribuição EXATA da soma
+  (DP em BigInt, `contarSomas`) e tabela alternativa; Atraso mostra P(atraso >= a) = ((total-K)/total)^a e o
+  número esperado de dezenas. Referências exatas em `gerar-esperado-acaso.py` (seções soma e atraso; a soma da
+  Lotofácil é conferida por força bruta nos 3.268.760 jogos). Limite do quantil em ponto flutuante: ver `faixaCentral`.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

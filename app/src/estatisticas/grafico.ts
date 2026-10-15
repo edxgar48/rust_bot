@@ -5,6 +5,7 @@
 // Largura em px reais: o viewBox tem o tamanho do contêiner medido, então o texto do SVG
 // não encolhe nem estoura quando a tela muda, e as barras se ajustam ao espaço.
 import { doisDigitos, formatarInteiro } from '../lib/numeros';
+import { posicaoNaFaixa, type PosicaoNaFaixa } from './acaso';
 
 export type MarcaBarra = 'maior' | 'menor';
 
@@ -17,6 +18,8 @@ export interface BarraGrafico {
   readonly altura: number;
   /** Extremo marcado com símbolo (nunca só cor); `null` = sem marca. */
   readonly marca: MarcaBarra | null;
+  /** Fora da faixa do acaso (7.3): ganha contorno, além da coluna da tabela e do texto. */
+  readonly foraDaFaixa: boolean;
 }
 
 export interface TickX {
@@ -45,6 +48,8 @@ export interface DadosGrafico {
   readonly ticksY: readonly TickY[];
   /** Coordenada y da linha tracejada do esperado. */
   readonly esperadoY: number;
+  /** Faixa sombreada do acaso (7.3): `topo` < `base`; `null` sem faixa. */
+  readonly faixa: { readonly topo: number; readonly base: number } | null;
   /** Topo da escala vertical (em vezes). */
   readonly escalaMaxima: number;
   /** Meia-largura das marcas de extremo: encolhe com barras estreitas (Quina) para não invadir as vizinhas. */
@@ -55,6 +60,8 @@ export interface EntradaGrafico {
   /** `frequencia[d - 1]` = vezes que a dezena d saiu. */
   readonly frequencia: readonly number[];
   readonly esperado: number;
+  /** Faixa em que o acaso põe a frequência (limites inclusivos, em vezes); opcional. */
+  readonly faixa?: { readonly inferior: number; readonly superior: number } | null;
   /** Largura disponível, em px. */
   readonly largura: number;
   readonly altura?: number;
@@ -141,11 +148,12 @@ export function extremosFrequencia(frequencia: readonly number[]): ExtremosFrequ
 
 export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
   const { frequencia, esperado } = entrada;
+  const faixa = entrada.faixa ?? null;
   const n = frequencia.length;
   const largura = Math.max(Math.round(entrada.largura), LARGURA_MINIMA_GRAFICO);
   const altura = entrada.altura ?? ALTURA_GRAFICO_PADRAO;
   const extremos = extremosFrequencia(frequencia);
-  const escala = escalaVertical(Math.max(extremos.maximo, esperado, 0));
+  const escala = escalaVertical(Math.max(extremos.maximo, esperado, faixa?.superior ?? 0, 0));
 
   const rotulosY = escala.ticks.map((t) => formatarInteiro(t));
   const maiorRotulo = rotulosY.reduce((m, r) => Math.max(m, r.length), 1);
@@ -181,6 +189,7 @@ export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
       largura: larguraBarra,
       altura: alturaBarra,
       marca,
+      foraDaFaixa: faixa !== null && posicaoNaFaixa(vezes, faixa) !== 'dentro',
     };
   });
 
@@ -203,6 +212,7 @@ export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
       rotulo: rotulosY[i] ?? '',
     })),
     esperadoY: yDe(esperado),
+    faixa: faixa === null ? null : { topo: yDe(faixa.superior), base: yDe(faixa.inferior) },
     escalaMaxima: escala.topo,
     raioMarca: Math.min(RAIO_MARCA_MAXIMO, Math.max(RAIO_MARCA_MINIMO, passoX * 0.75)),
   };
@@ -212,16 +222,20 @@ export interface LinhaTabelaFrequencia {
   readonly dezena: number;
   readonly vezes: number;
   readonly diferenca: number;
+  /** Situação na faixa do acaso; `null` sem faixa (7.3). */
+  readonly posicao: PosicaoNaFaixa | null;
 }
 
-/** Linhas da tabela alternativa ao gráfico: uma por dezena, com a diferença para o esperado (que é igual em todas e vai na legenda da tabela). */
+/** Linhas da tabela alternativa ao gráfico: uma por dezena, com a diferença para o esperado (que é igual em todas e vai na legenda da tabela) e, havendo faixa do acaso, se ficou dentro. */
 export function linhasTabelaFrequencia(
   frequencia: readonly number[],
   esperado: number,
+  faixa: { readonly inferior: number; readonly superior: number } | null = null,
 ): LinhaTabelaFrequencia[] {
   return frequencia.map((vezes, i) => ({
     dezena: i + 1,
     vezes,
     diferenca: vezes - esperado,
+    posicao: faixa === null ? null : posicaoNaFaixa(vezes, faixa),
   }));
 }

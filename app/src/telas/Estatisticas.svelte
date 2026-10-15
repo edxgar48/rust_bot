@@ -27,10 +27,14 @@
   import type { EstadoTela, SituacaoTela } from './estado-tela';
   import {
     anuncioDasEstatisticas,
+    montarBlocoComparacao,
+    montarBlocoSoma,
     montarCartaoAtraso,
     montarVisaoEstatisticas,
     subtituloDasEstatisticas,
   } from './estatisticas';
+  import ComparacaoDistribuicao from './ComparacaoDistribuicao.svelte';
+  import ComparacaoSoma from './ComparacaoSoma.svelte';
   import GraficoFrequencia from './GraficoFrequencia.svelte';
 
   interface Props {
@@ -77,6 +81,13 @@
   );
   const stats = $derived(concursos ? calcularEstatisticas(loteria, concursos, janela) : null);
   const atraso = $derived(stats && stats.tamanho > 0 ? montarCartaoAtraso(stats) : null);
+  const blocoPares = $derived(
+    stats && stats.tamanho > 0 ? montarBlocoComparacao('pares', stats) : null,
+  );
+  const blocoRepetidas = $derived(
+    stats && stats.tamanho > 1 ? montarBlocoComparacao('repetidas', stats) : null,
+  );
+  const blocoSoma = $derived(stats && stats.tamanho > 0 ? montarBlocoSoma(stats) : null);
   const k = $derived(PARAMETROS_LOTERIA[loteria].dezenasSorteadas);
 
   /** Mostra o cache na hora e só depois sincroniza; respostas de uma loteria antiga são descartadas. */
@@ -203,6 +214,7 @@
             </div>
           </dl>
           <p class="nota">{t.pares.nota(k)}</p>
+          {#if blocoPares}<ComparacaoDistribuicao bloco={blocoPares} />{/if}
         </Cartao>
 
         <Cartao variante="contorno" titulo={t.repetidas.titulo}>
@@ -222,6 +234,7 @@
               </div>
             </dl>
             <p class="nota">{t.repetidas.nota(stats.repetidas.comparacoes)}</p>
+            {#if blocoRepetidas}<ComparacaoDistribuicao bloco={blocoRepetidas} />{/if}
           {/if}
         </Cartao>
       </div>
@@ -247,6 +260,7 @@
             </div>
           </dl>
           <p class="nota">{t.soma.nota}</p>
+          {#if blocoSoma}<ComparacaoSoma bloco={blocoSoma} />{/if}
         </Cartao>
       {/if}
 
@@ -257,14 +271,19 @@
             {#each atraso.itens as item (item.dezena)}
               <li data-dezena={item.dezena}>
                 <span class="disco" aria-hidden="true">{item.rotulo}</span>
-                <span>{item.texto}</span>
+                <span class="item-texto">
+                  {item.texto}
+                  {#if item.chance}<span class="chance" data-chance-atraso>{item.chance}</span>{/if}
+                </span>
               </li>
             {/each}
           </ul>
+          {#if atraso.resumoMaior}<p class="nota" data-resumo-atraso>{atraso.resumoMaior}</p>{/if}
 
           <!-- Sempre junto do ranking: dezenas que nem apareceram na janela têm atraso maior. -->
           <div class="sem-aparicao" data-bloco="sem-aparicao">
             <p class="sem-aparicao-titulo">{atraso.textoSemAparicao}</p>
+            <p class="nota" data-chance-sem-aparicao>{atraso.chanceSemAparicao}</p>
             {#if atraso.semAparicao.length > 0}
               <p class="nota">{t.atraso.semAparicaoAviso(atraso.semAparicao.length)}</p>
               <ul class="lista-dezenas" aria-label={atraso.textoSemAparicao}>
@@ -275,6 +294,7 @@
             {/if}
           </div>
           <p class="nota">{t.atraso.nota}</p>
+          <p class="nota" data-independente>{atraso.independente}</p>
         </Cartao>
       {/if}
     {:else}
@@ -323,10 +343,17 @@
     font: var(--fonte-corpo-m);
   }
 
+  /* Uma coluna no celular: as mini-barras emparelhadas precisam da largura toda. */
   .dupla {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--esp-3);
+  }
+  @media (min-width: 48rem) {
+    .dupla {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
   }
 
   .medidas {
@@ -364,6 +391,15 @@
     align-items: center;
     gap: var(--esp-3);
     font: var(--fonte-corpo-g);
+  }
+  .item-texto {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .chance {
+    color: var(--cor-texto-var);
+    font: var(--fonte-corpo-m);
   }
   .disco {
     display: inline-flex;

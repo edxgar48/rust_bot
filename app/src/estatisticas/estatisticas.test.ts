@@ -223,3 +223,20 @@ describe('atraso da janela total x espaco_final de tabela_geral.json', () => {
     });
   }
 });
+
+describe('distribuicaoSoma (7.3)', () => {
+  it('à mão (Quina): somas 15, 116, 23 e 60 em um índice cada', () => {
+    const e = calcularEstatisticas('quina', MAO, 'total');
+    expect(e.distribuicaoSoma).toHaveLength(5 * 80 + 1);
+    expect(e.distribuicaoSoma[15]).toBe(1); // 1+2+3+4+5
+    expect(e.distribuicaoSoma[116]).toBe(1); // 2+4+10+20+80
+    expect(e.distribuicaoSoma[23]).toBe(1); // 1+2+4+7+9
+    expect(e.distribuicaoSoma[60]).toBe(1); // 10+11+12+13+14
+    expect(e.distribuicaoSoma.reduce((a, b) => a + b, 0)).toBe(4);
+  });
+
+  it('janela vazia: tudo zero', () => {
+    const e = calcularEstatisticas('quina', [], 'total');
+    expect(e.distribuicaoSoma.every((v) => v === 0)).toBe(true);
+  });
+});

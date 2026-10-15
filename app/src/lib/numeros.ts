@@ -26,3 +26,11 @@ export function formatarDiferenca(valor: number, casas = 1): string {
 export function doisDigitos(n: number): string {
   return String(n).padStart(2, '0');
 }
+
+/** 0.234 -> "23%"; abaixo de 10% uma casa ("4,5%"); positivo mínimo vira "<0,1%". */
+export function formatarPercentual(fracao: number): string {
+  const v = fracao * 100;
+  if (!Number.isFinite(v) || v <= 0) return '0%';
+  if (v < 0.05) return '<0,1%';
+  return `${formatarDecimal(v, v < 10 ? 1 : 0)}%`;
+}

@@ -220,9 +220,55 @@ describe('linhasTabelaFrequencia', () => {
   it('uma linha por dezena com vezes e diferença para o esperado', () => {
     const linhas = linhasTabelaFrequencia([4, 0, 8], 3.5);
     expect(linhas).toEqual([
-      { dezena: 1, vezes: 4, diferenca: 0.5 },
-      { dezena: 2, vezes: 0, diferenca: -3.5 },
-      { dezena: 3, vezes: 8, diferenca: 4.5 },
+      { dezena: 1, vezes: 4, diferenca: 0.5, posicao: null },
+      { dezena: 2, vezes: 0, diferenca: -3.5, posicao: null },
+      { dezena: 3, vezes: 8, diferenca: 4.5, posicao: null },
     ]);
+  });
+
+  it('com faixa do acaso: dentro, abaixo ou acima (limites inclusivos)', () => {
+    const linhas = linhasTabelaFrequencia([4, 0, 8, 2, 6], 3.5, { inferior: 2, superior: 6 });
+    expect(linhas.map((l) => l.posicao)).toEqual(['dentro', 'abaixo', 'acima', 'dentro', 'dentro']);
+  });
+});
+
+describe('montarGrafico com a faixa do acaso (7.3)', () => {
+  const entrada = { frequencia: [4, 0, 8, 2, 6], esperado: 3.5, largura: 300 };
+
+  it('sem faixa nada muda: faixa nula e nenhuma barra fora', () => {
+    const d = montarGrafico(entrada);
+    expect(d.faixa).toBeNull();
+    expect(d.barras.every((b) => !b.foraDaFaixa)).toBe(true);
+  });
+
+  it('a faixa vai de yDe(inferior) a yDe(superior), contém o esperado e fica na escala', () => {
+    const d = montarGrafico({ ...entrada, faixa: { inferior: 2, superior: 6 } });
+    expect(d.faixa).not.toBeNull();
+    expect(d.faixa!.topo).toBeLessThan(d.faixa!.base);
+    expect(d.esperadoY).toBeGreaterThan(d.faixa!.topo);
+    expect(d.esperadoY).toBeLessThan(d.faixa!.base);
+    expect(d.faixa!.base).toBeLessThanOrEqual(d.base);
+    expect(d.faixa!.topo).toBeGreaterThanOrEqual(d.topo);
+    // inferior 2 e superior 6 estão nas alturas das barras de 2 e de 6
+    const b2 = d.barras[3]!;
+    const b6 = d.barras[4]!;
+    expect(d.faixa!.base).toBeCloseTo(b2.y, 9);
+    expect(d.faixa!.topo).toBeCloseTo(b6.y, 9);
+  });
+
+  it('barras fora da faixa: abaixo do inferior ou acima do superior', () => {
+    const d = montarGrafico({ ...entrada, faixa: { inferior: 2, superior: 6 } });
+    expect(d.barras.map((b) => b.foraDaFaixa)).toEqual([false, true, true, false, false]);
+  });
+
+  it('a escala inclui o limite superior mesmo acima de todas as barras', () => {
+    const d = montarGrafico({
+      frequencia: [1, 2, 1],
+      esperado: 1.3,
+      largura: 300,
+      faixa: { inferior: 0, superior: 9 },
+    });
+    expect(d.escalaMaxima).toBeGreaterThanOrEqual(9);
+    expect(d.faixa!.topo).toBeGreaterThanOrEqual(d.topo);
   });
 });

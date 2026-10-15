@@ -185,10 +185,30 @@ export const textos = {
     semConcursos: 'Esta loteria ainda não tem concursos para calcular.',
     frequencia: {
       titulo: 'Quantas vezes cada dezena saiu',
-      graficoRotulo: (loteria: string, dezenas: number, tamanho: number, esperado: string) =>
-        `Gráfico de barras: quantas vezes cada uma das ${dezenas} dezenas da ${loteria} saiu em ${tamanho.toLocaleString('pt-BR')} ${tamanho === 1 ? 'concurso' : 'concursos'}. Esperado ao acaso: ${esperado} vezes por dezena. Os destaques estão na legenda e todos os valores, na tabela logo abaixo.`,
+      graficoRotulo: (
+        loteria: string,
+        dezenas: number,
+        tamanho: number,
+        esperado: string,
+        faixa?: { readonly inferior: number; readonly superior: number } | null,
+      ) =>
+        `Gráfico de barras: quantas vezes cada uma das ${dezenas} dezenas da ${loteria} saiu em ${tamanho.toLocaleString('pt-BR')} ${tamanho === 1 ? 'concurso' : 'concursos'}. Esperado ao acaso: ${esperado} vezes por dezena${faixa ? `, com faixa do acaso de ${faixa.inferior} a ${faixa.superior} vezes` : ''}. Os destaques estão na legenda e todos os valores, na tabela logo abaixo.`,
       legendaEsperado: (esperado: string) =>
         `Linha tracejada: ${esperado} vezes, o esperado ao acaso`,
+      // Faixa do acaso (7.3): quantis exatos da binomial; a cobertura real é sempre >= 95%.
+      legendaFaixa: (inferior: number, superior: number) =>
+        `Faixa sombreada: de ${inferior} a ${superior} vezes. Só por acaso, cada dezena tem pelo menos 95% de chance de ficar aqui.`,
+      legendaForaDaFaixa: 'Traço grosso no topo da barra: dezena fora da faixa',
+      faixaLarga: (tamanho: number) =>
+        `Com ${tamanho === 1 ? 'só 1 concurso' : `só ${tamanho.toLocaleString('pt-BR')} concursos`} a faixa é larga: o acaso explica quase qualquer resultado.`,
+      // Só números e fatos: o esperado ao acaso é uma média e varia de janela para janela; as
+      // dezenas de um sorteio não são independentes, então o texto NÃO julga se a contagem
+      // observada é "normal" ou rara.
+      resumoAcaso: (fora: number, esperado: string) =>
+        `${fora === 0 ? 'Nenhuma dezena ficou' : fora === 1 ? '1 dezena ficou' : `${fora} dezenas ficaram`} fora da faixa. Ao acaso, o esperado é cerca de ${esperado} fora; esse número varia de janela para janela. Como muitas dezenas são comparadas de uma vez, algumas podem ficar fora só por acaso. Estar fora da faixa não quer dizer dezena especial e não ajuda a prever o sorteio.`,
+      foraAbaixo: (dezenas: string) => `Abaixo da faixa: ${dezenas}.`,
+      foraAcima: (dezenas: string) => `Acima da faixa: ${dezenas}.`,
+      foraMais: (quantas: number) => `e mais ${quantas}`,
       legendaMaior: 'Maior número de vezes',
       legendaMenor: 'Menor número de vezes',
       eixoDezenas: 'Dezena',
@@ -207,10 +227,38 @@ export const textos = {
       tabelaResumo: 'Ver como tabela',
       tabelaLegenda: (loteria: string, esperado: string) =>
         `Vezes que cada dezena da ${loteria} saiu. Esperado ao acaso: ${esperado} vezes por dezena.`,
+      tabelaLegendaFaixa: (inferior: number, superior: number) =>
+        `A faixa do acaso vai de ${inferior} a ${superior} vezes.`,
+      colDentro: 'Dentro da faixa?',
+      posicao: { dentro: 'Sim', abaixo: 'Não, abaixo', acima: 'Não, acima' },
       tabelaRegiao: 'Tabela de frequência por dezena (rolável)',
       colDezena: 'Dezena',
       colVezes: 'Vezes',
       colDiferenca: 'Diferença',
+    },
+    // Observado × esperado ao acaso (7.3), em Pares e em Repetidas do anterior.
+    comparacao: {
+      legendaObservado: (sorteios: number) =>
+        `Barra cheia: observado em ${sorteios.toLocaleString('pt-BR')} ${sorteios === 1 ? 'sorteio' : 'sorteios'}`,
+      legendaEsperado: 'Barra vazada com hachura: esperado ao acaso',
+      rotulo: (o: string, sorteios: number) =>
+        `Barras emparelhadas: percentual dos ${sorteios.toLocaleString('pt-BR')} ${sorteios === 1 ? 'sorteio' : 'sorteios'} com cada quantidade de ${o}, observado e esperado ao acaso. Os valores estão na tabela logo abaixo.`,
+      eixo: (o: string) => `Quantidade de ${o} no sorteio`,
+      explicacao:
+        'O acaso também faz as barras cheias diferirem das vazadas, mais ainda com poucos sorteios. Isso é normal e não mostra tendência para o próximo concurso.',
+      valoresRaros:
+        'Valores com menos de 0,05% de chance ao acaso e nenhuma ocorrência só aparecem na tabela.',
+      tabelaResumo: 'Ver como tabela',
+      tabelaRegiao: (o: string) => `Tabela de ${o} por sorteio: observado e esperado ao acaso`,
+      tabelaLegenda: (o: string, sorteios: number) =>
+        `Sorteios com cada quantidade de ${o}, observados em ${sorteios.toLocaleString('pt-BR')} e esperados ao acaso.`,
+      colValor: (o: string) => o.charAt(0).toUpperCase() + o.slice(1),
+      colObservado: 'Observado',
+      colObservadoPct: '% observado',
+      colEsperado: 'Esperado',
+      colEsperadoPct: '% ao acaso',
+      pares: 'pares',
+      repetidas: 'repetidas',
     },
     pares: {
       titulo: 'Pares por sorteio',
@@ -233,6 +281,42 @@ export const textos = {
       minimo: 'Menor soma',
       maximo: 'Maior soma',
       nota: 'Soma das dezenas de cada sorteio.',
+      // Comparação com o acaso (7.3): distribuição exata da soma de K dezenas distintas.
+      acaso: {
+        eixo: 'Soma das dezenas do sorteio',
+        rotulo: (inferior: number, superior: number, esperado: string, sorteios: number) =>
+          `Escala de somas: faixa do acaso de ${inferior} a ${superior}, média esperada ${esperado}, com a média e os extremos de ${sorteios.toLocaleString('pt-BR')} ${sorteios === 1 ? 'sorteio' : 'sorteios'} marcados. Os valores estão na tabela logo abaixo.`,
+        legendaFaixa: (inferior: number, superior: number) =>
+          `Faixa hachurada: somas de ${inferior} a ${superior}. Só por acaso, cada sorteio tem pelo menos 95% de chance de somar dentro dela.`,
+        legendaEsperado: (esperado: string) =>
+          `Linha tracejada: ${esperado}, a média esperada ao acaso`,
+        legendaMedia: (media: string) => `Losango: média da janela (${media})`,
+        legendaExtremos: (minimo: string, maximo: string) =>
+          `Círculos vazados: menor (${minimo}) e maior (${maximo}) soma da janela`,
+        dentro: (dentro: number, sorteios: number, percentual: string, esperado: string) =>
+          `${sorteios === 1 ? 'No único sorteio' : `Dos ${sorteios.toLocaleString('pt-BR')} sorteios`}, ${dentro.toLocaleString('pt-BR')} (${percentual}) ${dentro === 1 ? 'somou' : 'somaram'} dentro da faixa; ao acaso se esperam cerca de ${esperado}.`,
+        explicacao: (fora: string) =>
+          `O acaso faz essa fração variar, mais ainda com poucos sorteios. Com muitos sorteios, a menor e a maior soma costumam ficar fora da faixa, porque cerca de ${fora} dos sorteios somam fora dela só por acaso. Isso não mostra tendência para o próximo concurso.`,
+        tabelaResumo: 'Ver como tabela',
+        tabelaRegiao: 'Tabela da soma das dezenas: observado e esperado ao acaso',
+        tabelaLegenda: (sorteios: number) =>
+          `Soma das dezenas em ${sorteios.toLocaleString('pt-BR')} ${sorteios === 1 ? 'sorteio' : 'sorteios'}, comparada com a faixa do acaso.`,
+        colMedida: 'Medida',
+        colValor: 'Valor',
+        colSituacao: 'Em relação à faixa',
+        linhaFaixa: 'Faixa do acaso (pelo menos 95% dos sorteios)',
+        linhaEsperado: 'Média esperada ao acaso',
+        linhaMedia: 'Média da janela',
+        linhaMinimo: 'Menor soma da janela',
+        linhaMaximo: 'Maior soma da janela',
+        linhaDentro: 'Sorteios com soma dentro da faixa',
+        faixaValor: (inferior: number, superior: number) => `${inferior} a ${superior}`,
+        dentroValor: (dentro: number, sorteios: number, percentual: string) =>
+          `${dentro.toLocaleString('pt-BR')} de ${sorteios.toLocaleString('pt-BR')} (${percentual})`,
+        dentroSituacao: (esperado: string) => `ao acaso, cerca de ${esperado}`,
+        posicao: { dentro: 'Dentro', abaixo: 'Abaixo', acima: 'Acima' },
+        semSituacao: '-',
+      },
     },
     atraso: {
       titulo: 'Há mais tempo sem sair',
@@ -252,6 +336,19 @@ export const textos = {
           ? 'Esta dezena passou da janela inteira sem sair, então o atraso dela é maior que o da lista acima.'
           : 'Estas dezenas passaram da janela inteira sem sair, então o atraso delas é maior que o da lista acima.',
       nota: 'Cada sorteio é independente: ficar muito tempo sem sair não faz uma dezena ter mais chance de sair.',
+      // Comparação com o acaso (7.3): P(atraso >= a) = (1 − K/total)^a, cada concurso independente.
+      acaso: {
+        chance: (atraso: number, chance: string) =>
+          `Ao acaso, a chance de uma dezena ficar ${atraso.toLocaleString('pt-BR')} ${atraso === 1 ? 'concurso' : 'concursos'} ou mais sem sair é ${chance}.`,
+        resumoMaior: (total: number, atraso: number, esperado: string) =>
+          `Entre as ${total} dezenas, o número esperado ao acaso com atraso de ${atraso.toLocaleString('pt-BR')} ${atraso === 1 ? 'concurso' : 'concursos'} ou mais é ${esperado}.`,
+        semAparicao: (tamanho: number, chance: string, total: number, esperado: string) =>
+          `Ao acaso, a chance de uma dezena ficar ${tamanho === 1 ? '1 concurso' : `${tamanho.toLocaleString('pt-BR')} concursos`} sem sair é ${chance}. Entre as ${total} dezenas, o número esperado nessa situação é ${esperado}.`,
+        independente: (porConcurso: string) =>
+          `Seja qual for o atraso, a chance de a dezena sair segue sendo de ${porConcurso} em cada concurso. Estes números só mostram quanto atraso o acaso produz sozinho.`,
+        menosDe: 'menos de 0,1%',
+        menosDeEsperado: 'menos de 0,1',
+      },
     },
   },
   detalhe: {
