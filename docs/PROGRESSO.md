@@ -96,14 +96,19 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 7.2 Telas e gráficos (aba Estatísticas: gráfico de frequência em SVG próprio com linha do esperado, tabela alternativa, pares, repetidas, soma e atraso com "não saiu nos últimos N" sempre junto; janela só na URL, padrão 50; 824 testes; revisão aprovada com ressalvas, corrigidas; capturas Quina 360/1280 px claro/escuro conferidas, outras loterias geradas e não abertas; em 360 px marcas de extremos vizinhos empatados podem encostar, aceito; 2026-10-15)
 - [x] 7.3 Comparação com o acaso (faixa binomial de 95% por dezena, hipergeométrica de pares e de repetidas do anterior, distribuição exata da soma e chance de atraso; referências independentes: hipergeométrica do back-end `avaliacao::Hipergeometrica` conferida inteiro a inteiro com Python exato, binomial/soma/atraso em Python exato com força bruta nas 3.268.760 combinações da Lotofácil; 975 testes; revisão aprovada com ressalvas, corrigidas: legenda da faixa e resumo reescritos para não afirmar "normal" sem verificar; capturas 360 px Lotofácil/Quina conferidas, 1280 px só da primeira versão; 2026-10-15). Fase 7 concluída
 - [x] 7.4 Seção "Por evidência" nas Estatísticas (dezenas agrupadas por grau × direção, ordem de posição dentro do grupo, dados idênticos à tabela_geral.json conferidos nas 3 loterias; cada grupo com a frase de evidência do projeto, explicação do grau conforme o contrato e frase de que a ordem dos grupos não é chance de sair; 1040 testes; revisão aprovada com ressalvas, corrigidas; capturas 360 px claro de Lotofácil/Quina conferidas, 1280 px e escuro da primeira versão; duplicação com Forca.svelte registrada como dívida; pedido do usuário, 2026-10-15)
-- [ ] 8.1 Instalação PWA · 8.2 Testes ponta a ponta · 8.3 Lighthouse · 8.4 Hospedagem e deploy · 8.5 Runbook · 8.6 Verificação de contrato no build
+- [~] 8.1 Instalação PWA (manifesto completo, ícones PNG any/maskable, apple-touch-icon, metas iOS, cartão "Instalar app" na Início e seção na Entenda; 1077 testes; verificado em Chrome desktop: instalabilidade sem erros, Service Worker, offline com cache; PENDENTE DO USUÁRIO: instalar de verdade em Android (Chrome) e iOS (Safari) e abrir offline, exige HTTPS/8.4; conferir recorte maskable, ícone iOS, splash; 2026-10-15)
+- [ ] 8.2 Testes ponta a ponta
+- [ ] 8.3 Lighthouse
+- [~] 8.4 Hospedagem e deploy (GitHub Pages por GitHub Actions: workflow `.github/workflows/app-pages.yml` com lint, check, test e build antes do deploy; build conferido servido em /rust_bot/ no Chrome real: Service Worker, manifesto, ícones, rotas por hash e offline, 0 falhas; CORS do raw.githubusercontent confirmado, cache de ~5 min; 1082 testes; PENDENTE DO USUÁRIO: push na `main`, habilitar Pages (Settings → Pages → Source: GitHub Actions), abrir https://edxgar48.github.io/rust_bot/ e fazer o checklist de celular que fecha também a 8.1; 2026-10-15)
+- [ ] 8.5 Runbook
+- [ ] 8.6 Verificação de contrato no build (inclui renovar as fixtures do app, hoje uma rodada atrás de publico/v1)
 
 ## Decisões em aberto
 
 - [x] Front-end: valor enumerado novo no contrato (grau/direção/normalização) recusa o arquivo e o app mantém o cache; decidido pelo usuário em 2026-10-14 ("deixar como está")
 - [x] Front-end: backup dos jogos salvos = arquivo exportado, sem nuvem; decidido pelo usuário em 2026-10-15
 - [x] Front-end: gráficos em SVG próprio, sem biblioteca; decidido pelo usuário em 2026-10-15
-- [ ] Front-end: hospedagem e URL final (8.4)
+- [x] Front-end: hospedagem = GitHub Pages com deploy por GitHub Actions a partir da `main` de `edxgar48/rust_bot`; decidido pelo usuário em 2026-10-15
 - [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
 - [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)

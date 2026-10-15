@@ -3,6 +3,7 @@
   import BolaDezena from '../componentes/BolaDezena.svelte';
   import Cartao from '../componentes/Cartao.svelte';
   import Icone from '../componentes/Icone.svelte';
+  import InstalarApp from '../componentes/InstalarApp.svelte';
   import type { NomeIcone } from '../componentes/tipos';
   import type { SituacaoDados } from '../dados/abertura';
   import type { TipoEstadoSincronizacao } from '../dados/estado-sincronizacao';
@@ -119,6 +120,8 @@
       </Cartao>
     {/each}
   {/if}
+
+  <InstalarApp />
 
   <Aviso>{textos.avisos.naoPreveInicio}</Aviso>
 </div>

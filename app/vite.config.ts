@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+import { manifesto } from './manifesto';
 
 // Versão do app = a do package.json, injetada na compilação (constante __VERSAO_APP__).
 // Importar o JSON no código levaria o arquivo inteiro para o pacote.
@@ -22,24 +23,12 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         // Só o app shell é pré-cacheado. Os dados do contrato NÃO passam pelo
         // service worker: o cache deles é o IndexedDB, com conferência de hash.
-        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
         navigateFallback: 'index.html',
         runtimeCaching: [],
         cleanupOutdatedCaches: true,
       },
-      manifest: {
-        name: 'Força das Dezenas',
-        short_name: 'Dezenas',
-        description: 'Resultados e estatísticas das loterias da Caixa.',
-        lang: 'pt-BR',
-        display: 'standalone',
-        start_url: './',
-        scope: './',
-        theme_color: '#006B5E',
-        background_color: '#F4FBF8',
-        // Ícones PNG (192/512, maskable) ficam para a tarefa 8.1.
-        icons: [{ src: 'icone.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
-      },
+      manifest: manifesto,
     }),
   ],
   define: { __VERSAO_APP__: JSON.stringify(versaoApp) },

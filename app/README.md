@@ -31,6 +31,27 @@ npm run preview    # serve dist/ localmente
   Service worker (vite-plugin-pwa) só faz precache do app shell; os dados do
   contrato NÃO passam por ele, o cache deles é o IndexedDB com conferência de
   SHA-256. SW existe só no build (`npm run preview`), nunca em `npm run dev`.
+- PWA e instalação (8.1): `manifesto.ts` (manifesto, testado em `testes/manifesto.test.ts`; `start_url` e
+  `scope` são `./`, sem URL final, então vale em qualquer hospedagem; `orientation: any` porque o app é
+  responsivo e tabelas/volantes pedem o aparelho deitado; cores = tokens: `theme_color` #E8EFEC (barra do
+  topo), `background_color` #F4FBF8, e `<meta name="theme-color">` claro/escuro em `index.html`). Ícones PNG
+  versionados em `public/` (192/512 `any`, 192/512 `maskable` com o desenho dentro da zona segura de 80%,
+  `apple-touch-icon.png` 180, `favicon-32.png`, `favicon.ico`), gerados do `public/icone.svg` por
+  `py -3.12 scripts/gerar-icones.py` (Playwright + Chrome instalado + Pillow); o build NÃO roda o script, só
+  rode se o SVG mudar. Splash do Android = `background_color` + ícone 512 (sempre claro, mesmo com o aparelho
+  escuro); no iOS não há `apple-touch-startup-image`. Lógica de instalação em `src/lib/instalacao.ts` (iOS Safari, modo
+  standalone, dispensa em localStorage tolerante a falha, `ControleInstalacao` que guarda o
+  `beforeinstallprompt`; criado em `main.ts` para não perder o evento) e `componentes/InstalarApp.svelte`:
+  cartão discreto e dispensável na Início (botão "Instalar app" no Android/Chrome; instrução "Compartilhar,
+  Adicionar à Tela de Início" no iOS Safari; some se já instalado) e seção "Instalar o app" na Entenda
+  (sempre visível, ignora a dispensa). Verificação no Chrome real: `npm run build` e
+  `py -3.12 scripts/verificar-pwa.py [pasta_de_capturas]` (precisa de `../publico/v1/index.json`; se faltar,
+  `cargo run --bin sync -- exportar`; a URL base é lida de `src/dados/config.ts`) (instalabilidade via CDP, precache de manifesto e
+  ícones, abertura offline com dados do cache, aviso do iOS simulado). Não substitui o teste em aparelho:
+  instalar de verdade no Android (Chrome) e no iOS (Safari) exige HTTPS e aparelho, e está pendente.
+  Também a conferir no aparelho: a tela de abertura do iOS (sem `apple-touch-startup-image` o iOS costuma
+  mostrar tela branca). `<meta name="theme-color">` acompanha o tema escolhido no app (`aplicarPreferencia`
+  e script inline). `vite.config.ts` importa `./manifesto` sem extensão (sem `allowImportingTsExtensions`).
 - Sistema de design (4.4): `src/estilos/tokens.css` (cor claro/escuro, tipografia da
   escala M3, forma, elevação, espaçamento) e `base.css`. Tema automático/claro/escuro:
   `src/lib/tema.ts` (preferência em localStorage, tolerante a falha) aplicada em
@@ -229,3 +250,83 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   `requestIdleCallback`, em silêncio, e nunca com Save-Data ligado. Assim o app inteiro funciona
   sem rede mesmo que o usuário só tenha aberto a Início.
 - `testes/`: fixtures (cópias de `publico/v1/`) e testes de dados.
+
+## Publicação (GitHub Pages)
+
+Decisão (2026-10-15): GitHub Pages, deploy por GitHub Actions a partir da `main` do repositório público
+`edxgar48/rust_bot`. URL esperada: **https://edxgar48.github.io/rust_bot/** (site de projeto, num subcaminho).
+
+**Preparado, mas NÃO verificado em produção:** o workflow existe e o build foi conferido servido em
+`/rust_bot/` num servidor local (abaixo). Não foram verificados: o deploy real, o HTTPS do Pages, nem a
+instalação nos aparelhos. O que o usuário precisa fazer:
+
+1. Fazer o push da `main` com `.github/workflows/app-pages.yml` e `app/`.
+2. No GitHub: Settings, Pages, "Build and deployment", Source: **GitHub Actions** (uma vez só; sem isso o
+   job `deploy` falha). O repositório precisa estar público (ou ter plano que permita Pages privado).
+3. Acompanhar a aba Actions; ao fim, o job `deploy` mostra a URL.
+
+### Como o deploy dispara
+
+`.github/workflows/app-pages.yml` roda em push na `main` que mude `app/**` ou o próprio workflow, e
+manualmente (Actions, "App no GitHub Pages", Run workflow). Job `qualidade`: `npm ci`, `lint`, `check`,
+`test`, `build` (Node 22) e envia `app/dist` como artefato; só se tudo passar roda o job `deploy`
+(`actions/deploy-pages`). Permissões mínimas (`contents: read`; `pages: write` e `id-token: write` só no
+deploy); `concurrency: pages` sem cancelar deploy em andamento. Não usa Rust nem `publico/`: nenhum teste do
+app lê arquivos ignorados pelo git (as fixtures de `testes/fixtures/` são versionadas e marcadas `-text`
+em `.gitattributes`; os `.py` de verificação e geração de fixtures NÃO rodam no CI).
+
+### Subcaminho, rotas e 404
+
+O build usa `base: './'` e o manifesto usa `start_url`/`scope` `./`, então o mesmo `dist/` serve na raiz e
+em `/rust_bot/`. As rotas são por hash (`#/forca`), que nunca vão ao servidor: recarregar qualquer tela
+cai sempre em `index.html`. Por isso NÃO há `404.html`: um caminho inexistente (`/rust_bot/xyz`) mostra o 404
+padrão do Pages, o que é aceitável (o app não gera links assim). Verificação local (Chrome real, Python 3.12):
+
+```bash
+npm run build
+MSYS_NO_PATHCONV=1 py -3.12 scripts/verificar-pwa.py --prefixo /rust_bot/   # no Git Bash do Windows
+```
+
+`--prefixo` serve `dist/` só dentro do subcaminho (a raiz devolve 404, como no Pages) e confere: escopo do
+service worker = `.../rust_bot/`, manifesto e todos os ícones resolvem, instalabilidade sem erro, recarregar em
+`#/forca?loteria=quina`, `#/estatisticas` e `#/entenda`, precache e abertura offline após a primeira visita.
+Resultado em 2026-10-15: 0 falhas. Isto roda em `http://localhost`, não em HTTPS real.
+
+### Dados: URL base, CORS e atraso
+
+Os dados NÃO ficam no Pages: vêm de `URL_BASE_PADRAO` em `src/dados/config.ts`
+(`https://raw.githubusercontent.com/edxgar48/rust_spider_dados/main/v1/`). Medido com
+`curl -I .../v1/index.json` (2026-10-15): `access-control-allow-origin: *` (o app, em outra origem, consegue
+ler) e `cache-control: max-age=300`. Efeito: depois de `sync publicar`, o `raw.githubusercontent.com` pode
+continuar servindo a versão anterior por até cerca de 5 minutos. O cliente já se protege: baixa com
+`cache: 'no-store'` (ignora o cache do navegador, mas não o da borda do GitHub), e como cada arquivo é
+cacheado separadamente, pode ver um `index.json` novo ao lado de um arquivo velho; nesse caso o `sha256`/`bytes`
+não bate, o arquivo é recusado e o cache válido anterior continua valendo, e a próxima sincronização (poucos
+minutos depois) resolve. Não há cache-busting por URL (o contrato não prevê). Para o usuário isso aparece como
+dado "desatualizado" por alguns minutos, nunca como dado errado.
+
+Trocar de fonte dos dados (outro repositório, R2, S3): editar só `URL_BASE_PADRAO` em `src/dados/config.ts`
+(a barra final é garantida por `normalizarUrlBase`) e publicar o app de novo. Não há variável de ambiente de
+build: é de propósito, para a URL ficar num só lugar (`scripts/verificar-pwa.py` também lê dali). O novo host
+precisa responder com `Access-Control-Allow-Origin`.
+
+### Reverter
+
+Actions, abrir a execução anterior que estava boa, "Re-run all jobs": refaz o build daquele commit e
+publica de novo. Alternativa: `git revert` do commit ruim e push. O service worker do aparelho pega a versão
+revertida na próxima abertura (a nova versão fica esperando e vale na abertura seguinte); jogos salvos e cache
+de dados ficam no IndexedDB e não são tocados pelo deploy.
+
+### Checklist no celular (a fazer pelo usuário; HTTPS real, nada disto foi testado em aparelho)
+
+- Abrir a URL no celular: a Início mostra o último concurso das 3 loterias; abas Força, Conferir, Estatísticas
+  e Entenda abrem; recarregar numa aba continua nela.
+- Android (Chrome): menu, "Instalar app" (ou o botão "Instalar app" na Início). Ícone com o desenho inteiro
+  (versão maskable), abre em tela cheia sem barra do navegador, splash com fundo claro.
+- iOS (Safari): Compartilhar, "Adicionar à Tela de Início". Ícone correto; a tela de abertura pode ficar
+  branca (não há `apple-touch-startup-image`).
+- Modo avião depois da primeira visita (e de a Início ter ficado "atualizada"): o app abre com os dados do
+  cache e diz que está sem rede.
+- Salvar um jogo, fechar o app, reabrir: o jogo continua lá. Exportar o backup funciona.
+- Tema claro e escuro; sem rolagem horizontal em 360 px.
+- Depois de um `sync publicar`, esperar até cerca de 5 minutos e conferir que a Início mostra o concurso novo.

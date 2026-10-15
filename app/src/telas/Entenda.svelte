@@ -1,6 +1,7 @@
 <script lang="ts">
   import BolaDezena from '../componentes/BolaDezena.svelte';
   import Cartao from '../componentes/Cartao.svelte';
+  import InstalarApp from '../componentes/InstalarApp.svelte';
   import type { SituacaoDados } from '../dados/abertura';
   import type { OpcoesSincronizacao, ResultadoCache } from '../dados/cliente';
   import {
@@ -236,6 +237,10 @@
         </section>
       {/each}
     </div>
+  </Cartao>
+
+  <Cartao variante="elevado" titulo={textos.instalar.titulo}>
+    <InstalarApp modo="secao" />
   </Cartao>
 
   <p class="rodape">{textos.avisos.jogoResponsavel}</p>

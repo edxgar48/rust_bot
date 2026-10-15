@@ -63,8 +63,24 @@ export function gravarPreferencia(
   }
 }
 
-/** Aplica no <html>: `data-tema` só existe quando o usuário escolheu claro/escuro. */
+/** Cores da barra do topo (--cor-cont dos tokens); manifesto.ts tem a versão clara. */
+export const COR_BARRA: Readonly<Record<TemaResolvido, string>> = {
+  claro: '#E8EFEC',
+  escuro: '#1A211F',
+};
+
+/**
+ * Aplica no <html>: `data-tema` só existe quando o usuário escolheu claro/escuro.
+ * As metas `theme-color` seguem o mesmo critério: com tema explícito as duas (que têm
+ * `media` do sistema) recebem a cor escolhida; no automático voltam à cor de cada `media`.
+ */
 export function aplicarPreferencia(preferencia: PreferenciaTema, raiz: HTMLElement): void {
   if (preferencia === 'automatico') raiz.removeAttribute('data-tema');
   else raiz.setAttribute('data-tema', preferencia);
+  for (const meta of raiz.ownerDocument.querySelectorAll('meta[name="theme-color"]')) {
+    const mediaEscura = (meta.getAttribute('media') ?? '').includes('dark');
+    const tema: TemaResolvido =
+      preferencia === 'automatico' ? (mediaEscura ? 'escuro' : 'claro') : preferencia;
+    meta.setAttribute('content', COR_BARRA[tema]);
+  }
 }

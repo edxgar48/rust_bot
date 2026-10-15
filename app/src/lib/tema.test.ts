@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import html from '../../index.html?raw';
 import {
   CHAVE_TEMA,
+  COR_BARRA,
   aplicarPreferencia,
   ehPreferenciaTema,
   gravarPreferencia,
@@ -83,6 +84,38 @@ describe('aplicarPreferencia', () => {
     expect(raiz.getAttribute('data-tema')).toBe('claro');
     aplicarPreferencia('automatico', raiz);
     expect(raiz.hasAttribute('data-tema')).toBe(false);
+  });
+});
+
+describe('aplicarPreferencia e theme-color', () => {
+  function metas(): HTMLMetaElement[] {
+    return [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+  }
+
+  beforeEach(() => {
+    document.head.innerHTML =
+      '<meta name="theme-color" content="#E8EFEC" media="(prefers-color-scheme: light)">' +
+      '<meta name="theme-color" content="#1A211F" media="(prefers-color-scheme: dark)">';
+  });
+
+  afterEach(() => {
+    document.head.innerHTML = '';
+  });
+
+  it('tema explícito reescreve as duas metas; automático restaura cada media', () => {
+    const raiz = document.documentElement;
+    aplicarPreferencia('escuro', raiz);
+    expect(metas().map((m) => m.content)).toEqual([COR_BARRA.escuro, COR_BARRA.escuro]);
+    aplicarPreferencia('claro', raiz);
+    expect(metas().map((m) => m.content)).toEqual([COR_BARRA.claro, COR_BARRA.claro]);
+    aplicarPreferencia('automatico', raiz);
+    expect(metas().map((m) => m.content)).toEqual([COR_BARRA.claro, COR_BARRA.escuro]);
+    raiz.removeAttribute('data-tema');
+  });
+
+  it('as cores são as do index.html', () => {
+    expect(html).toContain(`content="${COR_BARRA.claro}" media="(prefers-color-scheme: light)"`);
+    expect(html).toContain(`content="${COR_BARRA.escuro}" media="(prefers-color-scheme: dark)"`);
   });
 });
 

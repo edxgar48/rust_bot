@@ -79,6 +79,7 @@ describe('Entenda: estrutura e acessibilidade', () => {
       'O que é a evidência',
       'Como ler a tabela de força',
       'De onde vêm os dados',
+      'Instalar o app',
     ]);
     const niveis = Array.from(alvo.querySelectorAll('h2,h3,h4')).map((h) => Number(h.tagName[1]));
     niveis.forEach((n, i) => {

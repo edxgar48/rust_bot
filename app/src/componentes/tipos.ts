@@ -9,6 +9,7 @@ export type NomeIcone =
   | 'estatisticas'
   | 'entenda'
   | 'info'
+  | 'baixar'
   | 'erro'
   | 'atualizar'
   | 'sem-rede'

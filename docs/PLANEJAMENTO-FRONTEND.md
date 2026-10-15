@@ -18,9 +18,9 @@ Mudança de escopo ou de definição entra aqui primeiro, nunca só no código.
 - **Sem servidor**: o app só lê os JSON estáticos do contrato `v1`. Nada de
   API, conta, login ou banco no servidor. Dados do usuário (jogos salvos,
   preferências) ficam no aparelho (IndexedDB/localStorage).
-- **Hospedagem: decisão em aberto.** O build é estático e funciona em
-  qualquer hospedagem de arquivos; a escolha (GitHub Pages, Cloudflare Pages
-  ou outra) fica para a Fase 8.
+- **Hospedagem: GitHub Pages** (decidido em 2026-10-15). O build é estático e
+  funciona em qualquer hospedagem de arquivos; o deploy é por GitHub Actions
+  a partir da `main`, em subcaminho (`/rust_bot/`), por isso caminhos relativos.
 - **Escopo do MVP**: (1) último resultado das 3 loterias; (2) tabela de força
   por dezena; (3) histórico e conferência de jogo; (4) estatísticas e
   explicações. Fica fora do MVP: notificações push, premiação/rateio,
@@ -142,7 +142,7 @@ Vitest, build) entra na skill `verificar` quando `app/` existir.
 
 ## Decisões em aberto
 
-- Hospedagem e URL final do app (Fase 8.4).
+- ~~Hospedagem do app~~ — decidido em 2026-10-15: GitHub Pages, deploy por GitHub Actions a partir da `main` do repositório `edxgar48/rust_bot` (público); URL esperada `https://edxgar48.github.io/rust_bot/` (8.4).
 - ~~Biblioteca de gráficos~~ — decidido em 2026-10-15: SVG próprio, sem dependência (7.2).
 - Estilo visual e identidade (4.5).
 - ~~Backup dos jogos salvos~~ — decidido em 2026-10-15: o backup é o arquivo exportado (sem nuvem); o app avisa que os jogos ficam só no aparelho (6.3).

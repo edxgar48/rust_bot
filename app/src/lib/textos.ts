@@ -704,6 +704,20 @@ export const textos = {
       tabelaAusente: 'tabela de força ainda não baixada',
     },
   },
+  instalar: {
+    titulo: 'Instalar o app',
+    descricao:
+      'Coloque o app na tela inicial: ele abre em tela cheia e mostra os últimos dados salvos, mesmo sem internet.',
+    botao: 'Instalar app',
+    dispensar: 'Agora não',
+    dispensarRotulo: 'Dispensar o aviso de instalação',
+    ios: 'No iPhone ou iPad, toque em Compartilhar e depois em Adicionar à Tela de Início.',
+    instalado: 'O app já está instalado neste aparelho.',
+    instaladoAgora: 'App instalado. Procure o ícone na tela inicial.',
+    recusado: 'Instalação cancelada. Você pode instalar depois pelo menu do navegador.',
+    semOferta:
+      'Este navegador não ofereceu a instalação agora. Se o navegador oferecer, procure no menu a opção Instalar app ou Adicionar à tela inicial.',
+  },
   tema: {
     // `atual` é o rótulo da preferência em uso.
     alternar: (atual: string) => `Tema: ${atual}. Toque para trocar.`,

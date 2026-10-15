@@ -4,15 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#006B5E" />
+    <!-- Cores da barra do topo do app (--cor-cont); manifesto.ts tem a versão clara. -->
+    <meta name="theme-color" content="#E8EFEC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1A211F" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="icone.svg" type="image/svg+xml" />
+    <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Dezenas" />
     <title>Força das Dezenas</title>
     <!-- Aplica o tema escolhido antes da primeira pintura (sem flash). A chave 'tema' é a
          mesma de CHAVE_TEMA em src/lib/tema.ts (um teste confere). Falha = segue o sistema. -->
     <script>
       try {
         var t = localStorage.getItem('tema');
-        if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+        if (t === 'claro' || t === 'escuro') {
+          document.documentElement.setAttribute('data-tema', t);
+          // Barra do topo na cor do tema escolhido (COR_BARRA em src/lib/tema.ts).
+          var cor = t === 'escuro' ? '#1A211F' : '#E8EFEC';
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 0; i < metas.length; i++) metas[i].setAttribute('content', cor);
+        }
       } catch (e) {}
     </script>
   </head>
