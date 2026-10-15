@@ -146,6 +146,7 @@ describe('varredura de linguagem: nada sugere previsão', () => {
     expect(textos.avisos.naoPreveForca).toContain('não prevê');
     expect(textos.avisos.naoPreveDetalhe).toContain('não prevê');
     expect(textos.avisos.naoPreveHistorico).toContain('não prevê');
+    expect(textos.avisos.naoPreveConferir).toContain('não aumenta a chance');
     expect(textos.avisos.jogoResponsavel).toBe(
       'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
     );

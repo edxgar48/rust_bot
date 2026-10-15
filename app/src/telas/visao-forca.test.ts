@@ -6,7 +6,8 @@ import type { ResultadoCache } from '../dados/cliente';
 import type { IndiceV1, LoteriaNoIndice, Slug, TabelaGeralV1 } from '../dados/tipos';
 import { validarTabelaGeral } from '../dados/validacao';
 import { textos } from '../lib/textos';
-import { linhasDaTabela, montarVisaoForca, type SituacaoForca } from './forca';
+import type { SituacaoTela } from './estado-tela';
+import { linhasDaTabela, montarVisaoForca } from './forca';
 
 const AGORA = new Date('2026-10-14T12:30:00Z');
 const SINCRONIZADO = '2026-10-14T12:30:00.000Z'; // 09:30 em Brasília
@@ -33,10 +34,10 @@ function cacheCom(
 
 const pronta = (
   cache: ResultadoCache | null,
-  falha: SituacaoForca['falha'] = 'nenhuma',
-): SituacaoForca => ({ cache, sincronizando: false, falha });
+  falha: SituacaoTela['falha'] = 'nenhuma',
+): SituacaoTela => ({ cache, sincronizando: false, falha });
 
-function conteudo(slug: Slug, situacao: SituacaoForca | null) {
+function conteudo(slug: Slug, situacao: SituacaoTela | null) {
   const v = montarVisaoForca(slug, situacao, AGORA);
   if (v.tipo !== 'conteudo') throw new Error(`esperava conteúdo, veio ${v.tipo}`);
   return v;
@@ -166,7 +167,7 @@ describe('montarVisaoForca', () => {
   });
 
   it('sem cache e sincronizando: carregando', () => {
-    const situacao: SituacaoForca = { cache: null, sincronizando: true, falha: 'nenhuma' };
+    const situacao: SituacaoTela = { cache: null, sincronizando: true, falha: 'nenhuma' };
     expect(montarVisaoForca('quina', situacao, AGORA)).toEqual({ tipo: 'carregando' });
   });
 

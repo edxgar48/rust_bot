@@ -8,9 +8,12 @@ import {
   ehSlug,
   hashDaForca,
   hashDaRota,
+  hashDaSecaoConferir,
   hashDoHistorico,
+  hashDoJogo,
   loteriaDoHash,
   rotaDoHash,
+  secaoConferirDoHash,
 } from './rotas';
 import { idsAbas } from './textos';
 
@@ -136,9 +139,23 @@ describe('forma de exibição e dezena na URL da Força', () => {
     expect(dezenaDoHash(h)).toBe(20);
   });
 
-  it('hashDoHistorico leva à aba Conferir com a loteria, e a ida e volta é identidade', () => {
-    expect(hashDoHistorico('quina')).toBe('#/conferir?loteria=quina');
-    expect(rotaDoHash(hashDoHistorico('megasena'))).toBe('conferir');
-    expect(loteriaDoHash(hashDoHistorico('megasena'))).toBe('megasena');
+  it('hashDoJogo e hashDoHistorico levam à aba Conferir, cada um à sua seção, com a loteria', () => {
+    expect(hashDoJogo('quina')).toBe('#/conferir?loteria=quina');
+    expect(hashDoHistorico('quina')).toBe('#/conferir?loteria=quina&secao=historico');
+    for (const h of [hashDoJogo('megasena'), hashDoHistorico('megasena')]) {
+      expect(rotaDoHash(h)).toBe('conferir');
+      expect(loteriaDoHash(h)).toBe('megasena');
+    }
+    expect(secaoConferirDoHash(hashDoJogo('quina'))).toBe('jogo');
+    expect(secaoConferirDoHash(hashDoHistorico('quina'))).toBe('historico');
+    expect(hashDaSecaoConferir('historico', 'quina')).toBe(hashDoHistorico('quina'));
+    expect(hashDaSecaoConferir('jogo', 'quina')).toBe(hashDoJogo('quina'));
+  });
+
+  it('secaoConferirDoHash: ausente ou inválida cai em Conferir jogo', () => {
+    expect(secaoConferirDoHash('')).toBe('jogo');
+    expect(secaoConferirDoHash('#/conferir')).toBe('jogo');
+    expect(secaoConferirDoHash('#/conferir?secao=xyz')).toBe('jogo');
+    expect(secaoConferirDoHash('#/conferir?secao=historico&loteria=quina')).toBe('historico');
   });
 });

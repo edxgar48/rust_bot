@@ -11,9 +11,15 @@
   import { PARAMETROS_LOTERIA, SLUGS, type ConcursoHistorico, type Slug } from '../dados/tipos';
   import { formatarDataSorteio } from '../lib/datas';
   import { gravarLoteriaGuardada, lerLoteriaGuardada } from '../lib/loteria-guardada';
-  import { LOTERIA_PADRAO, hashDoHistorico, loteriaDoHash, rotaDoHash } from '../lib/rotas';
+  import {
+    LOTERIA_PADRAO,
+    hashDoHistorico,
+    loteriaDoHash,
+    rotaDoHash,
+    secaoConferirDoHash,
+  } from '../lib/rotas';
   import { textos } from '../lib/textos';
-  import type { EstadoForca, SituacaoForca } from './forca';
+  import type { EstadoTela, SituacaoTela } from './estado-tela';
   import {
     ALTURA_LINHA_REM,
     consultarHistorico,
@@ -47,7 +53,7 @@
     loteriaDoHash(location.hash) ?? lerLoteriaGuardada() ?? LOTERIA_PADRAO,
   );
   // raw: o histórico tem milhares de listas; um proxy reativo em cada uma só custaria tempo.
-  let situacao = $state.raw<SituacaoForca | null>(null);
+  let situacao = $state.raw<SituacaoTela | null>(null);
   let sequencia = 0;
 
   let modoBusca = $state<ModoBusca>('concurso');
@@ -74,7 +80,7 @@
     { valor: 'concurso', rotulo: textos.historico.busca.modoConcurso },
     { valor: 'data', rotulo: textos.historico.busca.modoData },
   ];
-  const iconesDoEstado: Record<EstadoForca, NomeIcone> = {
+  const iconesDoEstado: Record<EstadoTela, NomeIcone> = {
     sincronizando: 'atualizar',
     atualizado: 'conferir',
     sem_rede: 'sem-rede',
@@ -265,7 +271,12 @@
 
   // Hash colado ou botão voltar com outro ?loteria=: segue a URL.
   function aoMudarHash(): void {
-    if (rotaDoHash(location.hash) !== 'conferir') return;
+    if (
+      rotaDoHash(location.hash) !== 'conferir' ||
+      secaoConferirDoHash(location.hash) !== 'historico'
+    ) {
+      return;
+    }
     const daUrl = loteriaDoHash(location.hash);
     if (daUrl !== null && daUrl !== loteria) {
       loteria = daUrl;

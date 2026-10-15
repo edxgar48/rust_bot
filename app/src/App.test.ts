@@ -57,11 +57,35 @@ describe('App: navegação por hash', () => {
     expect(document.querySelector('main')?.textContent).toContain('em construção');
   });
 
-  it('abrir direto em #/conferir ativa a aba Conferir e mostra o Histórico (sem rede: sem dados)', async () => {
+  it('abrir direto em #/conferir ativa a aba Conferir e mostra Conferir jogo (sem rede: sem dados)', async () => {
     montarApp('#/conferir');
     await esperar(60);
     expect(abaAtiva()).toBe('Conferir');
+    expect(document.querySelector('main h2')?.textContent).toBe('Conferir jogo');
+    expect(document.querySelector('main')?.textContent).toContain('Jogue com responsabilidade');
+    const alertasJogo = Array.from(document.querySelectorAll('main [role="alert"]')).map(
+      (a) => a.textContent,
+    );
+    expect(alertasJogo.some((t) => t?.includes('Ainda sem dados'))).toBe(true);
+  });
+
+  it('a seção Histórico da aba Conferir abre por ?secao=historico e a troca pelo seletor muda o hash', async () => {
+    montarApp('#/conferir?secao=historico');
+    await esperar(60);
+    expect(abaAtiva()).toBe('Conferir');
     expect(document.querySelector('main h2')?.textContent).toBe('Histórico de concursos');
+    const radios = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]'));
+    radios.find((b) => b.textContent?.includes('Conferir jogo'))?.click();
+    await esperar(60);
+    expect(location.hash).toContain('#/conferir?loteria=');
+    expect(location.hash).not.toContain('secao=historico');
+    expect(document.querySelector('main h2')?.textContent).toBe('Conferir jogo');
+    expect(abaAtiva()).toBe('Conferir');
+  });
+
+  it('o Histórico (seção) mostra o aviso e o estado sem dados', async () => {
+    montarApp('#/conferir?secao=historico');
+    await esperar(60);
     expect(document.querySelector('main')?.textContent).not.toContain('em construção');
     expect(document.querySelector('main')?.textContent).toContain('não prevê o sorteio');
     const alertas = Array.from(document.querySelectorAll('main [role="alert"]')).map(

@@ -13,7 +13,7 @@ import type {
 } from '../dados/tipos';
 import { SLUGS } from '../dados/tipos';
 import { validarHistorico } from '../dados/validacao';
-import type { SituacaoForca } from './forca';
+import type { SituacaoTela } from './estado-tela';
 import {
   ALTURA_LINHA_REM,
   consultarHistorico,
@@ -368,8 +368,8 @@ describe('montarVisaoHistorico', () => {
   }
   const pronta = (
     cache: ResultadoCache | null,
-    falha: SituacaoForca['falha'] = 'nenhuma',
-  ): SituacaoForca => ({ cache, sincronizando: false, falha });
+    falha: SituacaoTela['falha'] = 'nenhuma',
+  ): SituacaoTela => ({ cache, sincronizando: false, falha });
 
   it('antes de ler o cache: carregando', () => {
     expect(montarVisaoHistorico('quina', null, AGORA)).toEqual({ tipo: 'carregando' });

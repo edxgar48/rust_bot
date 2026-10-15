@@ -29,7 +29,8 @@
   import { textos } from '../lib/textos';
   import DetalheDezena from './DetalheDezena.svelte';
   import { montarDetalheDaDezena } from './detalhe-dezena';
-  import { montarVisaoForca, type EstadoForca, type SituacaoForca } from './forca';
+  import type { EstadoTela, SituacaoTela } from './estado-tela';
+  import { montarVisaoForca } from './forca';
 
   interface Props {
     /** O que a tela precisa da sessão de dados (injetável nos testes). */
@@ -52,7 +53,7 @@
   // Dezena com o detalhe aberto (&dezena=20 na URL, para o botão voltar fechar).
   let dezenaAberta = $state<number | null>(dezenaDoHash(location.hash));
   let raiz: HTMLElement | undefined = $state();
-  let situacao = $state<SituacaoForca | null>(null);
+  let situacao = $state<SituacaoTela | null>(null);
   let sequencia = 0;
 
   const opcoesLoteria: readonly OpcaoSegmentada<Slug>[] = SLUGS.map((slug) => ({
@@ -74,7 +75,7 @@
   const urlAtual = (dezena: number | null = null): string =>
     hashDaForca(loteria, { visao: visaoEscolhida, dezena });
 
-  const iconesDoEstado: Record<EstadoForca, NomeIcone> = {
+  const iconesDoEstado: Record<EstadoTela, NomeIcone> = {
     sincronizando: 'atualizar',
     atualizado: 'conferir',
     sem_rede: 'sem-rede',

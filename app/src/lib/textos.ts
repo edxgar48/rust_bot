@@ -180,8 +180,65 @@ export const textos = {
       'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
     naoPreveHistorico:
       'O histórico mostra o que já foi sorteado. Ele não prevê o sorteio: cada concurso é independente dos anteriores.',
-    // Telas de jogo (Entenda; a Conferir da fase 6 também usa este).
+    naoPreveConferir:
+      'Conferir o passado não aumenta a chance de acertar. Cada sorteio é independente dos anteriores.',
+    // Telas de jogo (Entenda e Conferir jogo).
     jogoResponsavel: 'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
+  },
+  // Aba Conferir: troca entre as duas seções e tela Conferir jogo (6.2).
+  conferir: {
+    rotuloSecao: 'Seção',
+    secaoJogo: 'Conferir jogo',
+    secaoHistorico: 'Histórico',
+    titulo: 'Conferir jogo',
+    subtitulo: (loteria: string, minimo: number, maximo: number) =>
+      `${loteria} · escolha de ${minimo} a ${maximo} dezenas`,
+    rotuloLoteria: 'Loteria',
+    carregando: 'Carregando o histórico…',
+    tentarDeNovo: 'Tentar de novo',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    recusadoSemAnterior:
+      'O histórico desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+    volanteTitulo: 'Marque as dezenas do jogo',
+    marcadas: (quantidade: number) =>
+      `${quantidade} ${quantidade === 1 ? 'dezena marcada' : 'dezenas marcadas'}`,
+    limpar: 'Limpar',
+    limite: (maximo: number) => `Limite de ${maximo} dezenas por jogo. Desmarque uma para trocar.`,
+    quantidade: {
+      vazia: (minimo: number, maximo: number) =>
+        `Marque de ${minimo} a ${maximo} dezenas no volante para ver este jogo nos concursos passados.`,
+      faltam: (faltam: number, minimo: number) =>
+        `Marque mais ${faltam} ${faltam === 1 ? 'dezena' : 'dezenas'} para conferir: o jogo precisa de pelo menos ${minimo}.`,
+      excede: (sobram: number, maximo: number) =>
+        `Desmarque ${sobram} ${sobram === 1 ? 'dezena' : 'dezenas'}: o jogo aceita no máximo ${maximo}.`,
+    },
+    resultado: {
+      titulo: (total: number) =>
+        total === 1
+          ? 'Este jogo no único concurso'
+          : `Este jogo em todos os ${total.toLocaleString('pt-BR')} concursos`,
+      melhor: (acertos: number, concurso: number) =>
+        `Melhor resultado: ${acertos} ${acertos === 1 ? 'acerto' : 'acertos'} (concurso ${concurso})`,
+      melhorRepetido: (vezes: number) =>
+        `Esse resultado ocorreu em ${vezes.toLocaleString('pt-BR')} concursos; o citado é o mais recente.`,
+      etiquetaMelhor: 'melhor resultado',
+      listaMelhor: 'Concursos com o melhor resultado',
+      listaMelhorResumo: (mostrados: number, total: number) =>
+        mostrados < total
+          ? `Mostrando os ${mostrados} mais recentes, de ${total.toLocaleString('pt-BR')}.`
+          : '',
+      concursoItem: (concurso: number) => `Concurso ${concurso}`,
+      semConcursos: 'Este histórico ainda não tem concursos para conferir.',
+      faixas: 'Concursos por número de acertos',
+      ultimo: (concurso: number, acertos: number) =>
+        `No último concurso (${concurso}): ${acertos} ${acertos === 1 ? 'acerto' : 'acertos'}`,
+      faixaSemConcursos: 'Nenhum concurso nesta faixa.',
+      faixaMais: (restantes: number) => `e mais ${restantes.toLocaleString('pt-BR')}`,
+      acertos: (acertos: number) => `${acertos} ${acertos === 1 ? 'acerto' : 'acertos'}`,
+      concursos: (concursos: number) =>
+        `${concursos.toLocaleString('pt-BR')} ${concursos === 1 ? 'concurso' : 'concursos'}`,
+      nota: 'Mostra o que este jogo teria feito nos concursos já sorteados. É uma consulta ao passado.',
+    },
   },
   entenda: {
     titulo: 'Entenda',

@@ -507,12 +507,25 @@ describe('Histórico: troca e escolha de loteria', () => {
     await vi.waitFor(() => expect(texto(alvo)).toContain('Concurso 3069'));
     const dados = cru('megasena');
     expect(concursosDasLinhas(alvo)[0]).toBe(dados[dados.length - 1]!.concurso);
-    expect(location.hash).toBe('#/conferir?loteria=megasena');
+    expect(location.hash).toBe('#/conferir?loteria=megasena&secao=historico');
     expect(localStorage.getItem(CHAVE_LOTERIA_GUARDADA)).toBe('megasena');
     expect(history.length).toBe(entradas); // replaceState
     expect(texto(alvo)).not.toContain('Busca: concurso');
     expect(texto(alvo)).not.toContain('Dezenas escolhidas');
     expect(linhas(alvo)[0]!.querySelectorAll('.disco')).toHaveLength(6);
+  });
+
+  it('hashchange: só segue a URL quando a seção é Histórico (a guarda de Conferir jogo)', async () => {
+    const alvo = await montarEm('quina');
+    // Seção Conferir jogo (padrão): outra loteria no hash não mexe nesta tela.
+    location.hash = '#/conferir?loteria=megasena';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await pausa(50);
+    expect(selecionada(alvo)).toEqual(['✓ Quina']);
+    // Seção Histórico: a tela segue.
+    location.hash = '#/conferir?loteria=megasena&secao=historico';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await vi.waitFor(() => expect(selecionada(alvo)).toEqual(['✓ Mega-Sena']));
   });
 
   it('a URL vale mais que o aparelho; sem parâmetro usa o guardado; inválidos caem na Lotofácil', async () => {
@@ -542,7 +555,7 @@ describe('Histórico: troca e escolha de loteria', () => {
 
   it('mudar o hash para outra loteria (voltar do navegador) troca o histórico', async () => {
     const alvo = await montarEm('quina');
-    location.hash = '#/conferir?loteria=lotofacil';
+    location.hash = '#/conferir?loteria=lotofacil&secao=historico';
     await vi.waitFor(() => expect(selecionada(alvo)).toEqual(['✓ Lotofácil']));
     await vi.waitFor(() => expect(linhas(alvo)[0]?.querySelectorAll('.disco').length).toBe(15));
   });

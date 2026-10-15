@@ -1,11 +1,9 @@
 // Lógica da tela Força, sem Svelte: converte o que há em cache (e o resultado da
 // sincronização) no que a tela mostra. O app NÃO recalcula nada do motor: posição,
 // índice, variação e evidência vêm prontos de tabela_geral.json. Testada sem navegador.
-import type { ResultadoCache } from '../dados/cliente';
-import { formatarDataHora } from '../dados/estado-sincronizacao';
-import type { FalhaDaGarantia } from '../dados/sob-demanda';
 import type { DirecaoEvidencia, GrauEvidencia, Slug, TabelaGeralV1 } from '../dados/tipos';
 import { textos } from '../lib/textos';
+import { estadoEData, type EstadoTela, type SituacaoTela } from './estado-tela';
 
 export interface LinhaForca {
   readonly posicao: number;
@@ -18,17 +16,6 @@ export interface LinhaForca {
   readonly direcao: DirecaoEvidencia | null;
 }
 
-/** O que a tela sabe: o cache lido e em que ponto da sincronização está. */
-export interface SituacaoForca {
-  readonly cache: ResultadoCache | null;
-  /** `true` enquanto `garantir` ainda não respondeu. */
-  readonly sincronizando: boolean;
-  /** Resultado de `garantir` (só vale com `sincronizando` falso). */
-  readonly falha: FalhaDaGarantia;
-}
-
-export type EstadoForca = 'sincronizando' | 'atualizado' | 'sem_rede' | 'recusado';
-
 export type VisaoForca =
   | { readonly tipo: 'carregando' }
   | { readonly tipo: 'sem_dados'; readonly texto: string; readonly erro: boolean }
@@ -39,7 +26,7 @@ export type VisaoForca =
       readonly subtitulo: string;
       /** "Perfil padrao_v1 · janela de 50 concursos". */
       readonly perfilJanela: string;
-      readonly estado: EstadoForca;
+      readonly estado: EstadoTela;
       /** Texto da linha de estado, com a data do arquivo quando não está atualizado. */
       readonly texto: string;
       /** Dado recusado: a linha de estado vira Aviso de erro (a tabela anterior continua abaixo). */
@@ -70,31 +57,9 @@ export function posicoesDaTabela(tabela: TabelaGeralV1): Record<number, number> 
   return Object.fromEntries(tabela.dezenas.map((d) => [d.dezena, d.posicao]));
 }
 
-export function estadoEData(
-  situacao: SituacaoForca,
-  cache: ResultadoCache,
-  agora: Date,
-): { estado: EstadoForca; texto: string } {
-  const iso = cache.sincronizadoEm ?? cache.indiceSincronizadoEm;
-  const data = iso === null ? null : formatarDataHora(iso);
-  if (situacao.sincronizando) {
-    return { estado: 'sincronizando', texto: textos.sincronizacao.sincronizando(data) };
-  }
-  if (situacao.falha === 'recusado') {
-    return { estado: 'recusado', texto: textos.sincronizacao.recusado(data) };
-  }
-  if (situacao.falha === 'sem_rede') {
-    return { estado: 'sem_rede', texto: textos.sincronizacao.semRede(data) };
-  }
-  return {
-    estado: 'atualizado',
-    texto: textos.sincronizacao.atualizado(data ?? formatarDataHora(agora.toISOString()) ?? ''),
-  };
-}
-
 export function montarVisaoForca(
   slug: Slug,
-  situacao: SituacaoForca | null,
+  situacao: SituacaoTela | null,
   agora: Date = new Date(),
 ): VisaoForca {
   // Ainda não leu o cache.

@@ -8,9 +8,9 @@
   import { idsAbas, textos, type IdAba } from './lib/textos';
   import { registrarServiceWorker } from './pwa';
   import { criarSessao } from './sessao.svelte';
+  import Conferir from './telas/Conferir.svelte';
   import Entenda from './telas/Entenda.svelte';
   import Forca from './telas/Forca.svelte';
-  import Historico from './telas/Historico.svelte';
   import Inicio from './telas/Inicio.svelte';
 
   const iconesDasAbas: Record<IdAba, NomeIcone> = {
@@ -92,7 +92,7 @@
       {:else if abaAtual === 'forca'}
         <Forca fonte={sessao} />
       {:else if abaAtual === 'conferir'}
-        <Historico fonte={sessao} />
+        <Conferir fonte={sessao} />
       {:else if abaAtual === 'entenda'}
         <Entenda
           fonte={sessao}

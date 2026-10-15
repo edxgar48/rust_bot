@@ -5,7 +5,7 @@
 // esse formato ordena igual ao calendário, comparar texto basta.
 import type { ConcursoHistorico, Slug } from '../dados/tipos';
 import { textos } from '../lib/textos';
-import { estadoEData, type EstadoForca, type SituacaoForca } from './forca';
+import { estadoEData, type EstadoTela, type SituacaoTela } from './estado-tela';
 
 // ---------------------------------------------------------------- busca digitada
 
@@ -265,7 +265,7 @@ export type VisaoHistorico =
       readonly nomeLoteria: string;
       /** "7.141 concursos, do 1 ao 7141". */
       readonly subtitulo: string;
-      readonly estado: EstadoForca;
+      readonly estado: EstadoTela;
       readonly texto: string;
       readonly erro: boolean;
       readonly concursos: readonly ConcursoHistorico[];
@@ -275,7 +275,7 @@ export type VisaoHistorico =
 
 export function montarVisaoHistorico(
   slug: Slug,
-  situacao: SituacaoForca | null,
+  situacao: SituacaoTela | null,
   agora: Date = new Date(),
 ): VisaoHistorico {
   if (situacao === null) return { tipo: 'carregando' };

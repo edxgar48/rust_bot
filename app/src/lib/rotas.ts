@@ -74,7 +74,28 @@ export function hashDaForca(slug: Slug, opcoes: OpcoesHashForca = {}): string {
   return hash;
 }
 
-/** Hash do Histórico (aba Conferir): "#/conferir?loteria=quina". */
-export function hashDoHistorico(slug: Slug): string {
+/** Seções da aba Conferir: conferir um jogo (padrão) e o histórico de concursos. */
+export const SECOES_CONFERIR = ['jogo', 'historico'] as const;
+export type SecaoConferir = (typeof SECOES_CONFERIR)[number];
+export const SECAO_CONFERIR_PADRAO: SecaoConferir = 'jogo';
+
+/** Parâmetro `secao` do hash; ausente ou inválido = Conferir jogo. */
+export function secaoConferirDoHash(hash: string): SecaoConferir {
+  const m = /[?&]secao=([^&#]*)/.exec(hash);
+  const valor = m?.[1] ?? null;
+  return SECOES_CONFERIR.find((s) => s === valor) ?? SECAO_CONFERIR_PADRAO;
+}
+
+/** Hash da aba Conferir na seção Conferir jogo: "#/conferir?loteria=quina". */
+export function hashDoJogo(slug: Slug): string {
   return `${hashDaRota('conferir')}?loteria=${slug}`;
+}
+
+/** Hash da aba Conferir na seção Histórico: "#/conferir?loteria=quina&secao=historico". */
+export function hashDoHistorico(slug: Slug): string {
+  return `${hashDoJogo(slug)}&secao=historico`;
+}
+
+export function hashDaSecaoConferir(secao: SecaoConferir, slug: Slug): string {
+  return secao === 'historico' ? hashDoHistorico(slug) : hashDoJogo(slug);
 }

@@ -88,6 +88,20 @@ npm run preview    # serve dist/ localmente
   altura fixa em rem por loteria (`ALTURA_LINHA_REM`), a página rola (sem rolagem aninhada), só as linhas
   perto da tela existem no DOM (cerca de 13 a 15, 3 de folga de cada lado), `padding` do `<ul>` reserva o
   resto. O estado de `situacao` usa `$state.raw` (milhares de listas, sem proxy reativo).
+- Aba Conferir (6.2): `src/telas/Conferir.svelte` alterna duas seções pelo hash
+  (`#/conferir?loteria=quina` = Conferir jogo, o padrão; `...&secao=historico` = Histórico, helpers
+  `hashDoJogo`/`hashDoHistorico` em `lib/rotas.ts`). Links antigos `#/conferir?loteria=X` sem `secao`
+  agora abrem Conferir jogo; o Histórico exige `&secao=historico`. Conferir jogo: `ConferirJogo.svelte` + `conferir.ts`
+  (puro). Volante em modo seleção, quantidade válida em `QUANTIDADE_JOGO` (Lotofácil 15-20, Mega-Sena
+  6-20, Quina 5-15; o volante bloqueia novas dezenas no máximo). O resultado só aparece com quantidade
+  válida e histórico carregado. `conferirJogo` faz uma passada com uma tabela de presença (`Uint8Array`),
+  sem alocar por concurso: contagem por número de acertos, melhor resultado e todos os concursos em que
+  ocorreu (mais recente primeiro); `concursosComAcertos` lista uma faixa; cada faixa da tela é um `<details>` (`FaixaAcertos.svelte`) que só
+  calcula a lista (até 20 concursos, "e mais N") ao expandir. Faixas impossíveis (`minimoAcertos`) não aparecem.
+  Testada com valores à mão e contra um cálculo ingênuo sobre as 3 fixtures reais. Contador em região viva
+  (`role=status`); bolas são botões com `aria-pressed`; melhor faixa marcada com texto, não só cor. O
+  botão "Salvar jogo" foi omitido: a persistência é da 6.3. Estado comum das telas de dados (Força,
+  Histórico, Conferir) em `telas/estado-tela.ts` (`SituacaoTela`, `EstadoTela`, `estadoEData`).
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em
