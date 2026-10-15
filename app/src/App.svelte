@@ -10,6 +10,7 @@
   import { criarSessao } from './sessao.svelte';
   import Conferir from './telas/Conferir.svelte';
   import Entenda from './telas/Entenda.svelte';
+  import Estatisticas from './telas/Estatisticas.svelte';
   import Forca from './telas/Forca.svelte';
   import Inicio from './telas/Inicio.svelte';
 
@@ -108,8 +109,7 @@
           {atualizacaoPronta}
         />
       {:else}
-        <h2 id="titulo-aba">{textos.abas[abaAtual]}</h2>
-        <p>{textos.placeholder}</p>
+        <Estatisticas fonte={sessao} />
       {/if}
     </main>
 
@@ -145,10 +145,6 @@
     max-width: 48rem;
     margin: 0 auto;
     padding: var(--esp-4);
-  }
-  h2 {
-    margin-bottom: var(--esp-4);
-    font: var(--fonte-titulo-g);
   }
   :global(.app > nav) {
     position: sticky;

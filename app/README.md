@@ -160,7 +160,25 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   `testes/fixtures/estatisticas-esperado.json` é gerado por SQL direto nos bancos `resultados_*.db` com
   `py -3.12 app/testes/gerar-esperado-estatisticas.py` (a partir da raiz; confere antes que o
   `historico.json` da fixture é idêntico ao banco até o último concurso da fixture). Regerar quando as
-  fixtures forem renovadas. Gráficos e biblioteca: tarefa 7.2.
+  fixtures forem renovadas.
+- Tela Estatísticas (7.2), aba `#/estatisticas?loteria=quina&janela=50` (`janela` = 10, 50, 100 ou `total`;
+  padrão 50; precedência da loteria: URL, aparelho, Lotofácil; troca por `replaceState`). `telas/Estatisticas.svelte`
+  usa `calcularEstatisticas` (7.1) sem recalcular nada, só quando muda a loteria, a janela ou a lista (mudar o
+  estado da sincronização não refaz a conta); histórico sob demanda pela sessão como Histórico/Conferir jogo.
+  Gráficos em SVG próprio, SEM biblioteca (decisão de 2026-10-15): `estatisticas/grafico.ts` (puro) monta barras,
+  escala (começa em zero, passos 1/2/5, inteira), ticks e extremos; `telas/GraficoFrequencia.svelte` só desenha.
+  O viewBox tem a largura medida da caixa (ResizeObserver; 320 sem medição), então texto e barras ficam em px
+  reais: Quina com 80 barras em 360 px, eixo 01, 10 ... 80 (Lotofácil de 5 em 5). Acessibilidade: `role="img"`
+  com rótulo curto (descrição + maior/menor, sem ler as dezenas todas), `<details>` "Ver como tabela" (dezena,
+  vezes, esperado, diferença com sinal, região rolável focável), linha do esperado tracejada com contorno e
+  legenda em texto, extremos com losango (maior) e círculo vazado (menor) mais frase na legenda (até 3
+  empatados; acima disso nenhum marcador e a frase diz "N dezenas empatadas"), chips como radiogroup,
+  região viva curta ("Mostrando Quina, últimos 50 concursos."). Honestidade: só texto qualitativo de que a
+  diferença para o esperado é normal (sem desvio-padrão; a comparação formal é a 7.3); "Há mais tempo sem
+  sair" mostra SEMPRE junto as dezenas que não saíram na janela e diz que cada sorteio é independente.
+  Testes: `estatisticas/grafico.test.ts`, `telas/visao-estatisticas.test.ts`, `telas/Estatisticas.test.ts`
+  (contagens conferidas contra leitura independente das fixtures). Capturas 360/1280 px, claro e escuro, das 3
+  loterias e da Quina janela 10 conferidas (2026-10-15).
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

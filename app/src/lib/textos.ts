@@ -6,6 +6,16 @@ import type {
   Normalizacao,
 } from '../dados/tipos';
 
+// "dezena 12, com 9 vezes" / "dezenas 05 e 12, com 9 vezes cada" / "7 dezenas empatadas, com 9 vezes cada".
+function resumoExtremo(dezenas: readonly string[], quantas: number, vezes: number): string {
+  const unidade = vezes === 1 ? 'vez' : 'vezes';
+  if (quantas <= 1) return `dezena ${dezenas[0] ?? ''}, com ${vezes} ${unidade}`;
+  if (dezenas.length === 0) return `${quantas} dezenas empatadas, com ${vezes} ${unidade} cada`;
+  const ultima = dezenas[dezenas.length - 1] ?? '';
+  const lista = dezenas.length === 1 ? ultima : `${dezenas.slice(0, -1).join(', ')} e ${ultima}`;
+  return `dezenas ${lista}, com ${vezes} ${unidade} cada`;
+}
+
 export const textos = {
   appNome: 'Força das Dezenas',
   navegacao: 'Navegação principal',
@@ -16,7 +26,6 @@ export const textos = {
     estatisticas: 'Estatísticas',
     entenda: 'Entenda',
   },
-  placeholder: 'Esta tela ainda está em construção.',
   sincronizacao: {
     titulo: 'Situação dos dados',
     sincronizando: (data: string | null) =>
@@ -151,6 +160,100 @@ export const textos = {
         ? `Dezenas sorteadas: ${dezenas}.`
         : `Dezenas sorteadas: ${dezenas}. Dezenas do filtro neste concurso: ${filtradas}.`,
   },
+  // Aba Estatísticas (7.2). Tudo descreve o passado; nada aqui diz o que vai sair.
+  estatisticas: {
+    titulo: 'Estatísticas',
+    subtitulo: (loteria: string, tamanho: number, todos: boolean) =>
+      todos
+        ? `${loteria} · todos os ${tamanho.toLocaleString('pt-BR')} concursos`
+        : tamanho === 1
+          ? `${loteria} · último concurso`
+          : `${loteria} · últimos ${tamanho.toLocaleString('pt-BR')} concursos`,
+    // Anunciado por leitor de tela quando a loteria ou a janela muda (região viva, curta).
+    anuncio: (loteria: string, tamanho: number, todos: boolean) =>
+      todos
+        ? `Mostrando ${loteria}, todos os ${tamanho.toLocaleString('pt-BR')} concursos.`
+        : `Mostrando ${loteria}, ${tamanho === 1 ? 'último concurso' : `últimos ${tamanho.toLocaleString('pt-BR')} concursos`}.`,
+    rotuloLoteria: 'Loteria',
+    rotuloJanela: 'Quantos concursos considerar',
+    janelas: { '10': '10', '50': '50', '100': '100', total: 'Todos' },
+    carregando: 'Carregando as estatísticas…',
+    tentarDeNovo: 'Tentar de novo',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    recusadoSemAnterior:
+      'O histórico desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+    semConcursos: 'Esta loteria ainda não tem concursos para calcular.',
+    frequencia: {
+      titulo: 'Quantas vezes cada dezena saiu',
+      graficoRotulo: (loteria: string, dezenas: number, tamanho: number, esperado: string) =>
+        `Gráfico de barras: quantas vezes cada uma das ${dezenas} dezenas da ${loteria} saiu em ${tamanho.toLocaleString('pt-BR')} ${tamanho === 1 ? 'concurso' : 'concursos'}. Esperado ao acaso: ${esperado} vezes por dezena. Os destaques estão na legenda e todos os valores, na tabela logo abaixo.`,
+      legendaEsperado: (esperado: string) =>
+        `Linha tracejada: ${esperado} vezes, o esperado ao acaso`,
+      legendaMaior: 'Maior número de vezes',
+      legendaMenor: 'Menor número de vezes',
+      eixoDezenas: 'Dezena',
+      eixoVezes: 'Vezes',
+      resumo: {
+        // `dezenas`: as dezenas do extremo, já com dois dígitos; `quantas`: quantas empatam.
+        maior: (dezenas: readonly string[], quantas: number, vezes: number) =>
+          `Mais vezes: ${resumoExtremo(dezenas, quantas, vezes)}.`,
+        menor: (dezenas: readonly string[], quantas: number, vezes: number) =>
+          `Menos vezes: ${resumoExtremo(dezenas, quantas, vezes)}.`,
+        iguais: (vezes: number) =>
+          `Todas as dezenas saíram ${vezes} ${vezes === 1 ? 'vez' : 'vezes'}.`,
+      },
+      explicacao:
+        'É normal que as barras fiquem acima ou abaixo da linha tracejada: num sorteio aleatório, umas dezenas saem mais e outras menos por acaso, e a diferença é maior quando há poucos concursos. Isso não mostra que alguma dezena tenha mais ou menos chance no próximo concurso.',
+      tabelaResumo: 'Ver como tabela',
+      tabelaLegenda: (loteria: string, esperado: string) =>
+        `Vezes que cada dezena da ${loteria} saiu. Esperado ao acaso: ${esperado} vezes por dezena.`,
+      tabelaRegiao: 'Tabela de frequência por dezena (rolável)',
+      colDezena: 'Dezena',
+      colVezes: 'Vezes',
+      colDiferenca: 'Diferença',
+    },
+    pares: {
+      titulo: 'Pares por sorteio',
+      media: 'Média na janela',
+      esperado: 'Esperado ao acaso',
+      nota: (k: number) => `Quantas das ${k} dezenas de cada sorteio são pares.`,
+    },
+    repetidas: {
+      titulo: 'Repetidas do anterior',
+      media: 'Média na janela',
+      esperado: 'Esperado ao acaso',
+      nota: (comparacoes: number) =>
+        `Dezenas que também saíram no concurso anterior, em ${comparacoes.toLocaleString('pt-BR')} ${comparacoes === 1 ? 'comparação' : 'comparações'}.`,
+      semDados: 'Precisa de pelo menos 2 concursos na janela.',
+    },
+    soma: {
+      titulo: 'Soma das dezenas',
+      media: 'Média',
+      esperado: 'Esperado ao acaso',
+      minimo: 'Menor soma',
+      maximo: 'Maior soma',
+      nota: 'Soma das dezenas de cada sorteio.',
+    },
+    atraso: {
+      titulo: 'Há mais tempo sem sair',
+      intro:
+        'Quantos concursos se passaram desde a última vez que cada dezena saiu. É uma contagem do passado.',
+      item: (dezena: string, concursos: number) =>
+        concursos === 0
+          ? `Dezena ${dezena}: saiu no último concurso`
+          : `Dezena ${dezena}: ${concursos.toLocaleString('pt-BR')} ${concursos === 1 ? 'concurso' : 'concursos'} sem sair`,
+      listaRotulo: 'Dezenas que estão há mais tempo sem sair',
+      semAparicao: (quantas: number, tamanho: number) =>
+        `${quantas === 1 ? 'Não saiu' : 'Não saíram'} ${tamanho === 1 ? 'no último concurso' : `nos últimos ${tamanho.toLocaleString('pt-BR')} concursos`}: ${quantas} ${quantas === 1 ? 'dezena' : 'dezenas'}`,
+      semAparicaoNenhuma: (tamanho: number) =>
+        `Todas as dezenas saíram pelo menos uma vez ${tamanho === 1 ? 'no último concurso' : `nos últimos ${tamanho.toLocaleString('pt-BR')} concursos`}.`,
+      semAparicaoAviso: (quantas: number) =>
+        quantas === 1
+          ? 'Esta dezena passou da janela inteira sem sair, então o atraso dela é maior que o da lista acima.'
+          : 'Estas dezenas passaram da janela inteira sem sair, então o atraso delas é maior que o da lista acima.',
+      nota: 'Cada sorteio é independente: ficar muito tempo sem sair não faz uma dezena ter mais chance de sair.',
+    },
+  },
   detalhe: {
     titulo: (dezena: number, posicao: number) => `Dezena ${dezena} · ${posicao}º lugar`,
     fechar: 'Fechar',
@@ -180,6 +283,8 @@ export const textos = {
       'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
     naoPreveHistorico:
       'O histórico mostra o que já foi sorteado. Ele não prevê o sorteio: cada concurso é independente dos anteriores.',
+    naoPreveEstatisticas:
+      'As estatísticas mostram o que já foi sorteado. Elas não preveem o sorteio: cada concurso é independente dos anteriores.',
     naoPreveConferir:
       'Conferir o passado não aumenta a chance de acertar. Cada sorteio é independente dos anteriores.',
     // Telas de jogo (Entenda e Conferir jogo).

@@ -49,12 +49,13 @@ describe('App: navegação por hash', () => {
     expect(document.querySelector('main h2')?.textContent).toBe('Resultados');
   });
 
-  it('abrir direto em #/estatisticas ativa a aba Estatísticas e mostra o placeholder', async () => {
+  it('abrir direto em #/estatisticas ativa a aba Estatísticas e mostra a tela (sem rede: sem dados)', async () => {
     montarApp('#/estatisticas');
-    await esperar();
+    await esperar(60);
     expect(abaAtiva()).toBe('Estatísticas');
     expect(document.querySelector('main h2')?.textContent).toBe('Estatísticas');
-    expect(document.querySelector('main')?.textContent).toContain('em construção');
+    expect(document.querySelector('main')?.textContent).toContain('Elas não preveem o sorteio');
+    expect(document.querySelector('main')?.textContent).not.toContain('em construção');
   });
 
   it('abrir direto em #/conferir ativa a aba Conferir e mostra Conferir jogo (sem rede: sem dados)', async () => {

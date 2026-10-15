@@ -1,6 +1,7 @@
 // Roteamento mínimo por hash: #/inicio, #/forca, #/conferir, #/estatisticas,
 // #/entenda. Funções puras (sem window), para testar sem navegador.
 import { SLUGS, type Slug } from '../dados/tipos';
+import { JANELAS_ESTATISTICA, type JanelaEstatistica } from '../estatisticas/estatisticas';
 import { idsAbas, type IdAba } from './textos';
 
 export const ROTA_PADRAO: IdAba = 'inicio';
@@ -105,4 +106,19 @@ export function hashDaSecaoConferir(secao: SecaoConferir, slug: Slug): string {
   if (secao === 'historico') return hashDoHistorico(slug);
   if (secao === 'jogos') return hashDosJogos(slug);
   return hashDoJogo(slug);
+}
+
+/** Janela padrão das Estatísticas: últimos 50 concursos. */
+export const JANELA_ESTATISTICA_PADRAO: JanelaEstatistica = 50;
+
+/** Parâmetro `janela` ("10", "50", "100" ou "total"); ausente ou inválido = `null`. */
+export function janelaDoHash(hash: string): JanelaEstatistica | null {
+  const m = /[?&]janela=([^&#]*)/.exec(hash);
+  const valor = m?.[1] ?? null;
+  return JANELAS_ESTATISTICA.find((j) => String(j) === valor) ?? null;
+}
+
+/** Hash das Estatísticas: "#/estatisticas?loteria=quina&janela=50". */
+export function hashDasEstatisticas(slug: Slug, janela: JanelaEstatistica): string {
+  return `${hashDaRota('estatisticas')}?loteria=${slug}&janela=${janela}`;
 }
