@@ -74,8 +74,8 @@ export function hashDaForca(slug: Slug, opcoes: OpcoesHashForca = {}): string {
   return hash;
 }
 
-/** Seções da aba Conferir: conferir um jogo (padrão) e o histórico de concursos. */
-export const SECOES_CONFERIR = ['jogo', 'historico'] as const;
+/** Seções da aba Conferir: conferir um jogo (padrão), o histórico de concursos e os jogos salvos. */
+export const SECOES_CONFERIR = ['jogo', 'historico', 'jogos'] as const;
 export type SecaoConferir = (typeof SECOES_CONFERIR)[number];
 export const SECAO_CONFERIR_PADRAO: SecaoConferir = 'jogo';
 
@@ -96,6 +96,13 @@ export function hashDoHistorico(slug: Slug): string {
   return `${hashDoJogo(slug)}&secao=historico`;
 }
 
+/** Hash da aba Conferir na seção Meus jogos: "#/conferir?loteria=quina&secao=jogos". */
+export function hashDosJogos(slug: Slug): string {
+  return `${hashDoJogo(slug)}&secao=jogos`;
+}
+
 export function hashDaSecaoConferir(secao: SecaoConferir, slug: Slug): string {
-  return secao === 'historico' ? hashDoHistorico(slug) : hashDoJogo(slug);
+  if (secao === 'historico') return hashDoHistorico(slug);
+  if (secao === 'jogos') return hashDosJogos(slug);
+  return hashDoJogo(slug);
 }

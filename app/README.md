@@ -100,8 +100,33 @@ npm run preview    # serve dist/ localmente
   calcula a lista (até 20 concursos, "e mais N") ao expandir. Faixas impossíveis (`minimoAcertos`) não aparecem.
   Testada com valores à mão e contra um cálculo ingênuo sobre as 3 fixtures reais. Contador em região viva
   (`role=status`); bolas são botões com `aria-pressed`; melhor faixa marcada com texto, não só cor. O
-  botão "Salvar jogo" foi omitido: a persistência é da 6.3. Estado comum das telas de dados (Força,
+  botão "Salvar jogo" veio na 6.3 (abaixo). Estado comum das telas de dados (Força,
   Histórico, Conferir) em `telas/estado-tela.ts` (`SituacaoTela`, `EstadoTela`, `estadoEData`).
+- Jogos salvos (6.3), `src/jogos/` + seção "Meus jogos" da aba Conferir (`#/conferir?loteria=quina&secao=jogos`,
+  `hashDosJogos`). Modelo (`jogo.ts`, puro): `{ id, loteria, nome|null (até 40 caracteres), dezenas ordenadas e
+válidas por `QUANTIDADE_JOGO`, criadoEm }`; `validarJogoSalvo` é a única porta de entrada (salvar, importar e
+  leitura do banco; registro ruim no banco é pulado, nunca apagado). Persistência em IndexedDB num banco PRÓPRIO
+  (`forca-loterias-jogos`, loja `jogos`, índice por loteria), separado do cache do contrato
+  (`forca-loterias`): atualizar ou limpar o cache de dados não toca nos jogos (teste em `testes/jogos.test.ts`).
+  `RepositorioResiliente` segue o padrão do armazenamento de dados (cai para memória com `aviso`, e a tela avisa
+  que o jogo vale só até fechar o app). `servico.ts`: `salvarJogo` (não duplica: mesma loteria + dezenas),
+  `exportarJogos`, `importarJogos`, `pedirArmazenamentoPersistente` (`navigator.storage.persist()`, best-effort,
+  chamado ao salvar o primeiro jogo; nunca bloqueia). Backup = arquivo JSON do app
+  `{ formato: "forca-loterias-jogos", versao: 1, exportadoEm, jogos: [...] }` (não é o contrato de dados);
+  campos desconhecidos são ignorados, versão maior ou envelope errado é recusado sem alterar nada, e importar
+  valida item a item e relata entraram / ignorados (já salvos) / inválidos; id repetido com outro conteúdo ganha
+  id novo. Exportar baixa por Blob + `a[download]` (`lib/download.ts`); importar usa `input[type=file]` acionado
+  por botão. Tela: `SalvarJogo.svelte` (nome opcional + "Salvar jogo", só habilitado com quantidade válida),
+  `MeusJogos.svelte` (lista por loteria, Conferir carrega o jogo no volante, renomear inline, apagar com
+  `FolhaModal` e "Desfazer", melhor resultado histórico só se o histórico estiver em cache, mensagens em
+  região viva). Decisão: o backup é o arquivo exportado; sem nuvem; limpar os dados do navegador apaga os jogos
+  (dito na tela). A conferência automática (6.4) não faz parte desta tarefa.
+  Falhas: `RepositorioResiliente` só cai para memória se o IndexedDB não existe ou NÃO ABRE (`ErroAbertura`, com
+  aviso). Se abre e uma operação falha depois, ela é repetida uma vez com a conexão refeita; persistindo, o erro
+  chega à tela (leitura: aviso "não foi possível ler" + "Tentar ler de novo", sem lista vazia e com Exportar
+  bloqueado; gravação: mensagem de falha). Importação: máximo de 1.000 jogos por arquivo (acima, o arquivo é
+  recusado inteiro) e ids já guardados (`listarIds`, inclusive registros inválidos) nunca são sobrescritos;
+  `criadoEm` é normalizado para UTC.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

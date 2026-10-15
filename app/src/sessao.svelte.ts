@@ -3,6 +3,7 @@
 import { abrirComCache, type SituacaoDados } from './dados/abertura';
 import { ArmazenamentoResiliente } from './dados/armazenamento-idb';
 import { criarCliente, type OpcoesSincronizacao } from './dados/cliente';
+import { RepositorioResiliente } from './jogos/repositorio-idb';
 import {
   OPCOES_DA_ABERTURA,
   economiaDeDados,
@@ -14,6 +15,8 @@ import {
 export function criarSessao() {
   const armazenamento = new ArmazenamentoResiliente();
   const cliente = criarCliente({ armazenamento });
+  // Jogos salvos: banco próprio, fora do cache de dados (atualizar o cache não os toca).
+  const jogos = new RepositorioResiliente();
   let situacao = $state<SituacaoDados | null>(null);
   let aviso = $state<string | null>(armazenamento.aviso);
   let ocupada = $state(false);
@@ -55,6 +58,7 @@ export function criarSessao() {
   }
 
   return {
+    jogos,
     iniciar: (): void => void atualizar(),
     atualizar,
     /**

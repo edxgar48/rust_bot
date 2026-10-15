@@ -90,14 +90,16 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 5.4 "Entenda" e avisos (tela com dados reais do cache sem exigir rede, avisos centralizados, teste que varre textos.ts atrás de linguagem de previsão; 375 testes; capturas 360/1280 px, 2026-10-14; falta a leitura dos textos pelo usuário, critério de pronto da 5.4)
 - [x] 6.1 Histórico (lista virtual própria, busca por número e por data, filtro por várias dezenas; 454 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; rolagem a 4x na Lotofácil: ~0–1 quadro >33 ms por execução e máx. 33,5 ms depois da correção; validação do histórico uma vez ao abrir a tela; medido só em 360 px, 2026-10-15; pendente na 6.2: aviso de jogo responsável na aba Conferir; módulo de estado comum Força/Histórico fica para a 6.2)
 - [x] 6.2 Conferir jogo (volante com quantidades válidas por loteria, conferência pura testada com valores à mão e contra cálculo independente nas 3 fixtures reais, acertos por faixa e por concurso, aviso de jogo responsável; Conferir virou duas seções pelo hash, Histórico em `&secao=historico`; "Salvar jogo" fica para a 6.3; 507 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; capturas 360 px claro/escuro, 1280 px só da versão anterior, 2026-10-15)
-- [ ] 6.3 Jogos salvos · 6.4 Conferência automática
+- [x] 6.3 Jogos salvos (banco IndexedDB próprio, separado do cache de dados; salvar, renomear, apagar com desfazer, exportar/importar arquivo JSON versionado com teto de 1.000 itens; melhor resultado do jogo quando o histórico está em cache; falha do IndexedDB não vira lista vazia; 658 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; capturas 360/1280 px da primeira versão, correções só em testes; `storage.persist()` não concedido no Chrome headless, testar em aparelho real na 8.1; 2026-10-15)
+- [ ] 6.4 Conferência automática
 - [ ] 7.1 Funções de estatística · 7.2 Telas e gráficos · 7.3 Comparação com o acaso
 - [ ] 8.1 Instalação PWA · 8.2 Testes ponta a ponta · 8.3 Lighthouse · 8.4 Hospedagem e deploy · 8.5 Runbook · 8.6 Verificação de contrato no build
 
 ## Decisões em aberto
 
 - [x] Front-end: valor enumerado novo no contrato (grau/direção/normalização) recusa o arquivo e o app mantém o cache; decidido pelo usuário em 2026-10-14 ("deixar como está")
-- [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1), estilo visual (4.5), backup de jogos salvos (6.3)
+- [x] Front-end: backup dos jogos salvos = arquivo exportado, sem nuvem; decidido pelo usuário em 2026-10-15
+- [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1)
 - [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
 - [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)

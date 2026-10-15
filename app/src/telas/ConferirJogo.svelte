@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Aviso from '../componentes/Aviso.svelte';
   import Cartao from '../componentes/Cartao.svelte';
   import Icone from '../componentes/Icone.svelte';
@@ -9,6 +9,7 @@
   import type { OpcoesSincronizacao, ResultadoCache } from '../dados/cliente';
   import type { ResultadoGarantia } from '../dados/sob-demanda';
   import { SLUGS, type Slug } from '../dados/tipos';
+  import type { RepositorioJogos } from '../jogos/repositorio';
   import { gravarLoteriaGuardada, lerLoteriaGuardada } from '../lib/loteria-guardada';
   import {
     LOTERIA_PADRAO,
@@ -28,7 +29,9 @@
     montarVisaoConferir,
   } from './conferir';
   import type { EstadoTela, SituacaoTela } from './estado-tela';
+  import type { JogoInicial } from './jogo-inicial';
   import FaixaAcertos from './FaixaAcertos.svelte';
+  import SalvarJogo from './SalvarJogo.svelte';
 
   interface Props {
     /** O que a tela precisa da sessão de dados (injetável nos testes). */
@@ -36,9 +39,17 @@
       lerCache: (opcoes: OpcoesSincronizacao) => Promise<ResultadoCache | null>;
       garantir: (opcoes: OpcoesSincronizacao) => Promise<ResultadoGarantia>;
     };
+    /** Onde os jogos salvos ficam (separado do cache de dados). */
+    jogos: RepositorioJogos;
+    /** Jogo salvo a carregar no volante ao abrir (vindo de Meus jogos). */
+    jogoInicial?: JogoInicial | null;
+    /** Chamado quando o jogo inicial já foi carregado (a tela pai o esquece). */
+    aoUsarJogoInicial?: () => void;
+    /** Leva para a lista Meus jogos. */
+    aoVerJogos?: () => void;
   }
 
-  let { fonte }: Props = $props();
+  let { fonte, jogos, jogoInicial = null, aoUsarJogoInicial, aoVerJogos }: Props = $props();
 
   /** Quantos concursos do melhor resultado a lista mostra. */
   const LIMITE_LISTA = 10;
@@ -46,13 +57,18 @@
   const LIMITE_FAIXA = 20;
 
   // Precedência: URL (#/conferir?loteria=quina), depois a última escolha guardada, depois Lotofácil.
+  // Um jogo vindo de Meus jogos manda na loteria e nas dezenas iniciais.
+  const inicial = untrack(() => jogoInicial);
   let loteria = $state<Slug>(
-    loteriaDoHash(location.hash) ?? lerLoteriaGuardada() ?? LOTERIA_PADRAO,
+    inicial?.loteria ?? loteriaDoHash(location.hash) ?? lerLoteriaGuardada() ?? LOTERIA_PADRAO,
+  );
+  let avisoCarregado = $state<string | null>(
+    inicial ? textos.conferir.salvar.carregado(inicial.nome) : null,
   );
   // raw: o histórico tem milhares de listas; um proxy reativo em cada uma só custaria tempo.
   let situacao = $state.raw<SituacaoTela | null>(null);
   let sequencia = 0;
-  let jogo = $state<number[]>([]);
+  let jogo = $state<number[]>(inicial ? [...inicial.dezenas] : []);
 
   const opcoesLoteria: readonly OpcaoSegmentada<Slug>[] = SLUGS.map((slug) => ({
     valor: slug,
@@ -119,6 +135,7 @@
     if (slug === loteria) return;
     loteria = slug;
     jogo = [];
+    avisoCarregado = null;
     gravarLoteriaGuardada(slug);
     // replaceState: não polui o histórico nem dispara hashchange.
     history.replaceState(history.state, '', hashDoJogo(slug));
@@ -126,6 +143,7 @@
   }
 
   function alternar(dezena: number): void {
+    avisoCarregado = null;
     jogo = alternarDezenaDoJogo(loteria, jogo, dezena);
   }
 
@@ -138,11 +156,13 @@
     if (daUrl !== null && daUrl !== loteria) {
       loteria = daUrl;
       jogo = [];
+      avisoCarregado = null;
       void carregar(daUrl);
     }
   }
 
   onMount(() => {
+    if (inicial) aoUsarJogoInicial?.();
     void carregar(loteria);
     return () => {
       sequencia++;
@@ -218,11 +238,24 @@
           type="button"
           class="botao"
           disabled={jogo.length === 0}
-          onclick={() => (jogo = [])}
+          onclick={() => {
+            jogo = [];
+            avisoCarregado = null;
+          }}
         >
           {textos.conferir.limpar}
         </button>
       </div>
+      {#if avisoCarregado !== null}
+        <p class="mensagem carregado" role="status">{avisoCarregado}</p>
+      {/if}
+      <SalvarJogo
+        {loteria}
+        dezenas={jogo}
+        valido={quantidade.tipo === 'valida'}
+        {jogos}
+        aoVerJogos={() => aoVerJogos?.()}
+      />
     </Cartao>
 
     {#if resultado}
@@ -341,6 +374,9 @@
   .mensagem {
     color: var(--cor-texto-var);
     font: var(--fonte-corpo-m);
+  }
+  .carregado {
+    margin-top: var(--esp-2);
   }
   .mensagem[data-tipo='faltam'],
   .mensagem[data-tipo='excede'] {

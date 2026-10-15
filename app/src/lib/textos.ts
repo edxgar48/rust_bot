@@ -190,6 +190,7 @@ export const textos = {
     rotuloSecao: 'Seção',
     secaoJogo: 'Conferir jogo',
     secaoHistorico: 'Histórico',
+    secaoJogos: 'Meus jogos',
     titulo: 'Conferir jogo',
     subtitulo: (loteria: string, minimo: number, maximo: number) =>
       `${loteria} · escolha de ${minimo} a ${maximo} dezenas`,
@@ -211,6 +212,25 @@ export const textos = {
         `Marque mais ${faltam} ${faltam === 1 ? 'dezena' : 'dezenas'} para conferir: o jogo precisa de pelo menos ${minimo}.`,
       excede: (sobram: number, maximo: number) =>
         `Desmarque ${sobram} ${sobram === 1 ? 'dezena' : 'dezenas'}: o jogo aceita no máximo ${maximo}.`,
+    },
+    // Salvar o jogo marcado no volante (6.3).
+    salvar: {
+      rotuloNome: 'Nome do jogo (opcional)',
+      ajudaNome: (maximo: number) => `Até ${maximo} caracteres.`,
+      botao: 'Salvar jogo',
+      salvando: 'Salvando…',
+      salvo: 'Jogo salvo em Meus jogos, neste aparelho.',
+      verMeusJogos: 'Ver Meus jogos',
+      duplicado: (nome: string | null) =>
+        nome === null
+          ? 'Este jogo já está salvo, sem nome.'
+          : `Este jogo já está salvo, com o nome "${nome}".`,
+      invalido: 'Este jogo não pode ser salvo: confira a quantidade de dezenas e o nome.',
+      falhou: 'Não foi possível salvar o jogo.',
+      volatil:
+        'Este navegador não está guardando jogos no aparelho: o jogo vale só até fechar o app. Use Exportar em Meus jogos para guardar uma cópia.',
+      carregado: (nome: string | null) =>
+        nome === null ? 'Jogo salvo carregado no volante.' : `Jogo "${nome}" carregado no volante.`,
     },
     resultado: {
       titulo: (total: number) =>
@@ -238,6 +258,75 @@ export const textos = {
       concursos: (concursos: number) =>
         `${concursos.toLocaleString('pt-BR')} ${concursos === 1 ? 'concurso' : 'concursos'}`,
       nota: 'Mostra o que este jogo teria feito nos concursos já sorteados. É uma consulta ao passado.',
+    },
+  },
+  // Jogos salvos no aparelho (aba Conferir, 6.3).
+  jogos: {
+    titulo: 'Meus jogos',
+    rotuloLoteria: 'Loteria',
+    rotuloBackup: 'Backup dos jogos',
+    localAviso:
+      'Os jogos ficam só neste aparelho e neste navegador: não há conta nem nuvem. Limpar os dados do navegador apaga os jogos. O backup é o arquivo gerado por Exportar; guarde-o onde quiser e use Importar para recuperar os jogos.',
+    volatil:
+      'Não foi possível abrir o armazenamento deste navegador (ele pode estar indisponível, bloqueado ou em modo privado). Os jogos de agora valem só até fechar o app e os jogos já salvos antes podem não aparecer aqui. Use Exportar para guardar uma cópia.',
+    carregando: 'Carregando seus jogos…',
+    falhaListar:
+      'Não foi possível ler os jogos salvos agora. A lista não é exibida e Exportar fica indisponível até a leitura funcionar. Tente de novo.',
+    tentarDeNovo: 'Tentar ler de novo',
+    apagarFalhou: 'Não foi possível apagar o jogo. Ele continua salvo.',
+    desfazerFalhou: 'Não foi possível restaurar o jogo apagado.',
+    vazio: (loteria: string) => `Nenhum jogo salvo na ${loteria}.`,
+    vazioOrienta: 'Marque as dezenas em Conferir jogo e toque em Salvar jogo.',
+    irParaConferir: 'Ir para Conferir jogo',
+    lista: (loteria: string, quantidade: number) =>
+      `Jogos salvos da ${loteria}: ${quantidade} ${quantidade === 1 ? 'jogo' : 'jogos'}`,
+    semNome: 'Jogo sem nome',
+    resumo: (loteria: string, quantidade: number) =>
+      `${loteria} · ${quantidade} ${quantidade === 1 ? 'dezena' : 'dezenas'}`,
+    dezenasRotulo: 'Dezenas do jogo',
+    salvoEm: (data: string) => `Salvo em ${data}`,
+    melhor: (acertos: number, concurso: number) =>
+      `Melhor resultado no histórico: ${acertos} ${acertos === 1 ? 'acerto' : 'acertos'} (concurso ${concurso})`,
+    conferir: 'Conferir',
+    renomear: 'Renomear',
+    apagar: 'Apagar',
+    // Nome acessível dos botões de cada jogo (o texto visível é curto).
+    acaoDe: (acao: string, descricao: string) => `${acao}: ${descricao}`,
+    campoNome: 'Nome do jogo',
+    salvarNome: 'Salvar nome',
+    cancelar: 'Cancelar',
+    nomeAtualizado: 'Nome atualizado.',
+    nomeInvalido: (maximo: number) => `O nome aceita até ${maximo} caracteres.`,
+    renomearFalhou: 'Não foi possível trocar o nome: o jogo não está mais salvo.',
+    confirmaTitulo: 'Apagar este jogo?',
+    confirmaTexto: (descricao: string) =>
+      `${descricao} será apagado deste aparelho. Se você não tem um arquivo exportado, não há outra cópia. Logo depois de apagar ainda dá para desfazer.`,
+    confirmaApagar: 'Apagar jogo',
+    apagado: 'Jogo apagado.',
+    desfazer: 'Desfazer',
+    desfeito: 'Jogo restaurado.',
+    exportar: 'Exportar jogos',
+    exportado: (quantidade: number, arquivo: string) =>
+      `${quantidade} ${quantidade === 1 ? 'jogo exportado' : 'jogos exportados'} no arquivo ${arquivo}.`,
+    nadaParaExportar: 'Ainda não há jogos para exportar.',
+    exportarFalhou: 'Não foi possível baixar o arquivo.',
+    importar: 'Importar jogos',
+    importando: 'Importando…',
+    resultadoImportacao: (entraram: number, ignorados: number, invalidos: number) => {
+      const partes = [`${entraram} ${entraram === 1 ? 'jogo importado' : 'jogos importados'}`];
+      partes.push(
+        `${ignorados} ${ignorados === 1 ? 'ignorado, pois já estava salvo' : 'ignorados, pois já estavam salvos'}`,
+      );
+      partes.push(`${invalidos} ${invalidos === 1 ? 'inválido' : 'inválidos'}`);
+      return `${partes.join('; ')}.`;
+    },
+    recusa: {
+      grande: 'Arquivo grande demais para ser um backup de jogos. Nada foi importado.',
+      malformado: 'O arquivo não é um JSON válido. Nada foi importado.',
+      formato: 'O arquivo não é um backup de jogos deste app. Nada foi importado.',
+      versao:
+        'O arquivo é de uma versão mais nova do app e não pode ser lido aqui. Nada foi importado.',
+      leitura: 'Não foi possível ler o arquivo. Nada foi importado.',
     },
   },
   entenda: {

@@ -11,6 +11,7 @@ import {
   hashDaSecaoConferir,
   hashDoHistorico,
   hashDoJogo,
+  hashDosJogos,
   loteriaDoHash,
   rotaDoHash,
   secaoConferirDoHash,
@@ -150,6 +151,14 @@ describe('forma de exibição e dezena na URL da Força', () => {
     expect(secaoConferirDoHash(hashDoHistorico('quina'))).toBe('historico');
     expect(hashDaSecaoConferir('historico', 'quina')).toBe(hashDoHistorico('quina'));
     expect(hashDaSecaoConferir('jogo', 'quina')).toBe(hashDoJogo('quina'));
+  });
+
+  it('Meus jogos: #/conferir?loteria=quina&secao=jogos', () => {
+    expect(hashDosJogos('quina')).toBe('#/conferir?loteria=quina&secao=jogos');
+    expect(rotaDoHash(hashDosJogos('megasena'))).toBe('conferir');
+    expect(loteriaDoHash(hashDosJogos('megasena'))).toBe('megasena');
+    expect(secaoConferirDoHash(hashDosJogos('quina'))).toBe('jogos');
+    expect(hashDaSecaoConferir('jogos', 'lotofacil')).toBe(hashDosJogos('lotofacil'));
   });
 
   it('secaoConferirDoHash: ausente ou inválida cai em Conferir jogo', () => {

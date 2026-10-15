@@ -6,6 +6,7 @@ import { ServidorFalso, URL_BASE_TESTE, lerFixtureTexto } from '../../testes/ser
 import { ArmazenamentoEmMemoria } from '../dados/armazenamento';
 import { criarCliente, type OpcoesSincronizacao } from '../dados/cliente';
 import { garantirArquivos, type ResultadoGarantia } from '../dados/sob-demanda';
+import { RepositorioEmMemoria } from '../jogos/repositorio';
 import type { Slug } from '../dados/tipos';
 import { CHAVE_LOTERIA_GUARDADA } from '../lib/loteria-guardada';
 import { textos } from '../lib/textos';
@@ -39,12 +40,12 @@ function criarFonte(
 }
 
 let montado: Record<string, unknown> | null = null;
-function montar(fonte: Fonte): HTMLElement {
+function montar(fonte: Fonte, jogos = new RepositorioEmMemoria(), extras = {}): HTMLElement {
   const alvo = document.createElement('div');
   document.body.appendChild(alvo);
   montado = mount(ConferirJogo as unknown as Component<Record<string, unknown>>, {
     target: alvo,
-    props: { fonte },
+    props: { fonte, jogos, ...extras },
   });
   flushSync();
   return alvo;
@@ -74,6 +75,7 @@ function cru(slug: Slug) {
 }
 
 const texto = (e: Element | null | undefined) => (e?.textContent ?? '').replace(/\s+/g, ' ').trim();
+const seq = (n: number): number[] => Array.from({ length: n }, (_, i) => i + 1);
 const pausa = (ms = 20) => new Promise((ok) => setTimeout(ok, ms));
 const bolas = (alvo: HTMLElement) =>
   Array.from(alvo.querySelectorAll<HTMLButtonElement>('button[aria-pressed]'));
@@ -101,9 +103,13 @@ async function marcar(alvo: HTMLElement, dezenas: number[]): Promise<void> {
   await pausa();
 }
 
-async function montarEm(slug: Slug): Promise<HTMLElement> {
+async function montarEm(
+  slug: Slug,
+  jogos = new RepositorioEmMemoria(),
+  extras = {},
+): Promise<HTMLElement> {
   location.hash = `#/conferir?loteria=${slug}`;
-  const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
+  const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()), jogos, extras);
   await esperarVolante(alvo);
   return alvo;
 }
@@ -187,9 +193,13 @@ describe('Conferir jogo: volante e quantidade', () => {
     expect(resultado(alvo)).toBeNull();
   });
 
-  it('não há botão "Salvar jogo" (persistência é da 6.3)', async () => {
+  it('"Salvar jogo" só fica habilitado com a quantidade válida (a persistência tem testes próprios)', async () => {
     const alvo = await montarEm('quina');
-    expect(botao(alvo, 'Salvar')).toBeUndefined();
+    expect(botao(alvo, 'Salvar jogo')!.disabled).toBe(true);
+    await marcar(alvo, [1, 2, 3, 4]);
+    expect(botao(alvo, 'Salvar jogo')!.disabled).toBe(true);
+    await marcar(alvo, [5]);
+    expect(botao(alvo, 'Salvar jogo')!.disabled).toBe(false);
   });
 });
 
@@ -444,5 +454,161 @@ describe('Conferir jogo: sem dados, cache e recusa', () => {
       ),
     );
     expect(bolas(alvo)).toHaveLength(0);
+  });
+});
+
+describe('Conferir jogo: salvar jogo (6.3)', () => {
+  const salvar = (alvo: HTMLElement) => botao(alvo, 'Salvar jogo')!;
+  const mensagem = (alvo: HTMLElement) => texto(alvo.querySelector('form.salvar .mensagem'));
+  const campoNome = (alvo: HTMLElement) =>
+    alvo.querySelector<HTMLInputElement>('form.salvar input[type="text"]')!;
+  const enviar = async (alvo: HTMLElement) => {
+    alvo.querySelector('form.salvar')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await pausa();
+  };
+  const digitar = (campo: HTMLInputElement, valor: string) => {
+    campo.value = valor;
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+  };
+
+  it('campo de nome opcional rotulado, com limite e ajuda; botão desabilitado até a quantidade válida', async () => {
+    const alvo = await montarEm('lotofacil');
+    const campo = campoNome(alvo);
+    expect(alvo.querySelector(`label[for="${campo.id}"]`)?.textContent).toBe(
+      'Nome do jogo (opcional)',
+    );
+    expect(campo.maxLength).toBe(40);
+    expect(texto(document.getElementById(campo.getAttribute('aria-describedby')!))).toBe(
+      'Até 40 caracteres.',
+    );
+    expect(salvar(alvo).disabled).toBe(true);
+    await marcar(alvo, seq(14));
+    expect(salvar(alvo).disabled).toBe(true);
+    await marcar(alvo, [15]);
+    expect(salvar(alvo).disabled).toBe(false);
+    await marcar(alvo, [16, 17, 18, 19, 20]);
+    expect(salvar(alvo).disabled).toBe(false); // 20 ainda vale
+  });
+
+  it('salva no repositório com as dezenas em ordem, o nome limpo e a loteria; anuncia e oferece ver a lista', async () => {
+    const repo = new RepositorioEmMemoria();
+    const aoVerJogos = vi.fn();
+    const alvo = await montarEm('quina', repo, { aoVerJogos });
+    await marcar(alvo, [71, 5, 33, 12, 47]);
+    digitar(campoNome(alvo), '  Meu   jogo ');
+    await enviar(alvo);
+    const [salvo] = await repo.listar();
+    expect(salvo).toMatchObject({
+      loteria: 'quina',
+      nome: 'Meu jogo',
+      dezenas: [5, 12, 33, 47, 71],
+    });
+    expect(mensagem(alvo)).toBe(textos.conferir.salvar.salvo);
+    expect(alvo.querySelector('form.salvar .mensagem')?.getAttribute('role')).toBe('status');
+    expect(campoNome(alvo).value).toBe('');
+    botao(alvo, 'Ver Meus jogos')!.click();
+    expect(aoVerJogos).toHaveBeenCalled();
+  });
+
+  it('o resultado histórico continua igual depois de salvar (salvar não muda a conferência)', async () => {
+    const alvo = await montarEm('quina');
+    await marcar(alvo, [5, 12, 33, 47, 71]);
+    const antes = texto(resultado(alvo));
+    await enviar(alvo);
+    expect(texto(resultado(alvo))).toBe(antes);
+  });
+
+  it('salvar o mesmo jogo de novo não duplica e diz que já está salvo', async () => {
+    const repo = new RepositorioEmMemoria();
+    const alvo = await montarEm('quina', repo);
+    await marcar(alvo, [1, 2, 3, 4, 5]);
+    digitar(campoNome(alvo), 'Primeiro');
+    await enviar(alvo);
+    digitar(campoNome(alvo), 'Outro nome');
+    await enviar(alvo);
+    expect(await repo.listar()).toHaveLength(1);
+    expect(mensagem(alvo)).toBe('Este jogo já está salvo, com o nome "Primeiro".');
+    expect(botao(alvo, 'Ver Meus jogos')).toBeUndefined();
+  });
+
+  it('a mensagem some quando o jogo muda no volante', async () => {
+    const alvo = await montarEm('quina');
+    await marcar(alvo, [1, 2, 3, 4, 5]);
+    await enviar(alvo);
+    expect(mensagem(alvo)).not.toBe('');
+    await marcar(alvo, [6]);
+    expect(mensagem(alvo)).toBe('');
+  });
+
+  it('com o nome grande demais (campo contornado) não grava e avisa', async () => {
+    const repo = new RepositorioEmMemoria();
+    const alvo = await montarEm('quina', repo);
+    await marcar(alvo, [1, 2, 3, 4, 5]);
+    digitar(campoNome(alvo), 'x'.repeat(41));
+    await enviar(alvo);
+    expect(await repo.listar()).toEqual([]);
+    expect(mensagem(alvo)).toBe(textos.conferir.salvar.invalido);
+  });
+
+  it('se o repositório falhar, mostra erro e o app segue funcionando', async () => {
+    const repo = new RepositorioEmMemoria();
+    vi.spyOn(repo, 'listar').mockRejectedValue(new Error('disco cheio'));
+    const alvo = await montarEm('quina', repo);
+    await marcar(alvo, [1, 2, 3, 4, 5]);
+    await enviar(alvo);
+    expect(mensagem(alvo)).toBe(textos.conferir.salvar.falhou);
+    expect(salvar(alvo).disabled).toBe(false);
+    expect(resultado(alvo)).not.toBeNull();
+  });
+
+  it('armazenamento volátil: avisa que o jogo vale só até fechar o app', async () => {
+    const repo = new RepositorioEmMemoria();
+    Object.defineProperty(repo, 'aviso', { value: 'sem IndexedDB' });
+    const alvo = await montarEm('quina', repo);
+    await marcar(alvo, [1, 2, 3, 4, 5]);
+    await enviar(alvo);
+    expect(mensagem(alvo)).toBe(textos.conferir.salvar.volatil);
+  });
+
+  it('o primeiro jogo salvo pede armazenamento persistente (best-effort); o segundo não', async () => {
+    const persist = vi.fn(async () => true);
+    Object.defineProperty(navigator, 'storage', {
+      value: { persist, persisted: async () => false },
+      configurable: true,
+    });
+    try {
+      const alvo = await montarEm('quina');
+      await marcar(alvo, [1, 2, 3, 4, 5]);
+      await enviar(alvo);
+      expect(persist).toHaveBeenCalledTimes(1);
+      await marcar(alvo, [6]);
+      await enviar(alvo);
+      expect(persist).toHaveBeenCalledTimes(1);
+    } finally {
+      Reflect.deleteProperty(navigator, 'storage');
+    }
+  });
+
+  it('jogo inicial (vindo de Meus jogos): carrega loteria e dezenas, avisa e é consumido uma vez', async () => {
+    const aoUsar = vi.fn();
+    location.hash = '#/conferir?loteria=quina';
+    const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()), undefined, {
+      jogoInicial: { loteria: 'quina', dezenas: [5, 12, 33, 47, 71], nome: 'Aniversário' },
+      aoUsarJogoInicial: aoUsar,
+    });
+    await esperarVolante(alvo);
+    expect(bolas(alvo)).toHaveLength(80); // Quina
+    expect(bolas(alvo).filter((b) => b.getAttribute('aria-pressed') === 'true')).toHaveLength(5);
+    expect(bola(alvo, 33).getAttribute('aria-pressed')).toBe('true');
+    expect(contador(alvo)).toContain('5 dezenas marcadas');
+    expect(texto(alvo.querySelector('.carregado'))).toBe(
+      'Jogo "Aniversário" carregado no volante.',
+    );
+    expect(aoUsar).toHaveBeenCalledTimes(1);
+    expect(resultado(alvo)).not.toBeNull();
+    // Mexer no volante tira o aviso de "carregado".
+    await marcar(alvo, [6]);
+    expect(alvo.querySelector('.carregado')).toBeNull();
   });
 });

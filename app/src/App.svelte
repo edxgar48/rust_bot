@@ -92,7 +92,7 @@
       {:else if abaAtual === 'forca'}
         <Forca fonte={sessao} />
       {:else if abaAtual === 'conferir'}
-        <Conferir fonte={sessao} />
+        <Conferir fonte={sessao} jogos={sessao.jogos} />
       {:else if abaAtual === 'entenda'}
         <Entenda
           fonte={sessao}

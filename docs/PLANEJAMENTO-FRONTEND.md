@@ -144,7 +144,7 @@ Vitest, build) entra na skill `verificar` quando `app/` existir.
 - Hospedagem e URL final do app (Fase 8.4).
 - Biblioteca de gráficos ou SVG próprio (7.1).
 - Estilo visual e identidade (4.5).
-- Se jogos salvos precisam de backup além do arquivo exportado (6.3).
+- ~~Backup dos jogos salvos~~ — decidido em 2026-10-15: o backup é o arquivo exportado (sem nuvem); o app avisa que os jogos ficam só no aparelho (6.3).
 
 ## Backlog do front-end
 
