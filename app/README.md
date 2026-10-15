@@ -151,6 +151,16 @@ válidas por `QUANTIDADE_JOGO`, criadoEm }`; `validarJogoSalvo` é a única port
   (servidor falso + concurso 7142 sintético via `ServidorFalso.publicarConcursoQuina`, IndexedDB falso,
   recarregar, offline, ultimo.json adulterado) e de componente (`Inicio.novidade.test.ts`,
   `MeusJogos.novidade.test.ts`). Capturas 360/1280 px, claro e escuro, conferidas (2026-10-15).
+- Estatísticas, funções puras (7.1), `src/estatisticas/estatisticas.ts`: `calcularEstatisticas(slug,
+concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concursos usa todos e informa
+  `tamanho`), numa só passada: frequência por dezena (+ esperado N·k/total), atraso atual (`null` = não saiu
+  na janela, listado em `semAparicao`; `rankingAtraso` só tem atraso conhecido), pares/ímpares (distribuição,
+  média, esperado), soma (média, mín., máx., esperado) e repetidas do anterior (só concursos com o anterior
+  na janela: `comparacoes = tamanho - 1`). Descrevem o passado, não preveem o sorteio. Verificação:
+  `testes/fixtures/estatisticas-esperado.json` é gerado por SQL direto nos bancos `resultados_*.db` com
+  `py -3.12 app/testes/gerar-esperado-estatisticas.py` (a partir da raiz; confere antes que o
+  `historico.json` da fixture é idêntico ao banco até o último concurso da fixture). Regerar quando as
+  fixtures forem renovadas. Gráficos e biblioteca: tarefa 7.2.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

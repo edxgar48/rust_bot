@@ -92,14 +92,16 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 6.2 Conferir jogo (volante com quantidades válidas por loteria, conferência pura testada com valores à mão e contra cálculo independente nas 3 fixtures reais, acertos por faixa e por concurso, aviso de jogo responsável; Conferir virou duas seções pelo hash, Histórico em `&secao=historico`; "Salvar jogo" fica para a 6.3; 507 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; capturas 360 px claro/escuro, 1280 px só da versão anterior, 2026-10-15)
 - [x] 6.3 Jogos salvos (banco IndexedDB próprio, separado do cache de dados; salvar, renomear, apagar com desfazer, exportar/importar arquivo JSON versionado com teto de 1.000 itens; melhor resultado do jogo quando o histórico está em cache; falha do IndexedDB não vira lista vazia; 658 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; capturas 360/1280 px da primeira versão, correções só em testes; `storage.persist()` não concedido no Chrome headless, testar em aparelho real na 8.1; 2026-10-15)
 - [x] 6.4 Conferência automática (cartão na Início e destaque em Meus jogos quando sai concurso novo; `conferidoAte` por jogo, campo opcional no backup v1; abertura enxuta sem baixar historico.json; "pendente" em vez de falso "0 acertos"; faixa com prêmio Lotofácil 11 / Mega 4 / Quina 2, sem calcular valor; nada marcado como visto sozinho; testada com concurso 7142 simulado da Quina; 723 testes; revisão de arquitetura aprovada com ressalvas, corrigidas; capturas 360/1280 px da primeira versão, correções só em testes; 2026-10-15). Fase 6 concluída
-- [ ] 7.1 Funções de estatística · 7.2 Telas e gráficos · 7.3 Comparação com o acaso
+- [x] 7.1 Funções de estatística (frequência, atraso, pares, soma e repetidas do anterior nas janelas 10/50/100/total; conferidas contra SQL independente nos bancos reais, 3 loterias × 4 janelas, e atraso total igual ao `espaco_final` do motor; 752 testes; revisão aprovada com ressalvas, corrigidas; fixture do app uma rodada atrás de publico/v1, renovar na 8.6; esperados de pares/soma/repetidas só conferidos à mão, conferência contra o back-end na 7.3; gráficos: SVG próprio, decidido pelo usuário em 2026-10-15; 2026-10-15)
+- [ ] 7.2 Telas e gráficos · 7.3 Comparação com o acaso
 - [ ] 8.1 Instalação PWA · 8.2 Testes ponta a ponta · 8.3 Lighthouse · 8.4 Hospedagem e deploy · 8.5 Runbook · 8.6 Verificação de contrato no build
 
 ## Decisões em aberto
 
 - [x] Front-end: valor enumerado novo no contrato (grau/direção/normalização) recusa o arquivo e o app mantém o cache; decidido pelo usuário em 2026-10-14 ("deixar como está")
 - [x] Front-end: backup dos jogos salvos = arquivo exportado, sem nuvem; decidido pelo usuário em 2026-10-15
-- [ ] Front-end: hospedagem e URL final (8.4), biblioteca de gráficos (7.1)
+- [x] Front-end: gráficos em SVG próprio, sem biblioteca; decidido pelo usuário em 2026-10-15
+- [ ] Front-end: hospedagem e URL final (8.4)
 - [x] Front-end: PWA com Svelte + TypeScript, pasta `app/` neste repositório, MVP com início, tabela de força, histórico/conferência e estatísticas (nota de 2026-10-14)
 - [x] Destino da publicação → por enquanto, repositório git separado e público; app lê por raw.githubusercontent (nota de 2026-10-12)
 - [x] Canal de alerta → e-mail em rascunho `.eml`, sem disparo automático (notas de 2026-10-13)
