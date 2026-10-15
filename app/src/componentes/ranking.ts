@@ -1,6 +1,7 @@
 // Formatação de itens do ranking (puro).
 import type { GrauEvidencia } from '../dados/tipos';
 import { GRAUS_EVIDENCIA } from '../dados/tipos';
+import { textos } from '../lib/textos';
 
 export type SentidoVariacao = 'subiu' | 'caiu' | 'igual' | 'sem';
 
@@ -19,6 +20,23 @@ export function formatarVariacao(variacao: number | null): string {
   if (variacao > 0) return `+${variacao}`;
   if (variacao < 0) return `${MENOS}${Math.abs(variacao)}`;
   return '0';
+}
+
+/** Símbolo de cada sentido (a cor só reforça; o texto falado e o sinal dizem o mesmo). */
+export const SETAS_VARIACAO: Readonly<Record<SentidoVariacao, string>> = {
+  subiu: '▲',
+  caiu: '▼',
+  igual: '■',
+  sem: '',
+};
+
+/** "subiu 2 posições", "manteve a posição"... para leitor de tela. */
+export function textoFaladoDaVariacao(variacao: number | null): string {
+  const sentido = sentidoVariacao(variacao);
+  if (sentido === 'subiu') return textos.ranking.subiu(variacao ?? 0);
+  if (sentido === 'caiu') return textos.ranking.caiu(Math.abs(variacao ?? 0));
+  if (sentido === 'igual') return textos.ranking.igual;
+  return textos.ranking.semVariacao;
 }
 
 /** Índice de força com 3 casas, vírgula decimal e menos tipográfico. */

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { PARAMETROS_LOTERIA, SLUGS } from '../dados/tipos';
-import { formatarIndice, formatarVariacao, segmentosDoGrau, sentidoVariacao } from './ranking';
+import {
+  SETAS_VARIACAO,
+  formatarIndice,
+  formatarVariacao,
+  segmentosDoGrau,
+  sentidoVariacao,
+  textoFaladoDaVariacao,
+} from './ranking';
 import { proximoIndice } from './segmentado';
 import { dezenasDoVolante, faixaPorPosicao, layoutVolante, limitesDaFaixa } from './volante';
 
@@ -94,5 +101,21 @@ describe('proximoIndice (teclado do Segmentado)', () => {
     expect(proximoIndice(1, 'End', 3)).toBe(2);
     expect(proximoIndice(1, 'a', 3)).toBeNull();
     expect(proximoIndice(0, 'ArrowRight', 0)).toBeNull();
+  });
+});
+
+describe('texto falado da variação de posição', () => {
+  it('subiu, caiu, igual e sem concurso anterior, com singular e plural', () => {
+    expect(textoFaladoDaVariacao(1)).toBe('subiu 1 posição');
+    expect(textoFaladoDaVariacao(3)).toBe('subiu 3 posições');
+    expect(textoFaladoDaVariacao(-1)).toBe('caiu 1 posição');
+    expect(textoFaladoDaVariacao(-4)).toBe('caiu 4 posições');
+    expect(textoFaladoDaVariacao(0)).toBe('manteve a posição');
+    expect(textoFaladoDaVariacao(null)).toBe('sem concurso anterior para comparar');
+    expect([SETAS_VARIACAO.subiu, SETAS_VARIACAO.caiu, SETAS_VARIACAO.igual]).toEqual([
+      '▲',
+      '▼',
+      '■',
+    ]);
   });
 });

@@ -6,15 +6,20 @@ import {
   exibicaoDoHash,
   ROTA_PADRAO,
   ehSlug,
+  hashDaEvidencia,
+  janelaDoHash,
   hashDaForca,
   hashDaRota,
   hashDaSecaoConferir,
+  hashDaSecaoEstatisticas,
+  hashDasEstatisticas,
   hashDoHistorico,
   hashDoJogo,
   hashDosJogos,
   loteriaDoHash,
   rotaDoHash,
   secaoConferirDoHash,
+  secaoEstatisticasDoHash,
 } from './rotas';
 import { idsAbas } from './textos';
 
@@ -166,5 +171,48 @@ describe('forma de exibição e dezena na URL da Força', () => {
     expect(secaoConferirDoHash('#/conferir')).toBe('jogo');
     expect(secaoConferirDoHash('#/conferir?secao=xyz')).toBe('jogo');
     expect(secaoConferirDoHash('#/conferir?secao=historico&loteria=quina')).toBe('historico');
+  });
+});
+
+describe('seções das Estatísticas (7.4)', () => {
+  it('secaoEstatisticasDoHash: URLs antigas, ausente ou inválida caem em Frequência e atraso', () => {
+    expect(secaoEstatisticasDoHash('')).toBe('frequencia');
+    expect(secaoEstatisticasDoHash('#/estatisticas')).toBe('frequencia');
+    expect(secaoEstatisticasDoHash('#/estatisticas?loteria=quina&janela=10')).toBe('frequencia');
+    expect(secaoEstatisticasDoHash('#/estatisticas?secao=xyz')).toBe('frequencia');
+    expect(secaoEstatisticasDoHash('#/estatisticas?secao=frequencia')).toBe('frequencia');
+    expect(secaoEstatisticasDoHash('#/estatisticas?loteria=quina&secao=evidencia')).toBe(
+      'evidencia',
+    );
+    expect(secaoEstatisticasDoHash('#/estatisticas?secao=evidencia&loteria=quina')).toBe(
+      'evidencia',
+    );
+  });
+
+  it('hashDaEvidencia: sem janela; com &dezena= só quando informada', () => {
+    expect(hashDaEvidencia('quina')).toBe('#/estatisticas?loteria=quina&secao=evidencia');
+    expect(hashDaEvidencia('quina', 20)).toBe(
+      '#/estatisticas?loteria=quina&secao=evidencia&dezena=20',
+    );
+    expect(rotaDoHash(hashDaEvidencia('megasena'))).toBe('estatisticas');
+    expect(loteriaDoHash(hashDaEvidencia('megasena'))).toBe('megasena');
+    expect(secaoEstatisticasDoHash(hashDaEvidencia('quina'))).toBe('evidencia');
+    expect(dezenaDoHash(hashDaEvidencia('quina', 20))).toBe(20);
+  });
+
+  it('hashDaSecaoEstatisticas: a frequência mantém o formato antigo com a janela', () => {
+    expect(hashDaSecaoEstatisticas('frequencia', 'quina', 100)).toBe(
+      hashDasEstatisticas('quina', 100),
+    );
+    expect(hashDasEstatisticas('quina', 100)).toBe('#/estatisticas?loteria=quina&janela=100');
+    // A evidência ignora a janela, mas a carrega na URL (ida e volta preserva a escolha).
+    expect(hashDaSecaoEstatisticas('evidencia', 'quina', 100)).toBe(
+      '#/estatisticas?loteria=quina&secao=evidencia&janela=100',
+    );
+    expect(hashDaEvidencia('quina', 20, 'total')).toBe(
+      '#/estatisticas?loteria=quina&secao=evidencia&janela=total&dezena=20',
+    );
+    expect(janelaDoHash(hashDaSecaoEstatisticas('evidencia', 'quina', 10))).toBe(10);
+    expect(dezenaDoHash(hashDaEvidencia('quina', 20, 10))).toBe(20);
   });
 });

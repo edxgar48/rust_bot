@@ -203,6 +203,25 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   (DP em BigInt, `contarSomas`) e tabela alternativa; Atraso mostra P(atraso >= a) = ((total-K)/total)^a e o
   número esperado de dezenas. Referências exatas em `gerar-esperado-acaso.py` (seções soma e atraso; a soma da
   Lotofácil é conferida por força bruta nos 3.268.760 jogos). Limite do quantil em ponto flutuante: ver `faixaCentral`.
+- Seção "Por evidência" (7.4), aba Estatísticas: seletor "Frequência e atraso" (padrão; URLs antigas sem `secao`
+  continuam valendo) e "Por evidência" (`#/estatisticas?loteria=quina&secao=evidencia`, com `&dezena=20` quando o
+  detalhe está aberto). `telas/Estatisticas.svelte` virou só o título e o seletor (como Conferir); o conteúdo
+  anterior está em `EstatisticasFrequencia.svelte` e a nova seção em `EstatisticasEvidencia.svelte`. Dados de
+  `tabela_geral.json` pela sessão (lerCache + garantir), mesmos estados da Força. `telas/evidencia.ts` (puro):
+  `agruparPorEvidencia` junta as dezenas por grau x direção PRONTOS do motor (sem recalcular), grupos do grau mais
+  forte ao mais fraco, "viés" antes de "acaso", "Sem evidência calculada" (grau OU direção nulos) por último, só
+  grupos com dezenas, ordem de posição dentro do grupo. A janela do seletor não se aplica: a tela mostra o
+  perfil/janela do motor. Cada grupo é um cartão (região com h3, lista semântica); cada dezena é um botão com
+  posição e variação (▲/▼/■ com sinal, igual à Força; texto por extenso no aria-label) que abre o mesmo
+  `DetalheDezena` da Força. Resumo no topo com contagem por grupo e texto honesto (agrupar não prevê; nenhum grupo
+  tem mais chance). Valor enumerado desconhecido faz a validação recusar o arquivo (nada de grupo inventado).
+  Testes: `telas/visao-evidencia.test.ts`, `telas/Estatisticas.evidencia.test.ts` (3 loterias contra leitura
+  independente do JSON cru), `lib/rotas.test.ts`, `lib/textos-varredura.test.ts`. Capturas 360/1280 px, claro e
+  escuro, das 3 loterias conferidas (2026-10-15), sem rolagem horizontal. Revisão: o texto explicativo segue o
+  contrato (o grau mede o quanto os dados convencem da hipótese favorecida, não o tamanho do desvio); cada cartão
+  mostra `fraseEvidencia(grau, direcao)` abaixo do h3 (texto próprio para "Sem evidência calculada") e o topo diz
+  que a ordem dos grupos segue o grau, não a chance de sair; `&janela=` é carregada (e ignorada) na URL da seção.
+  Dívida: carregamento/estado/detalhe de dezena duplicam `Forca.svelte`; extrair um núcleo comum depois.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

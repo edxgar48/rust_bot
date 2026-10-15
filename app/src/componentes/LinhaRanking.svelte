@@ -2,7 +2,14 @@
   import type { DirecaoEvidencia, GrauEvidencia } from '../dados/tipos';
   import { rotuloEvidenciaDirecao, rotuloEvidenciaGrau, textos } from '../lib/textos';
   import BolaDezena from './BolaDezena.svelte';
-  import { formatarIndice, formatarVariacao, segmentosDoGrau, sentidoVariacao } from './ranking';
+  import {
+    SETAS_VARIACAO,
+    formatarIndice,
+    formatarVariacao,
+    segmentosDoGrau,
+    sentidoVariacao,
+    textoFaladoDaVariacao,
+  } from './ranking';
 
   interface Props {
     posicao: number;
@@ -30,16 +37,8 @@
   }: Props = $props();
 
   const sentido = $derived(sentidoVariacao(variacao));
-  const setas = { subiu: '▲', caiu: '▼', igual: '■', sem: '' } as const;
-  const falado = $derived(
-    sentido === 'subiu'
-      ? textos.ranking.subiu(variacao ?? 0)
-      : sentido === 'caiu'
-        ? textos.ranking.caiu(Math.abs(variacao ?? 0))
-        : sentido === 'igual'
-          ? textos.ranking.igual
-          : textos.ranking.semVariacao,
-  );
+  const setas = SETAS_VARIACAO;
+  const falado = $derived(textoFaladoDaVariacao(variacao));
   const acesos = $derived(segmentosDoGrau(grau));
   const textoEvidencia = $derived(
     grau === null || direcao === null

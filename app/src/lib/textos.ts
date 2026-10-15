@@ -16,6 +16,13 @@ function resumoExtremo(dezenas: readonly string[], quantas: number, vezes: numbe
   return `dezenas ${lista}, com ${vezes} ${unidade} cada`;
 }
 
+// "Perfil padrao_v1 · janela de 50 concursos" (janela 0 = histórico total).
+function descreverPerfilJanela(perfil: string, janela: number): string {
+  return janela === 0
+    ? `Perfil ${perfil} · histórico total`
+    : `Perfil ${perfil} · janela de ${janela} ${janela === 1 ? 'concurso' : 'concursos'}`;
+}
+
 export const textos = {
   appNome: 'Força das Dezenas',
   navegacao: 'Navegação principal',
@@ -66,10 +73,7 @@ export const textos = {
     titulo: 'Tabela de força',
     subtitulo: (proximo: number, ultimoSorteado: number) =>
       `Próximo concurso ${proximo}, com dados até o ${ultimoSorteado}`,
-    perfilJanela: (perfil: string, janela: number) =>
-      janela === 0
-        ? `Perfil ${perfil} · histórico total`
-        : `Perfil ${perfil} · janela de ${janela} ${janela === 1 ? 'concurso' : 'concursos'}`,
+    perfilJanela: descreverPerfilJanela,
     rotuloLoteria: 'Loteria',
     rotuloVisao: 'Forma de exibição',
     visaoLista: 'Lista',
@@ -175,6 +179,9 @@ export const textos = {
         ? `Mostrando ${loteria}, todos os ${tamanho.toLocaleString('pt-BR')} concursos.`
         : `Mostrando ${loteria}, ${tamanho === 1 ? 'último concurso' : `últimos ${tamanho.toLocaleString('pt-BR')} concursos`}.`,
     rotuloLoteria: 'Loteria',
+    rotuloSecao: 'Seção',
+    secaoFrequencia: 'Frequência e atraso',
+    secaoEvidencia: 'Por evidência',
     rotuloJanela: 'Quantos concursos considerar',
     janelas: { '10': '10', '50': '50', '100': '100', total: 'Todos' },
     carregando: 'Carregando as estatísticas…',
@@ -351,6 +358,37 @@ export const textos = {
       },
     },
   },
+  // Seção "Por evidência" da aba Estatísticas (7.4). Descreve o passado; agrupar não prevê o sorteio.
+  evidencia: {
+    anuncio: (loteria: string) => `Mostrando ${loteria}, dezenas agrupadas por evidência.`,
+    carregando: 'Carregando a tabela de força…',
+    tentarDeNovo: 'Tentar de novo',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    recusadoSemAnterior:
+      'O arquivo desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+    semDezenas: 'A tabela de força desta loteria não traz dezenas.',
+    perfilJanela: (perfil: string, janela: number) =>
+      `${descreverPerfilJanela(perfil, janela)} (o do motor; não muda com a janela de Frequência e atraso)`,
+    intro:
+      'Cada grupo junta as dezenas que têm o mesmo grau e a mesma direção de evidência na tabela de força. Dentro do grupo, as dezenas seguem a ordem de posição da tabela (1º = maior índice).',
+    explicacao:
+      'O grau mede quanto os dados convencem da hipótese que eles favorecem (viés ou acaso), e não o tamanho do desvio. "Viés" não diz se a dezena saiu mais ou menos que o esperado. Para o acaso, "muito fraca" (Mega-Sena e Quina) e "fraca" (Lotofácil) já são o máximo que os dados podem dar a favor dele; por isso quase todas as dezenas ficam em graus fracos. Agrupar não prevê o sorteio, e nenhum grupo tem mais chance de sair que outro.',
+    ordem: 'A ordem dos grupos segue o grau da evidência, não a chance de a dezena sair.',
+    resumo: {
+      titulo: 'Quantas dezenas em cada grupo',
+      lista: (total: number) => `Dezenas por grupo de evidência, de ${total} no total`,
+      fracos: (fracos: number, total: number) =>
+        `${fracos} de ${total} ${total === 1 ? 'dezena está' : 'dezenas estão'} nos graus "muito fraca" ou "fraca".`,
+    },
+    grupo: {
+      semEvidencia: 'Sem evidência calculada',
+      contagem: (quantidade: number) => `${quantidade} ${quantidade === 1 ? 'dezena' : 'dezenas'}`,
+      lista: (grupo: string, quantidade: number) =>
+        `${quantidade} ${quantidade === 1 ? 'dezena' : 'dezenas'} do grupo ${grupo}, em ordem de posição`,
+      semEvidenciaNota:
+        'A tabela não traz grau nem direção de evidência para estas dezenas. Isso quer dizer "sem cálculo", e não "evidência fraca".',
+    },
+  },
   detalhe: {
     titulo: (dezena: number, posicao: number) => `Dezena ${dezena} · ${posicao}º lugar`,
     fechar: 'Fechar',
@@ -382,6 +420,8 @@ export const textos = {
       'O histórico mostra o que já foi sorteado. Ele não prevê o sorteio: cada concurso é independente dos anteriores.',
     naoPreveEstatisticas:
       'As estatísticas mostram o que já foi sorteado. Elas não preveem o sorteio: cada concurso é independente dos anteriores.',
+    naoPreveEvidencia:
+      'Agrupar as dezenas por evidência descreve o passado e não prevê o sorteio: nenhum grupo tem mais chance de sair.',
     naoPreveConferir:
       'Conferir o passado não aumenta a chance de acertar. Cada sorteio é independente dos anteriores.',
     // Telas de jogo (Entenda e Conferir jogo).

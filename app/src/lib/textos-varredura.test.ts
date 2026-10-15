@@ -146,6 +146,7 @@ describe('varredura de linguagem: nada sugere previsão', () => {
     expect(textos.avisos.naoPreveForca).toContain('não prevê');
     expect(textos.avisos.naoPreveDetalhe).toContain('não prevê');
     expect(textos.avisos.naoPreveHistorico).toContain('não prevê');
+    expect(textos.avisos.naoPreveEvidencia).toContain('não prevê');
     expect(textos.avisos.naoPreveConferir).toContain('não aumenta a chance');
     expect(textos.avisos.jogoResponsavel).toBe(
       'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
@@ -163,6 +164,22 @@ describe('varredura de linguagem: nada sugere previsão', () => {
   it('o resumo de dezenas fora da faixa nunca julga a contagem como normal', () => {
     for (const fora of [0, 1, 4, 30]) {
       expect(textos.estatisticas.frequencia.resumoAcaso(fora, '0,5')).not.toMatch(/normal/i);
+    }
+  });
+
+  it('seção Por evidência: diz que agrupar não prevê, sem ranking de valor nem linguagem de aposta', () => {
+    const t = textos.evidencia;
+    expect(t.explicacao).toContain('Agrupar não prevê o sorteio');
+    expect(t.explicacao).toContain('nenhum grupo tem mais chance de sair');
+    const tudo = [...todos]
+      .filter(
+        ([caminho]) =>
+          caminho.startsWith('textos.evidencia') || caminho === 'textos.avisos.naoPreveEvidencia',
+      )
+      .map(([, texto]) => semAcento(texto));
+    expect(tudo.length).toBeGreaterThan(8);
+    for (const texto of tudo) {
+      expect(texto).not.toMatch(/\b(?:melhor|melhores|pior|piores|recomend\w*|favorit\w*)\b/);
     }
   });
 });

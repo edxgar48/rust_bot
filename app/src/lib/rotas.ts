@@ -122,3 +122,43 @@ export function janelaDoHash(hash: string): JanelaEstatistica | null {
 export function hashDasEstatisticas(slug: Slug, janela: JanelaEstatistica): string {
   return `${hashDaRota('estatisticas')}?loteria=${slug}&janela=${janela}`;
 }
+
+/** Seções da aba Estatísticas: frequência e atraso (padrão; URLs antigas) e por evidência. */
+export const SECOES_ESTATISTICAS = ['frequencia', 'evidencia'] as const;
+export type SecaoEstatisticas = (typeof SECOES_ESTATISTICAS)[number];
+export const SECAO_ESTATISTICAS_PADRAO: SecaoEstatisticas = 'frequencia';
+
+/** Parâmetro `secao` do hash; ausente ou inválido = Frequência e atraso. */
+export function secaoEstatisticasDoHash(hash: string): SecaoEstatisticas {
+  const m = /[?&]secao=([^&#]*)/.exec(hash);
+  const valor = m?.[1] ?? null;
+  return SECOES_ESTATISTICAS.find((s) => s === valor) ?? SECAO_ESTATISTICAS_PADRAO;
+}
+
+/**
+ * Hash das Estatísticas na seção Por evidência: "#/estatisticas?loteria=quina&secao=evidencia",
+ * com "&dezena=20" quando o detalhe está aberto. A seção ignora a janela (o motor usa a do
+ * perfil), mas ela pode ser carregada na URL ("&janela=100") para a escolha feita em
+ * Frequência e atraso sobreviver à ida e volta.
+ */
+export function hashDaEvidencia(
+  slug: Slug,
+  dezena: number | null = null,
+  janela: JanelaEstatistica | null = null,
+): string {
+  let url = `${hashDaRota('estatisticas')}?loteria=${slug}&secao=evidencia`;
+  if (janela !== null) url += `&janela=${janela}`;
+  if (dezena !== null) url += `&dezena=${dezena}`;
+  return url;
+}
+
+/** Hash de uma seção das Estatísticas (a janela só vale para Frequência e atraso, mas é carregada). */
+export function hashDaSecaoEstatisticas(
+  secao: SecaoEstatisticas,
+  slug: Slug,
+  janela: JanelaEstatistica,
+): string {
+  return secao === 'evidencia'
+    ? hashDaEvidencia(slug, null, janela)
+    : hashDasEstatisticas(slug, janela);
+}

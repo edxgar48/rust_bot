@@ -105,6 +105,7 @@ Mudança de escopo ou de definição entra aqui primeiro, nunca só no código.
 | 7.1 | Funções puras de estatística sobre o histórico (frequência, atraso atual, pares/ímpares, soma, repetidas do anterior, janelas 10/50/100/total) e escolha da biblioteca de gráficos | resultados idênticos a cálculo independente (ex.: SQL sobre os bancos) nas 3 loterias |
 | 7.2 | Telas de estatísticas com gráficos acessíveis (cor não é a única informação; tabela alternativa) | revisão de acessibilidade ok |
 | 7.3 | Comparação com o esperado ao acaso (hipergeométrica/binomial) junto de cada estatística, para o usuário ver que o desvio é normal | números conferem com os da avaliação do back-end |
+| 7.4 | Seção "Por evidência" na aba Estatísticas (pedido do usuário, 2026-10-15): as dezenas da `tabela_geral.json` agrupadas por grau e direção de evidência, mantendo a ordem de posição dentro de cada grupo, para ver quais dezenas têm o mesmo grau juntas | dados idênticos à tabela do motor; textos sem sugerir que o agrupamento prevê o sorteio; acessível em 360 px |
 
 ### Fase 8 — Qualidade, PWA e publicação
 
