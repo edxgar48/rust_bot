@@ -94,6 +94,39 @@ describe('garantirArquivos (sob demanda)', () => {
     expect(servidor.pedidos).toEqual(['index.json']);
   });
 
+  it('abrir a tela (lerCache + garantir): o histórico é validado uma vez, não três', async () => {
+    const servidor = new ServidorFalso();
+    const arm = new ArmazenamentoEmMemoria();
+    await garantirArquivos(cliente(servidor, arm), {
+      arquivos: ['historico'],
+      loterias: ['quina'],
+    });
+    // Cliente novo (sessão nova): nada em memória ainda.
+    const novo = cliente(servidor, arm);
+    const opcoes = { arquivos: ['historico'], loterias: ['quina'] } as const;
+    const lido = await novo.lerCache(opcoes);
+    const garantido = await garantirArquivos(novo, opcoes);
+    const a = lido?.loterias.quina?.dados.historico;
+    const b = garantido.cache?.loterias.quina?.dados.historico;
+    expect(a).toBeTruthy();
+    // Mesmo objeto: a segunda leitura reaproveitou o que já tinha sido validado.
+    expect(b).toBe(a);
+  });
+
+  it('o reaproveitamento não esconde corrupção: bytes alterados no armazenamento viram null', async () => {
+    const servidor = new ServidorFalso();
+    const arm = new ArmazenamentoEmMemoria();
+    const c = cliente(servidor, arm);
+    const opcoes = { arquivos: ['historico'], loterias: ['quina'] } as const;
+    await garantirArquivos(c, opcoes);
+    expect((await c.lerCache(opcoes))?.loterias.quina?.dados.historico).toBeTruthy();
+    const guardado = (await arm.ler('quina/historico.json'))!;
+    const bytes = guardado.bytes.slice();
+    bytes[bytes.length - 3] = (bytes[bytes.length - 3] ?? 0) ^ 1;
+    await arm.guardar({ ...guardado, bytes });
+    expect((await c.lerCache(opcoes))?.loterias.quina?.dados.historico).toBeNull();
+  });
+
   it('sem rede: o que já está em cache continua disponível, sem lançar', async () => {
     const servidor = new ServidorFalso();
     const arm = new ArmazenamentoEmMemoria();

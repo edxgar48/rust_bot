@@ -49,15 +49,25 @@ describe('App: navegação por hash', () => {
     expect(document.querySelector('main h2')?.textContent).toBe('Resultados');
   });
 
-  it.each([
-    ['#/conferir', 'Conferir'],
-    ['#/estatisticas', 'Estatísticas'],
-  ])('abrir direto em %s ativa a aba %s e mostra o placeholder', async (hash, aba) => {
-    montarApp(hash);
+  it('abrir direto em #/estatisticas ativa a aba Estatísticas e mostra o placeholder', async () => {
+    montarApp('#/estatisticas');
     await esperar();
-    expect(abaAtiva()).toBe(aba);
-    expect(document.querySelector('main h2')?.textContent).toBe(aba);
+    expect(abaAtiva()).toBe('Estatísticas');
+    expect(document.querySelector('main h2')?.textContent).toBe('Estatísticas');
     expect(document.querySelector('main')?.textContent).toContain('em construção');
+  });
+
+  it('abrir direto em #/conferir ativa a aba Conferir e mostra o Histórico (sem rede: sem dados)', async () => {
+    montarApp('#/conferir');
+    await esperar(60);
+    expect(abaAtiva()).toBe('Conferir');
+    expect(document.querySelector('main h2')?.textContent).toBe('Histórico de concursos');
+    expect(document.querySelector('main')?.textContent).not.toContain('em construção');
+    expect(document.querySelector('main')?.textContent).toContain('não prevê o sorteio');
+    const alertas = Array.from(document.querySelectorAll('main [role="alert"]')).map(
+      (a) => a.textContent,
+    );
+    expect(alertas.some((t) => t?.includes('Ainda sem dados'))).toBe(true);
   });
 
   it('abrir direto em #/entenda mostra a tela Entenda (sem rede: sem tabelas, sem quebrar)', async () => {

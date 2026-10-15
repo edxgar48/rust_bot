@@ -75,6 +75,19 @@ npm run preview    # serve dist/ localmente
   (`define`, vinda do package.json; declarada em `src/globais.d.ts`). Avisos centralizados em
   `textos.avisos` (não prevê / jogo responsável). `src/lib/textos-varredura.test.ts` falha se o
   módulo de textos tiver linguagem de previsão (lista e exceções documentadas no próprio teste).
+- Histórico (6.1), aba Conferir (`#/conferir?loteria=quina`): `src/telas/Historico.svelte` +
+  `LinhaConcurso.svelte` + `historico.ts` (tudo que é lógica fica em funções puras testadas: leitura da
+  busca digitada, `consultarHistorico`, `janelaVirtual`, visão por estado). Lê `historico.json` do cache
+  (`sessao.lerCache`, depois `sessao.garantir`); mesma precedência de loteria da Força (URL, `localStorage`,
+  Lotofácil; a chave guardada é a mesma). Lista do concurso mais recente ao mais antigo. Busca por número
+  ou por data (dd/mm/aaaa com máscara; também aceita AAAA-MM-DD; sem `Date`): mostra só o(s) concurso(s)
+  encontrado(s); inexistente ou data sem sorteio dão mensagem (com o sorteio anterior e o seguinte mais
+  próximos). Filtro por dezenas: o volante em modo seleção (`<details>`), concursos que contêm TODAS as
+  dezenas, no máximo quantas saem por concurso; busca e filtro valem juntos. Dezena do filtro na linha:
+  anel e negrito (não só cor) e frase para leitor de tela. Lista virtual própria, sem dependência: linhas de
+  altura fixa em rem por loteria (`ALTURA_LINHA_REM`), a página rola (sem rolagem aninhada), só as linhas
+  perto da tela existem no DOM (cerca de 13 a 15, 3 de folga de cada lado), `padding` do `<ul>` reserva o
+  resto. O estado de `situacao` usa `$state.raw` (milhares de listas, sem proxy reativo).
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

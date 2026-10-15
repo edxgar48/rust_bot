@@ -73,3 +73,8 @@ export function hashDaForca(slug: Slug, opcoes: OpcoesHashForca = {}): string {
   if (opcoes.dezena !== undefined && opcoes.dezena !== null) hash += `&dezena=${opcoes.dezena}`;
   return hash;
 }
+
+/** Hash do Histórico (aba Conferir): "#/conferir?loteria=quina". */
+export function hashDoHistorico(slug: Slug): string {
+  return `${hashDaRota('conferir')}?loteria=${slug}`;
+}

@@ -5,7 +5,7 @@ import { ServidorFalso, URL_BASE_TESTE, lerFixtureTexto } from '../../testes/ser
 import { ArmazenamentoEmMemoria } from '../dados/armazenamento';
 import { criarCliente } from '../dados/cliente';
 import { garantirArquivos } from '../dados/sob-demanda';
-import { CHAVE_EXIBICAO_FORCA, CHAVE_LOTERIA_FORCA } from '../lib/loteria-guardada';
+import { CHAVE_EXIBICAO_FORCA, CHAVE_LOTERIA_GUARDADA } from '../lib/loteria-guardada';
 import { textos } from '../lib/textos';
 import Forca from './Forca.svelte';
 
@@ -174,7 +174,7 @@ describe('forma de exibição: URL, aparelho, padrão', () => {
     radio(alvo, 'Quina')?.click();
     await esperarCelulas(alvo, 80);
     expect(location.hash).toBe('#/forca?loteria=quina&visao=volante');
-    expect(localStorage.getItem(CHAVE_LOTERIA_FORCA)).toBe('quina');
+    expect(localStorage.getItem(CHAVE_LOTERIA_GUARDADA)).toBe('quina');
   });
 
   it('localStorage bloqueado não quebra: volante e detalhe seguem funcionando', async () => {

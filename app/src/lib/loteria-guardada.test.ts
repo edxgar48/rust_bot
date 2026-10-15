@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAVE_EXIBICAO_FORCA,
-  CHAVE_LOTERIA_FORCA,
+  CHAVE_LOTERIA_GUARDADA,
   gravarExibicaoGuardada,
   gravarLoteriaGuardada,
   lerExibicaoGuardada,
@@ -22,14 +22,14 @@ describe('loteria guardada da Força', () => {
     for (const slug of ['lotofacil', 'megasena', 'quina'] as const) {
       const arm = armazenamento();
       expect(gravarLoteriaGuardada(slug, arm)).toBe(true);
-      expect(arm.dados.get(CHAVE_LOTERIA_FORCA)).toBe(slug);
+      expect(arm.dados.get(CHAVE_LOTERIA_GUARDADA)).toBe(slug);
       expect(lerLoteriaGuardada(arm)).toBe(slug);
     }
   });
 
   it('ausente ou valor estranho vira null', () => {
     expect(lerLoteriaGuardada(armazenamento())).toBeNull();
-    expect(lerLoteriaGuardada(armazenamento({ [CHAVE_LOTERIA_FORCA]: 'loto' }))).toBeNull();
+    expect(lerLoteriaGuardada(armazenamento({ [CHAVE_LOTERIA_GUARDADA]: 'loto' }))).toBeNull();
     expect(lerLoteriaGuardada(null)).toBeNull();
   });
 

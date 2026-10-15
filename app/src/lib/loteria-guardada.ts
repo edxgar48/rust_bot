@@ -1,17 +1,18 @@
-// Última loteria escolhida na tela Força, guardada no aparelho (localStorage).
+// Última loteria escolhida nas telas Força e Histórico (compartilhada), guardada
+// no aparelho (localStorage). A chave mantém o nome antigo 'forca.loteria'.
 // Tolerante a falha: modo privado ou armazenamento bloqueado só significam que
-// a escolha não é lembrada. A URL (#/forca?loteria=...) tem precedência.
+// a escolha não é lembrada. A URL (#/forca?loteria=... ou #/conferir?loteria=...) tem precedência.
 import type { Slug } from '../dados/tipos';
 import { ehExibicao, ehSlug, type ExibicaoForca } from './rotas';
 import { armazenamentoLocal, type EscritorArmazenamento, type LeitorArmazenamento } from './tema';
 
-export const CHAVE_LOTERIA_FORCA = 'forca.loteria';
+export const CHAVE_LOTERIA_GUARDADA = 'forca.loteria';
 
 export function lerLoteriaGuardada(
   armazenamento: LeitorArmazenamento | null = armazenamentoLocal(),
 ): Slug | null {
   try {
-    const valor = armazenamento?.getItem(CHAVE_LOTERIA_FORCA);
+    const valor = armazenamento?.getItem(CHAVE_LOTERIA_GUARDADA);
     return ehSlug(valor) ? valor : null;
   } catch {
     return null;
@@ -25,7 +26,7 @@ export function gravarLoteriaGuardada(
 ): boolean {
   try {
     if (!armazenamento) return false;
-    armazenamento.setItem(CHAVE_LOTERIA_FORCA, slug);
+    armazenamento.setItem(CHAVE_LOTERIA_GUARDADA, slug);
     return true;
   } catch {
     return false;

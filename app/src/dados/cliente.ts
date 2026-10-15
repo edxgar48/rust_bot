@@ -120,6 +120,11 @@ export function criarCliente(opcoes: OpcoesCliente) {
   const agora = opcoes.agora ?? (() => new Date());
   const instante = () => agora().toISOString();
 
+  // Último conteúdo já validado por caminho. Os bytes são sempre reconferidos pelo
+  // sha256; se não mudaram, reaproveita o objeto interpretado em vez de validar de
+  // novo (o histórico tem centenas de KB e a tela o lê mais de uma vez ao abrir).
+  const validados = new Map<string, { sha256: string; dados: unknown }>();
+
   /** Gravar nunca derruba nem invalida um dado já conferido. */
   async function guardarSemFalhar(arquivo: Parameters<Armazenamento['guardar']>[0]): Promise<void> {
     try {
@@ -197,8 +202,16 @@ export function criarCliente(opcoes: OpcoesCliente) {
       if (!guardado) return null;
       const hash = await sha256Hex(guardado.bytes);
       if (hash !== guardado.sha256) return null;
+      const anterior = validados.get(caminho);
+      let dados: DadosPorChave[K];
+      if (anterior && anterior.sha256 === guardado.sha256) {
+        dados = anterior.dados as DadosPorChave[K];
+      } else {
+        dados = interpretar(chave, guardado.bytes, slug);
+        validados.set(caminho, { sha256: guardado.sha256, dados });
+      }
       return {
-        dados: interpretar(chave, guardado.bytes, slug),
+        dados,
         sha256: guardado.sha256,
         bytes: guardado.bytes,
         sincronizadoEm: guardado.sincronizadoEm ?? null,
@@ -229,6 +242,7 @@ export function criarCliente(opcoes: OpcoesCliente) {
       const bytes = await baixarBytes(descritor.caminho);
       await conferirBytes(descritor, bytes);
       const dados = interpretar(chave, bytes, slug);
+      validados.set(descritor.caminho, { sha256: descritor.sha256, dados });
       if (
         chave === 'ultimo' &&
         ((dados as DadosPorChave['ultimo']).concurso !== entrada.ultimoConcurso ||

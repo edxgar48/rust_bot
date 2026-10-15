@@ -70,7 +70,7 @@ export function posicoesDaTabela(tabela: TabelaGeralV1): Record<number, number> 
   return Object.fromEntries(tabela.dezenas.map((d) => [d.dezena, d.posicao]));
 }
 
-function estadoEData(
+export function estadoEData(
   situacao: SituacaoForca,
   cache: ResultadoCache,
   agora: Date,

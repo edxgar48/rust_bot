@@ -6,7 +6,7 @@ import { ServidorFalso, URL_BASE_TESTE, lerFixtureTexto } from '../../testes/ser
 import { ArmazenamentoEmMemoria } from '../dados/armazenamento';
 import { criarCliente, type OpcoesSincronizacao } from '../dados/cliente';
 import { garantirArquivos, type ResultadoGarantia } from '../dados/sob-demanda';
-import { CHAVE_LOTERIA_FORCA } from '../lib/loteria-guardada';
+import { CHAVE_LOTERIA_GUARDADA } from '../lib/loteria-guardada';
 import { textos } from '../lib/textos';
 import Forca from './Forca.svelte';
 
@@ -164,7 +164,7 @@ describe('Força: troca de loteria', () => {
     expect(texto(alvo)).toContain('Próximo concurso 7142, com dados até o 7141');
     expect(selecionada(alvo)).toContain('✓ Quina');
     expect(location.hash).toBe('#/forca?loteria=quina&visao=lista');
-    expect(localStorage.getItem(CHAVE_LOTERIA_FORCA)).toBe('quina');
+    expect(localStorage.getItem(CHAVE_LOTERIA_GUARDADA)).toBe('quina');
     expect(history.length).toBe(historicoAntes); // replaceState: sem entrada nova
     expect(alvo.querySelector('ul.lista')?.getAttribute('aria-label')).toContain('Quina');
   });
@@ -207,7 +207,7 @@ describe('Força: troca de loteria', () => {
 
 describe('Força: loteria guardada', () => {
   it('a URL (?loteria=) vale mais que o aparelho', async () => {
-    localStorage.setItem(CHAVE_LOTERIA_FORCA, 'quina');
+    localStorage.setItem(CHAVE_LOTERIA_GUARDADA, 'quina');
     location.hash = '#/forca?loteria=megasena';
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     await esperarLinhas(alvo, 60);
@@ -215,13 +215,13 @@ describe('Força: loteria guardada', () => {
   });
 
   it('sem parâmetro usa a última escolha guardada', async () => {
-    localStorage.setItem(CHAVE_LOTERIA_FORCA, 'quina');
+    localStorage.setItem(CHAVE_LOTERIA_GUARDADA, 'quina');
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     await esperarLinhas(alvo, 80);
   });
 
   it('parâmetro e valor guardado inválidos caem na Lotofácil', async () => {
-    localStorage.setItem(CHAVE_LOTERIA_FORCA, 'loto');
+    localStorage.setItem(CHAVE_LOTERIA_GUARDADA, 'loto');
     location.hash = '#/forca?loteria=timemania';
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     await esperarLinhas(alvo, 25);

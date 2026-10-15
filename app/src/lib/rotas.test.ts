@@ -8,6 +8,7 @@ import {
   ehSlug,
   hashDaForca,
   hashDaRota,
+  hashDoHistorico,
   loteriaDoHash,
   rotaDoHash,
 } from './rotas';
@@ -133,5 +134,11 @@ describe('forma de exibição e dezena na URL da Força', () => {
     expect(loteriaDoHash(h)).toBe('quina');
     expect(exibicaoDoHash(h)).toBe('volante');
     expect(dezenaDoHash(h)).toBe(20);
+  });
+
+  it('hashDoHistorico leva à aba Conferir com a loteria, e a ida e volta é identidade', () => {
+    expect(hashDoHistorico('quina')).toBe('#/conferir?loteria=quina');
+    expect(rotaDoHash(hashDoHistorico('megasena'))).toBe('conferir');
+    expect(loteriaDoHash(hashDoHistorico('megasena'))).toBe('megasena');
   });
 });

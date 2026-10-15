@@ -10,6 +10,7 @@
   import { criarSessao } from './sessao.svelte';
   import Entenda from './telas/Entenda.svelte';
   import Forca from './telas/Forca.svelte';
+  import Historico from './telas/Historico.svelte';
   import Inicio from './telas/Inicio.svelte';
 
   const iconesDasAbas: Record<IdAba, NomeIcone> = {
@@ -90,6 +91,8 @@
         />
       {:else if abaAtual === 'forca'}
         <Forca fonte={sessao} />
+      {:else if abaAtual === 'conferir'}
+        <Historico fonte={sessao} />
       {:else if abaAtual === 'entenda'}
         <Entenda
           fonte={sessao}

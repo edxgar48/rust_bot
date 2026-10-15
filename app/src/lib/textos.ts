@@ -81,6 +81,76 @@ export const textos = {
     recusadoSemAnterior:
       'O arquivo desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
   },
+  // Histórico de concursos (aba Conferir, 6.1).
+  historico: {
+    titulo: 'Histórico de concursos',
+    subtitulo: (quantidade: number, primeiro: number, ultimo: number) =>
+      `${quantidade.toLocaleString('pt-BR')} concursos, do ${primeiro} ao ${ultimo}`,
+    rotuloLoteria: 'Loteria',
+    carregando: 'Carregando o histórico…',
+    tentarDeNovo: 'Tentar de novo',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    recusadoSemAnterior:
+      'O histórico desta loteria foi recusado (falha de conferência) e não há versão anterior guardada.',
+    busca: {
+      titulo: 'Buscar um concurso',
+      rotuloModo: 'Buscar por',
+      modoConcurso: 'Número',
+      modoData: 'Data',
+      campoConcurso: 'Número do concurso',
+      campoData: 'Data do sorteio',
+      exemploConcurso: 'Ex.: 3000',
+      exemploData: 'dd/mm/aaaa',
+      buscar: 'Buscar',
+      limpar: 'Limpar busca',
+      ativaConcurso: (numero: number) => `Busca: concurso ${numero}`,
+      ativaData: (data: string) => `Busca: sorteios de ${data}`,
+      formatoConcurso: 'Digite o número do concurso, só com algarismos. Exemplo: 3000.',
+      formatoData: 'Digite a data como dia/mês/ano. Exemplo: 13/10/2026.',
+      dataInexistente: (data: string) => `${data} não é uma data do calendário.`,
+      concursoInexistente: (numero: number, primeiro: number, ultimo: number) =>
+        `Não existe o concurso ${numero}. Esta loteria tem os concursos de ${primeiro} a ${ultimo}.`,
+      dataSemSorteio: (data: string) => `Não houve sorteio em ${data}.`,
+      vizinhoAnterior: (concurso: number, data: string) =>
+        `Sorteio anterior mais próximo: concurso ${concurso}, em ${data}.`,
+      vizinhoSeguinte: (concurso: number, data: string) =>
+        `Sorteio seguinte mais próximo: concurso ${concurso}, em ${data}.`,
+    },
+    filtro: {
+      titulo: 'Filtrar por dezenas',
+      escolhidas: (quantidade: number) =>
+        quantidade === 0
+          ? 'nenhuma escolhida'
+          : `${quantidade} ${quantidade === 1 ? 'escolhida' : 'escolhidas'}`,
+      intro:
+        'Toque nas dezenas para ver só os concursos em que todas elas saíram juntas. É uma consulta ao passado.',
+      limite: (maximo: number) =>
+        `Limite de ${maximo} dezenas: é quantas saem em cada concurso. Desmarque uma para trocar.`,
+      limpar: 'Limpar dezenas',
+      ativas: (dezenas: string) => `Dezenas escolhidas: ${dezenas}`,
+    },
+    contagem: {
+      tudo: (total: number) =>
+        `${total.toLocaleString('pt-BR')} ${total === 1 ? 'concurso' : 'concursos'}, do mais recente ao mais antigo`,
+      encontrados: (encontrados: number, total: number) =>
+        `${encontrados.toLocaleString('pt-BR')} ${encontrados === 1 ? 'concurso encontrado' : 'concursos encontrados'}, de ${total.toLocaleString('pt-BR')}, do mais recente ao mais antigo`,
+      nenhumCurto: 'Nenhum concurso encontrado.',
+      nenhum: (busca: boolean, filtro: boolean) =>
+        busca && filtro
+          ? 'Nenhum concurso corresponde à busca e às dezenas escolhidas.'
+          : busca
+            ? 'Nenhum concurso corresponde à busca.'
+            : 'Nenhum concurso tem todas as dezenas escolhidas.',
+    },
+    lista: (loteria: string, resultados: number) =>
+      `Concursos da ${loteria}: ${resultados.toLocaleString('pt-BR')} ${resultados === 1 ? 'resultado' : 'resultados'}`,
+    concurso: (numero: number) => `Concurso ${numero}`,
+    // Leitura da linha por leitor de tela (as bolas são só visuais).
+    dezenasDoConcurso: (dezenas: string, filtradas: string | null) =>
+      filtradas === null
+        ? `Dezenas sorteadas: ${dezenas}.`
+        : `Dezenas sorteadas: ${dezenas}. Dezenas do filtro neste concurso: ${filtradas}.`,
+  },
   detalhe: {
     titulo: (dezena: number, posicao: number) => `Dezena ${dezena} · ${posicao}º lugar`,
     fechar: 'Fechar',
@@ -108,6 +178,8 @@ export const textos = {
     naoPreveForca: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
     naoPreveDetalhe:
       'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
+    naoPreveHistorico:
+      'O histórico mostra o que já foi sorteado. Ele não prevê o sorteio: cada concurso é independente dos anteriores.',
     // Telas de jogo (Entenda; a Conferir da fase 6 também usa este).
     jogoResponsavel: 'Jogue com responsabilidade. Apostas são para maiores de 18 anos.',
   },
