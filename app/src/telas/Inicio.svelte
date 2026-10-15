@@ -6,19 +6,23 @@
   import type { NomeIcone } from '../componentes/tipos';
   import type { SituacaoDados } from '../dados/abertura';
   import type { TipoEstadoSincronizacao } from '../dados/estado-sincronizacao';
+  import type { NovidadeLoteria } from '../jogos/conferencia-automatica';
   import { textos } from '../lib/textos';
-  import { montarVisaoInicio } from './inicio';
+  import { montarAvisosNovidade, montarVisaoInicio } from './inicio';
 
   interface Props {
     situacao: SituacaoDados | null;
     /** Há uma sincronização em andamento (desativa o botão Atualizar). */
     ocupada: boolean;
     aoAtualizar: () => void;
+    /** Conferência automática dos jogos salvos (6.4); vazio = nada a mostrar. */
+    novidades?: readonly NovidadeLoteria[];
   }
 
-  let { situacao, ocupada, aoAtualizar }: Props = $props();
+  let { situacao, ocupada, aoAtualizar, novidades = [] }: Props = $props();
 
   const visao = $derived(montarVisaoInicio(situacao));
+  const avisosNovidade = $derived(montarAvisosNovidade(novidades));
 
   // O ícone acompanha o texto do estado; a cor nunca é a única informação.
   const iconesDoEstado: Record<TipoEstadoSincronizacao, NomeIcone> = {
@@ -67,6 +71,26 @@
           <span>{visao.texto}</span>
         </p>
         {@render botao(textos.inicio.atualizar)}
+      {/if}
+    </div>
+
+    <!-- Região estável (existe antes do aviso): o cartão chega depois, de forma assíncrona,
+         e o leitor de tela anuncia o título "Concurso N saiu…" quando ele aparece. -->
+    <div class="novidades" role="status" aria-atomic="false">
+      {#if avisosNovidade.length > 0}
+        {#each avisosNovidade as aviso (aviso.slug)}
+          <Cartao variante="contorno" titulo={aviso.titulo}>
+            <div class="novidade" data-loteria={aviso.slug}>
+              {#if aviso.resumo}<p class="resumo">{aviso.resumo}</p>{/if}
+              {#if aviso.concursos}<p class="detalhe">{aviso.concursos}</p>{/if}
+              {#if aviso.faixa}<p class="faixa">{aviso.faixa}</p>{/if}
+              {#if aviso.pendente}<p class="detalhe">{aviso.pendente}</p>{/if}
+              <p class="detalhe">{textos.novidade.premioNota}</p>
+              <a class="link" href={aviso.href}>{textos.novidade.verJogos}</a>
+            </div>
+          </Cartao>
+        {/each}
+        <Aviso>{textos.avisos.naoPreveConferir} {textos.avisos.jogoResponsavel}</Aviso>
       {/if}
     </div>
 
@@ -154,9 +178,41 @@
     color: var(--cor-texto-var);
     cursor: progress;
   }
+  .novidades,
+  .novidade {
+    display: grid;
+    gap: var(--esp-3);
+  }
+  .novidade {
+    gap: var(--esp-2);
+  }
+  /* Região vazia: não deixa um espaço a mais na pilha. */
+  .novidades:empty {
+    margin-top: calc(-1 * var(--esp-3));
+  }
+  .resumo,
+  .faixa {
+    font: var(--fonte-corpo-g);
+    font-weight: 600;
+  }
+  .link {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    min-height: var(--alvo-minimo);
+    padding: 0 var(--esp-4);
+    border: 1px solid var(--cor-contorno);
+    border-radius: var(--raio-cheio);
+    color: var(--cor-primaria);
+    font: var(--fonte-rotulo-g);
+    text-decoration: none;
+  }
   .detalhe {
     margin-bottom: var(--esp-3);
     color: var(--cor-texto-var);
+  }
+  .novidade .detalhe {
+    margin-bottom: 0;
   }
   .detalhe:last-child {
     margin-bottom: 0;

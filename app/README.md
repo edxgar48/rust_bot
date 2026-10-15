@@ -120,13 +120,37 @@ válidas por `QUANTIDADE_JOGO`, criadoEm }`; `validarJogoSalvo` é a única port
   `MeusJogos.svelte` (lista por loteria, Conferir carrega o jogo no volante, renomear inline, apagar com
   `FolhaModal` e "Desfazer", melhor resultado histórico só se o histórico estiver em cache, mensagens em
   região viva). Decisão: o backup é o arquivo exportado; sem nuvem; limpar os dados do navegador apaga os jogos
-  (dito na tela). A conferência automática (6.4) não faz parte desta tarefa.
+  (dito na tela). A conferência automática veio na 6.4 (abaixo).
   Falhas: `RepositorioResiliente` só cai para memória se o IndexedDB não existe ou NÃO ABRE (`ErroAbertura`, com
   aviso). Se abre e uma operação falha depois, ela é repetida uma vez com a conexão refeita; persistindo, o erro
   chega à tela (leitura: aviso "não foi possível ler" + "Tentar ler de novo", sem lista vazia e com Exportar
   bloqueado; gravação: mensagem de falha). Importação: máximo de 1.000 jogos por arquivo (acima, o arquivo é
   recusado inteiro) e ids já guardados (`listarIds`, inclusive registros inválidos) nunca são sobrescritos;
   `criadoEm` é normalizado para UTC.
+
+- Conferência automática (6.4), `src/jogos/conferencia-automatica.ts` (puro), `novidades.ts` (liga ao repositório
+  e ao cache, sem rede) e `servico.marcarComoVisto`. Cada jogo guarda `conferidoAte` (último concurso cujo
+  resultado a pessoa já viu): campo OPCIONAL, `null` = sem marca. Compatibilidade: arquivos de backup antigos
+  sem o campo seguem válidos (importam como `null`), exportar grava o campo e importar o preserva (valor
+  inválido vira `null` sem recusar o jogo); a `versao` do arquivo continua 1, pois apps antigos só ignoram o
+  campo. Jogo novo nasce com `conferidoAte` = último concurso do histórico mostrado (o passado não vira
+  novidade); jogo sem marca recebe o último concurso conhecido na primeira conferência. Regra:
+  `concursosPosteriores` junta o histórico em cache e o `ultimo.json` (um único concurso novo é conferido só
+  com o `ultimo.json`, sem baixar o histórico); se o histórico em cache está atrás e há buraco, o jogo fica
+  `pendente` (nunca "0 acertos" por falta de dado). `conferirConcursosNovos` devolve acertos por concurso,
+  melhor (empate: o mais recente) e `naFaixaPremio` (`FAIXA_PREMIO`: Lotofácil 11, Mega-Sena 4, Quina 2;
+  rótulo "acertos", o app não calcula valor de prêmio e diz isso na tela). Quando roda: `sessao.svelte.ts` chama
+  `calcularNovidades` ao fim da abertura/atualização (ultimo.json já sincronizado), depois que o segundo plano
+  baixa o histórico e ao voltar à aba Início; a abertura enxuta NÃO baixa o histórico só para isso. Em Meus
+  jogos, se há jogos e o histórico falta ou está atrás do último concurso, `garantir` baixa sob demanda.
+  Início: cartão "Concurso N saiu: seus jogos salvos da Quina" com resumo ("2 jogos conferidos; melhor: 3
+  acertos"), jogos na faixa e link para Meus jogos (nada se há 0 jogos ou nada novo). Meus jogos: jogo com
+  concurso novo ganha borda grossa + selo em texto "Novo: concurso N", acertos por concurso (até 5, "e mais N")
+  e "Marcar como visto" (só avança `conferidoAte`; nunca é marcado sozinho). Offline usa o último cache; sem
+  notificação push (backlog). Testes: puros com valores à mão, `testes/conferencia-automatica.test.ts`
+  (servidor falso + concurso 7142 sintético via `ServidorFalso.publicarConcursoQuina`, IndexedDB falso,
+  recarregar, offline, ultimo.json adulterado) e de componente (`Inicio.novidade.test.ts`,
+  `MeusJogos.novidade.test.ts`). Capturas 360/1280 px, claro e escuro, conferidas (2026-10-15).
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

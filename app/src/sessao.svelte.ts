@@ -3,6 +3,8 @@
 import { abrirComCache, type SituacaoDados } from './dados/abertura';
 import { ArmazenamentoResiliente } from './dados/armazenamento-idb';
 import { criarCliente, type OpcoesSincronizacao } from './dados/cliente';
+import type { NovidadeLoteria } from './jogos/conferencia-automatica';
+import { calcularNovidades } from './jogos/novidades';
 import { RepositorioResiliente } from './jogos/repositorio-idb';
 import {
   OPCOES_DA_ABERTURA,
@@ -21,6 +23,22 @@ export function criarSessao() {
   let aviso = $state<string | null>(armazenamento.aviso);
   let ocupada = $state(false);
   let emSegundoPlano = false;
+  // Conferência automática (6.4): resultado dos concursos novos para os jogos salvos.
+  let novidades = $state.raw<readonly NovidadeLoteria[]>([]);
+
+  /** Só lê os jogos e o cache (sem rede). Falha aqui não muda nada na tela. */
+  let sequenciaNovidades = 0;
+  async function recalcularNovidades(): Promise<void> {
+    // Só vale o cálculo da chamada mais recente: um resultado antigo, que terminou
+    // depois, não pode sobrescrever o novo.
+    const minha = ++sequenciaNovidades;
+    try {
+      const calculado = await calcularNovidades(jogos, cliente);
+      if (minha === sequenciaNovidades) novidades = calculado;
+    } catch {
+      /* mantém o que já estava */
+    }
+  }
 
   // Depois que a Início já está atualizada: baixa o resto com baixa prioridade,
   // em silêncio (falha aqui não muda o estado mostrado na Início).
@@ -48,8 +66,14 @@ export function criarSessao() {
         undefined,
         OPCOES_DA_ABERTURA,
       );
-      if (final.estado.tipo === 'atualizado')
-        void baixarRestoEmSegundoPlano().catch(() => undefined);
+      // Com o ultimo.json já atualizado, confere os jogos salvos; o histórico (que pode
+      // faltar) chega em segundo plano e então a conferência é refeita.
+      await recalcularNovidades();
+      if (final.estado.tipo === 'atualizado') {
+        void baixarRestoEmSegundoPlano()
+          .then(recalcularNovidades)
+          .catch(() => undefined);
+      }
     } catch {
       /* abrirComCache não lança; a sessão segue com o que tem */
     } finally {
@@ -68,6 +92,12 @@ export function criarSessao() {
     garantir: (opcoes: OpcoesSincronizacao) => garantirArquivos(cliente, opcoes),
     /** Só o que está guardado, sem rede (para mostrar de imediato antes de `garantir`). */
     lerCache: (opcoes: OpcoesSincronizacao) => cliente.lerCache(opcoes),
+    /** Refaz a conferência automática (depois de marcar jogos como vistos). */
+    recalcularNovidades,
+    /** Loterias com jogos salvos que têm concurso novo desde a última marca. */
+    get novidades() {
+      return novidades;
+    },
     get situacao() {
       return situacao;
     },

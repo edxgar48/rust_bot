@@ -43,6 +43,20 @@ export async function salvarJogo(
   return { tipo: 'salvo', jogo: criado.valor, primeiro: existentes.length === 0 };
 }
 
+/**
+ * "Marcar como visto": o jogo passa a valer como conferido até `concurso`. Só avança
+ * (nunca volta a marca) e devolve `null` se o jogo não existe mais.
+ */
+export async function marcarComoVisto(
+  repo: RepositorioJogos,
+  id: string,
+  concurso: number,
+): Promise<JogoSalvo | null> {
+  // Leitura e gravação no mesmo passo do repositório: uma renomeação concorrente não é desfeita.
+  const [novo] = await repo.avancarMarcas(new Map([[id, concurso]]));
+  return novo ?? null;
+}
+
 export interface ArquivoExportado {
   readonly nome: string;
   readonly conteudo: string;

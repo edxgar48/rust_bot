@@ -75,6 +75,43 @@ function comportamentoComum(nome: string, criar: () => RepositorioJogos): void {
       expect((await repo.listar()).map((j) => j.id)).toEqual(['b']);
     });
 
+    it('avancarMarcas muda só conferidoAte: só avança, ou só onde falta; ids inexistentes ficam de fora', async () => {
+      const repo = criar();
+      await repo.gravar([
+        jogoValido('a', Q1, { conferidoAte: 10 }),
+        jogoValido('b', Q2, { conferidoAte: null }),
+      ]);
+      await repo.renomear('a', 'Nome novo');
+      const r = await repo.avancarMarcas(
+        new Map([
+          ['a', 8], // não volta
+          ['b', 12], // sem marca: recebe
+          ['nao-existe', 5],
+        ]),
+      );
+      expect(r.map((j) => [j.id, j.conferidoAte]).sort()).toEqual([
+        ['a', 10],
+        ['b', 12],
+      ]);
+      expect((await repo.avancarMarcas(new Map([['a', 15]])))[0]?.conferidoAte).toBe(15);
+      // Só onde falta: marca existente nunca muda.
+      const so = await repo.avancarMarcas(
+        new Map([
+          ['a', 99],
+          ['b', 99],
+        ]),
+        true,
+      );
+      expect(so.map((j) => j.conferidoAte).sort()).toEqual([12, 15]);
+      const guardados = await repo.listar();
+      expect(guardados.find((j) => j.id === 'a')).toMatchObject({
+        nome: 'Nome novo',
+        dezenas: Q1,
+        conferidoAte: 15,
+      });
+      expect(await repo.avancarMarcas(new Map())).toEqual([]);
+    });
+
     it('gravar com o mesmo id substitui (usado pelo desfazer)', async () => {
       const repo = criar();
       const a = jogoValido('a', Q1);

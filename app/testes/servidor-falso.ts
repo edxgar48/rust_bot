@@ -93,6 +93,30 @@ export class ServidorFalso {
     await this.trocar(caminho, JSON.stringify(json, null, 2) + '\n');
   }
 
+  /**
+   * Simula a publicação de um concurso novo da Quina (a real termina no 7141): atualiza
+   * ultimo.json, historico.json e o índice, sempre consistentes entre si. Dezenas em
+   * ordem crescente (o contrato exige).
+   */
+  async publicarConcursoQuina(
+    concurso: number,
+    dezenas: number[],
+    data = '2026-10-15',
+  ): Promise<void> {
+    await this.alterarJson('quina/ultimo.json', (j) => {
+      j.concurso = concurso;
+      j.data = data;
+      j.dezenas = dezenas;
+    });
+    await this.alterarJson('quina/historico.json', (j) => {
+      j.concursos.push([concurso, data, dezenas]);
+    });
+    const indice = this.indice();
+    indice.loterias.quina.ultimo_concurso = concurso;
+    indice.loterias.quina.data = data;
+    this.gravarIndice(indice);
+  }
+
   pedidosDeDados(): string[] {
     return this.pedidos.filter((p) => p !== 'index.json');
   }

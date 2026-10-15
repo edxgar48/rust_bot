@@ -254,6 +254,7 @@
         dezenas={jogo}
         valido={quantidade.tipo === 'valida'}
         {jogos}
+        ultimoConcurso={historico[historico.length - 1]?.[0] ?? null}
         aoVerJogos={() => aoVerJogos?.()}
       />
     </Cartao>

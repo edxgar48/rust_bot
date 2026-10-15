@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, type Component } from 'svelte';
+  import { onMount, untrack, type Component } from 'svelte';
   import Aviso from './componentes/Aviso.svelte';
   import BarraNavegacao from './componentes/BarraNavegacao.svelte';
   import SeletorTema from './componentes/SeletorTema.svelte';
@@ -52,6 +52,12 @@
     if (id !== abaAtual) location.hash = hashDaRota(id);
   }
 
+  // Voltar à Início refaz a conferência dos jogos salvos (cache local, sem rede): reflete
+  // o que mudou em Meus jogos (marcado como visto, apagado, importado).
+  $effect(() => {
+    if (abaAtual === 'inicio') untrack(() => void sessao.recalcularNovidades());
+  });
+
   onMount(() => {
     aoMudarHash();
     sessao.iniciar();
@@ -88,6 +94,7 @@
           situacao={sessao.situacao}
           ocupada={sessao.ocupada}
           aoAtualizar={() => void sessao.atualizar()}
+          novidades={sessao.novidades}
         />
       {:else if abaAtual === 'forca'}
         <Forca fonte={sessao} />

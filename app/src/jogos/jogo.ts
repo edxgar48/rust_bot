@@ -17,6 +17,12 @@ export interface JogoSalvo {
   readonly dezenas: readonly number[];
   /** ISO-8601 UTC (sempre normalizado por `validarJogoSalvo`). */
   readonly criadoEm: string;
+  /**
+   * Último concurso cujo resultado a pessoa já viu para este jogo (6.4). `null` = ainda
+   * sem marca (jogo anterior à 6.4 ou importado de um arquivo antigo): nada é tratado
+   * como novidade até a marca ser definida. Campo opcional nos arquivos de backup.
+   */
+  readonly conferidoAte: number | null;
 }
 
 export type MotivoInvalido =
@@ -76,6 +82,15 @@ export function validarDezenas(slug: Slug, dezenas: unknown): Validacao<number[]
   return ok([...vistas].sort((a, b) => a - b));
 }
 
+/**
+ * Concurso de referência (`conferidoAte`): inteiro seguro >= 1. Campo opcional e só
+ * informativo, então valor ausente ou inválido vira `null` (sem marca) em vez de
+ * recusar o jogo inteiro.
+ */
+export function normalizarConferidoAte(valor: unknown): number | null {
+  return typeof valor === 'number' && Number.isSafeInteger(valor) && valor >= 1 ? valor : null;
+}
+
 /** Data ISO-8601 com fuso (o que `toISOString()` produz); aceita só datas reais. */
 export function ehDataIso(valor: unknown): valor is string {
   if (typeof valor !== 'string') return false;
@@ -126,6 +141,7 @@ export function validarJogoSalvo(valor: unknown): Validacao<JogoSalvo> {
     // Normaliza para UTC: "…-03:00" e "…Z" do mesmo instante viram o mesmo texto, e a
     // ordenação por texto em `ordenarJogos` passa a coincidir com a ordem no tempo.
     criadoEm,
+    conferidoAte: normalizarConferidoAte(v.conferidoAte),
   });
 }
 
@@ -133,6 +149,8 @@ export interface EntradaJogo {
   readonly loteria: Slug;
   readonly dezenas: readonly number[];
   readonly nome?: string | null;
+  /** Último concurso conhecido ao salvar: o passado não vira novidade. */
+  readonly conferidoAte?: number | null;
 }
 
 /** Monta um jogo novo a partir do que a tela tem (valida tudo; não grava). */
@@ -147,6 +165,7 @@ export function criarJogo(
     nome: entrada.nome ?? null,
     dezenas: entrada.dezenas,
     criadoEm: agora.toISOString(),
+    conferidoAte: entrada.conferidoAte ?? null,
   });
 }
 

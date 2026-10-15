@@ -155,6 +155,46 @@ export function concursosComAcertos(
   return saida;
 }
 
+/** Acertos do jogo em cada concurso dado, na ordem recebida (conferência dos concursos novos, 6.4). */
+export function acertosPorConcurso(
+  slug: Slug,
+  jogo: readonly number[],
+  concursos: readonly ConcursoHistorico[],
+): { concurso: number; acertos: number }[] {
+  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  return concursos.map((c) => ({ concurso: c[0], acertos: contarAcertos(marca, c[2]) }));
+}
+
+export interface ResumoDosRecentes {
+  /** Os `limite` concursos mais recentes, do mais recente ao mais antigo. */
+  readonly recentes: { concurso: number; acertos: number }[];
+  readonly total: number;
+  /** Mais acertos; em empate, o concurso mais recente. `null` sem concursos. */
+  readonly melhor: { concurso: number; acertos: number } | null;
+}
+
+/**
+ * Numa passada, sem lista por concurso: guarda só os `limite` mais recentes, o total e o
+ * melhor (conferência dos concursos novos, 6.4; `concursos` em ordem crescente).
+ */
+export function resumirAcertosRecentes(
+  slug: Slug,
+  jogo: readonly number[],
+  concursos: readonly ConcursoHistorico[],
+  limite: number,
+): ResumoDosRecentes {
+  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  const recentes: { concurso: number; acertos: number }[] = [];
+  let melhor: { concurso: number; acertos: number } | null = null;
+  for (let i = concursos.length - 1; i >= 0; i--) {
+    const c = concursos[i] as ConcursoHistorico;
+    const acertos = contarAcertos(marca, c[2]);
+    if (recentes.length < limite) recentes.push({ concurso: c[0], acertos });
+    if (melhor === null || acertos > melhor.acertos) melhor = { concurso: c[0], acertos };
+  }
+  return { recentes, total: concursos.length, melhor };
+}
+
 /** Acertos do jogo no concurso mais recente do histórico (o último do arquivo); `null` se vazio. */
 export function acertosNoUltimoConcurso(
   slug: Slug,

@@ -329,6 +329,39 @@ export const textos = {
       leitura: 'Não foi possível ler o arquivo. Nada foi importado.',
     },
   },
+  // Conferência automática dos jogos salvos (6.4): Início e Meus jogos.
+  novidade: {
+    // Início.
+    titulo: (loteria: string, concurso: number) =>
+      `Concurso ${concurso} saiu: seus jogos salvos da ${loteria}`,
+    resumo: (jogos: number, melhor: number) =>
+      `${jogos} ${jogos === 1 ? 'jogo conferido' : 'jogos conferidos'}; melhor: ${melhor} ${melhor === 1 ? 'acerto' : 'acertos'}`,
+    concursosNovos: (quantidade: number) =>
+      `Conferidos contra ${quantidade} concursos novos, desde a última conferência.`,
+    faixa: (jogos: number, minimo: number) =>
+      `${jogos} ${jogos === 1 ? 'jogo' : 'jogos'} na faixa com prêmio (${minimo} ou mais acertos)`,
+    pendente: (jogos: number) =>
+      `${jogos} ${jogos === 1 ? 'jogo aguarda' : 'jogos aguardam'} o histórico de concursos para ser conferido. Ele é baixado quando houver rede, ou ao abrir Meus jogos.`,
+    verJogos: 'Ver Meus jogos',
+    premioNota:
+      'O app só conta acertos: não calcula valor de prêmio. Confira o resultado oficial da Caixa.',
+    // Meus jogos.
+    selo: (concurso: number) => `Novo: concurso ${concurso}`,
+    resultado: (concurso: number, acertos: number) =>
+      `Concurso ${concurso}: ${acertos} ${acertos === 1 ? 'acerto' : 'acertos'}`,
+    resultadosMais: (quantidade: number) =>
+      `e mais ${quantidade} ${quantidade === 1 ? 'concurso anterior' : 'concursos anteriores'}`,
+    melhorNovos: (acertos: number, concurso: number) =>
+      `Melhor entre os novos: ${acertos} ${acertos === 1 ? 'acerto' : 'acertos'} (concurso ${concurso})`,
+    naFaixa: (minimo: number) => `Faixa com prêmio: ${minimo} ou mais acertos nesta loteria`,
+    jogoPendente: (concurso: number) =>
+      `O concurso ${concurso} saiu, mas o histórico ainda não está neste aparelho para conferir. Ele é baixado quando houver rede.`,
+    marcarVisto: 'Marcar como visto',
+    marcado: 'Jogo marcado como visto.',
+    marcarFalhou: 'Não foi possível marcar o jogo como visto.',
+    listaResumo: (jogos: number) =>
+      `${jogos} ${jogos === 1 ? 'jogo com concurso novo' : 'jogos com concurso novo'}. O destaque some quando você marca como visto.`,
+  },
   entenda: {
     titulo: 'Entenda',
     destaque: {

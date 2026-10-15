@@ -8,6 +8,7 @@ import {
   ehDataIso,
   gerarId,
   limparNome,
+  normalizarConferidoAte,
   ordenarJogos,
   validarDezenas,
   validarJogoSalvo,
@@ -25,6 +26,7 @@ function jogo(parte: Partial<JogoSalvo> = {}): JogoSalvo {
     nome: null,
     dezenas: [1, 2, 3, 4, 5],
     criadoEm: AGORA.toISOString(),
+    conferidoAte: null,
     ...parte,
   };
 }
@@ -99,6 +101,7 @@ describe('validarJogoSalvo e criarJogo', () => {
     const r = validarJogoSalvo({ ...jogo({ nome: ' Meu  jogo ' }), extra: 1, outro: { a: 2 } });
     expect(r).toEqual({ ok: true, valor: jogo({ nome: 'Meu jogo' }) });
     expect(Object.keys((r as { valor: object }).valor).sort()).toEqual([
+      'conferidoAte',
       'criadoEm',
       'dezenas',
       'id',
@@ -198,5 +201,38 @@ describe('chave e ordem', () => {
     const entrada = [a, c, b];
     expect(ordenarJogos(entrada).map((j) => j.id)).toEqual(['b', 'c', 'a']);
     expect(entrada.map((j) => j.id)).toEqual(['a', 'c', 'b']);
+  });
+});
+
+describe('conferidoAte (6.4): campo opcional', () => {
+  it('normaliza: inteiro seguro >= 1 passa; o resto vira null', () => {
+    expect(normalizarConferidoAte(7141)).toBe(7141);
+    expect(normalizarConferidoAte(1)).toBe(1);
+    for (const ruim of [0, -3, 1.5, NaN, Infinity, 2 ** 60, '7141', null, undefined, {}, [7]]) {
+      expect(normalizarConferidoAte(ruim)).toBeNull();
+    }
+  });
+
+  it('registro antigo, sem o campo, segue válido e fica sem marca', () => {
+    const antigo: Record<string, unknown> = { ...jogo() };
+    delete antigo.conferidoAte;
+    const r = validarJogoSalvo(antigo);
+    expect(r.ok && r.valor.conferidoAte).toBeNull();
+  });
+
+  it('valor inválido não derruba o jogo: vira sem marca', () => {
+    const r = validarJogoSalvo({ ...jogo(), conferidoAte: 'sete mil' });
+    expect(r.ok && r.valor.conferidoAte).toBeNull();
+  });
+
+  it('criarJogo guarda a marca recebida e usa null sem ela', () => {
+    const com = criarJogo(
+      { loteria: 'quina', dezenas: [1, 2, 3, 4, 5], conferidoAte: 7141 },
+      'x',
+      AGORA,
+    );
+    const sem = criarJogo({ loteria: 'quina', dezenas: [1, 2, 3, 4, 5] }, 'y', AGORA);
+    expect(com.ok && com.valor.conferidoAte).toBe(7141);
+    expect(sem.ok && sem.valor.conferidoAte).toBeNull();
   });
 });

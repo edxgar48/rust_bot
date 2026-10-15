@@ -21,6 +21,7 @@ function jogo(parte: Partial<JogoSalvo> = {}): JogoSalvo {
     nome: null,
     dezenas: [1, 2, 3, 4, 5],
     criadoEm: '2026-10-14T10:00:00.000Z',
+    conferidoAte: null,
     ...parte,
   };
 }
@@ -166,5 +167,51 @@ describe('planejarImportacao', () => {
       ignorados: 0,
       invalidos: 0,
     });
+  });
+});
+
+describe('conferidoAte no arquivo de backup (6.4)', () => {
+  it('exportar e importar preservam a marca; a versão do formato continua 1', () => {
+    const texto = serializarJogos(
+      [jogo({ conferidoAte: 7141 }), jogo({ id: 'b2', conferidoAte: null })],
+      AGORA,
+    );
+    expect(JSON.parse(texto).versao).toBe(1);
+    const leitura = lerArquivoJogos(texto);
+    expect(leitura.ok).toBe(true);
+    if (!leitura.ok) return;
+    const plano = planejarImportacao([], leitura.itens.slice(0, 1));
+    expect(plano.novos[0]?.conferidoAte).toBe(7141);
+  });
+
+  it('arquivo antigo (sem o campo) importa e fica sem marca', () => {
+    const antigo = {
+      formato: 'forca-loterias-jogos',
+      versao: 1,
+      exportadoEm: AGORA.toISOString(),
+      jogos: [
+        {
+          id: 'a1',
+          loteria: 'quina',
+          nome: null,
+          dezenas: [1, 2, 3, 4, 5],
+          criadoEm: AGORA.toISOString(),
+        },
+      ],
+    };
+    const leitura = lerArquivoJogos(JSON.stringify(antigo));
+    expect(leitura.ok).toBe(true);
+    if (!leitura.ok) return;
+    const plano = planejarImportacao([], leitura.itens);
+    expect(plano.invalidos).toBe(0);
+    expect(plano.novos).toHaveLength(1);
+    expect(plano.novos[0]?.conferidoAte).toBeNull();
+  });
+
+  it('marca inválida no arquivo é ignorada (sem marca), sem recusar o jogo', () => {
+    const item = { ...jogo(), conferidoAte: -5 };
+    const plano = planejarImportacao([], [item]);
+    expect(plano.invalidos).toBe(0);
+    expect(plano.novos[0]?.conferidoAte).toBeNull();
   });
 });

@@ -6,11 +6,18 @@
   import type { OpcaoSegmentada } from '../componentes/tipos';
   import type { OpcoesSincronizacao, ResultadoCache } from '../dados/cliente';
   import { formatarDataHora } from '../dados/estado-sincronizacao';
-  import { SLUGS, type ConcursoHistorico, type Slug } from '../dados/tipos';
+  import type { ResultadoGarantia } from '../dados/sob-demanda';
+  import { SLUGS, type ConcursoHistorico, type Slug, type UltimoV1 } from '../dados/tipos';
   import { TAMANHO_MAXIMO_ARQUIVO } from '../jogos/arquivo';
+  import {
+    FAIXA_PREMIO,
+    LIMITE_RESULTADOS_LISTADOS,
+    novidadesDaLoteria,
+    type NovidadeJogo,
+  } from '../jogos/conferencia-automatica';
   import { TAMANHO_MAXIMO_NOME, validarNome, type JogoSalvo } from '../jogos/jogo';
   import type { RepositorioJogos } from '../jogos/repositorio';
-  import { exportarJogos, importarJogos } from '../jogos/servico';
+  import { exportarJogos, importarJogos, marcarComoVisto } from '../jogos/servico';
   import { baixarTexto, lerTextoDoArquivo } from '../lib/download';
   import { gravarLoteriaGuardada, lerLoteriaGuardada } from '../lib/loteria-guardada';
   import {
@@ -26,9 +33,13 @@
 
   interface Props {
     jogos: RepositorioJogos;
-    /** Só leitura do cache: o melhor resultado histórico não baixa nada. */
     fonte: {
       lerCache: (opcoes: OpcoesSincronizacao) => Promise<ResultadoCache | null>;
+      /**
+       * Baixa o que falta (sob demanda). Usado só quando há jogos e o histórico em cache
+       * falta ou é mais antigo que o último concurso; sem ele a tela só lê o cache.
+       */
+      garantir?: (opcoes: OpcoesSincronizacao) => Promise<ResultadoGarantia>;
     };
     /** Carrega o jogo no volante de Conferir jogo. */
     aoConferir: (jogo: JogoSalvo) => void;
@@ -46,6 +57,7 @@
   let falhaAoListar = $state(false);
   let volatil = $state(false);
   let historico = $state.raw<readonly ConcursoHistorico[] | null>(null);
+  let ultimo = $state.raw<UltimoV1 | null>(null);
   let mensagem = $state<Mensagem | null>(null);
   let desfazer = $state.raw<JogoSalvo | null>(null);
   let ocupado = $state(false);
@@ -71,6 +83,13 @@
 
   const daLoteria = $derived((todos ?? []).filter((j) => j.loteria === loteria));
   const nomeLoteria = $derived(textos.loterias[loteria]);
+
+  // Conferência automática (6.4): resultado dos concursos depois da última marca de cada jogo.
+  const novidade = $derived(novidadesDaLoteria(loteria, daLoteria, ultimo, historico));
+  const novidadePorJogo = $derived(
+    new Map<string, NovidadeJogo>((novidade?.jogos ?? []).map((n) => [n.jogoId, n])),
+  );
+  const faixaMinima = $derived(FAIXA_PREMIO[loteria]);
 
   // Melhor resultado de cada jogo no histórico em cache. Calculado aos poucos (um lote
   // por vez, cedendo o fio entre lotes) para a tela não travar com muitos jogos; cada
@@ -143,16 +162,37 @@
     volatil = Boolean(jogos.aviso);
   }
 
-  /** Só lê o cache; sem histórico guardado, o jogo simplesmente não mostra o melhor resultado. */
+  /**
+   * Lê o cache; sem histórico guardado, o jogo simplesmente não mostra os resultados.
+   * Se há jogos e o histórico falta ou é mais antigo que o último concurso, baixa sob
+   * demanda (quando a sessão oferece `garantir`) e lê de novo.
+   */
   async function carregarHistorico(slug: Slug): Promise<void> {
     const minha = ++sequenciaHistorico;
     historico = null;
+    ultimo = null;
+    const opcoes: OpcoesSincronizacao = { arquivos: ['historico', 'ultimo'], loterias: [slug] };
+    const aplicar = (cache: ResultadoCache | null): { h: number | null; u: number | null } => {
+      const dados = cache?.loterias[slug]?.dados;
+      historico = dados?.historico?.concursos ?? null;
+      ultimo = dados?.ultimo ?? null;
+      const ultimos = historico?.at(-1);
+      return { h: historico === null ? null : (ultimos?.[0] ?? 0), u: ultimo?.concurso ?? null };
+    };
     try {
-      const cache = await fonte.lerCache({ arquivos: ['historico'], loterias: [slug] });
+      const { h, u } = aplicar(await fonte.lerCache(opcoes));
       if (minha !== sequenciaHistorico) return;
-      historico = cache?.loterias[slug]?.dados.historico?.concursos ?? null;
+      const defasado = h === null || (u !== null && h < u);
+      if (fonte.garantir && defasado && (await jogos.listar(slug)).length > 0) {
+        await fonte.garantir(opcoes);
+        if (minha !== sequenciaHistorico) return;
+        aplicar(await fonte.lerCache(opcoes));
+      }
     } catch {
-      if (minha === sequenciaHistorico) historico = null;
+      if (minha === sequenciaHistorico) {
+        historico = null;
+        ultimo = null;
+      }
     }
   }
 
@@ -272,6 +312,22 @@
       mensagem = { tipo: 'erro', texto: textos.jogos.desfazerFalhou };
     }
     await recarregar();
+  }
+
+  // ---------------------------------------------------------------- marcar como visto
+
+  async function marcarVisto(jogo: JogoSalvo, n: NovidadeJogo): Promise<void> {
+    desfazer = null;
+    try {
+      const novo = await marcarComoVisto(jogos, jogo.id, n.ultimoConcurso);
+      mensagem = novo
+        ? { tipo: 'ok', texto: textos.novidade.marcado }
+        : { tipo: 'erro', texto: textos.novidade.marcarFalhou };
+    } catch {
+      mensagem = { tipo: 'erro', texto: textos.novidade.marcarFalhou };
+    }
+    await recarregar();
+    await devolverFocoRenomear(jogo.id);
   }
 
   // ---------------------------------------------------------------- exportar e importar
@@ -406,6 +462,12 @@
     <h3 bind:this={tituloLista} class="titulo-lista" tabindex="-1">
       {textos.jogos.lista(nomeLoteria, daLoteria.length)}
     </h3>
+    {#if novidade}
+      <p class="discreto">{textos.novidade.listaResumo(novidade.jogos.length)}</p>
+      {#if novidade.conferidos > 0}
+        <Aviso>{textos.novidade.premioNota}</Aviso>
+      {/if}
+    {/if}
     {#if daLoteria.length === 0}
       <div class="vazio">
         <p>{textos.jogos.vazio(nomeLoteria)}</p>
@@ -427,7 +489,8 @@
         {#each daLoteria as jogo (jogo.id)}
           {@const melhor = melhores[jogo.id]}
           {@const quando = formatarDataHora(jogo.criadoEm)}
-          <li class="jogo">
+          {@const novo = novidadePorJogo.get(jogo.id)}
+          <li class="jogo" class:com-novidade={novo !== undefined}>
             {#if editandoId === jogo.id}
               <form class="edicao" onsubmit={(e) => void salvarEdicao(e, jogo)}>
                 <label for="{idBase}-nome-{jogo.id}">{textos.jogos.campoNome}</label>
@@ -472,6 +535,48 @@
               </p>
               {#if quando}
                 <p class="discreto">{textos.jogos.salvoEm(quando)}</p>
+              {/if}
+              {#if novo}
+                <div class="novidade" data-estado={novo.estado}>
+                  <p class="selo">{textos.novidade.selo(novo.ultimoConcurso)}</p>
+                  {#if novo.estado === 'pendente'}
+                    <p class="discreto">{textos.novidade.jogoPendente(novo.ultimoConcurso)}</p>
+                  {:else}
+                    <ul class="resultados">
+                      {#each novo.resultados as r (r.concurso)}
+                        <li>{textos.novidade.resultado(r.concurso, r.acertos)}</li>
+                      {/each}
+                    </ul>
+                    {#if novo.totalConcursos > LIMITE_RESULTADOS_LISTADOS}
+                      <p class="discreto">
+                        {textos.novidade.resultadosMais(
+                          novo.totalConcursos - LIMITE_RESULTADOS_LISTADOS,
+                        )}
+                      </p>
+                    {/if}
+                    {#if novo.melhor && novo.totalConcursos > 1}
+                      <p class="melhor">
+                        {textos.novidade.melhorNovos(novo.melhor.acertos, novo.melhor.concurso)}
+                      </p>
+                    {/if}
+                    {#if novo.naFaixaPremio}
+                      <p class="faixa">{textos.novidade.naFaixa(faixaMinima)}</p>
+                    {/if}
+                    <div class="acoes">
+                      <button
+                        type="button"
+                        class="botao primario"
+                        aria-label={textos.jogos.acaoDe(
+                          textos.novidade.marcarVisto,
+                          descricao(jogo),
+                        )}
+                        onclick={() => void marcarVisto(jogo, novo)}
+                      >
+                        {textos.novidade.marcarVisto}
+                      </button>
+                    </div>
+                  {/if}
+                </div>
               {/if}
               {#if melhor}
                 <p class="melhor">{textos.jogos.melhor(melhor.acertos, melhor.concurso)}</p>
@@ -596,6 +701,35 @@
     border: 1px solid var(--cor-contorno-var);
     border-radius: var(--raio-m);
     background: var(--cor-superficie);
+  }
+  /* Jogo com concurso novo: borda mais grossa na cor primária; o selo em texto também informa. */
+  .jogo.com-novidade {
+    border-color: var(--cor-primaria);
+    border-left-width: 0.375rem;
+  }
+  .novidade {
+    display: grid;
+    gap: var(--esp-2);
+    padding: var(--esp-3);
+    border-radius: var(--raio-p);
+    background: var(--cor-cont-altissimo);
+  }
+  .selo {
+    font: var(--fonte-rotulo-g);
+    font-weight: 700;
+  }
+  .resultados {
+    display: grid;
+    gap: var(--esp-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font: var(--fonte-corpo-m);
+    font-variant-numeric: tabular-nums;
+  }
+  .faixa {
+    font: var(--fonte-corpo-m);
+    font-weight: 600;
   }
   .nome {
     font: var(--fonte-titulo-m);

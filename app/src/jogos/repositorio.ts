@@ -19,6 +19,22 @@ export interface RepositorioJogos {
   /** Troca só o nome; `null` se o jogo não existe. */
   renomear(id: string, nome: string | null): Promise<JogoSalvo | null>;
   apagar(id: string): Promise<void>;
+  /**
+   * Atualiza SÓ `conferidoAte`, lendo e gravando no mesmo passo (nome, dezenas e demais
+   * campos de gravações concorrentes não são desfeitos). Veja `proximaMarca`. Devolve os
+   * jogos existentes de `marcas` já com o valor final; ids que não existem ficam de fora.
+   */
+  avancarMarcas(marcas: ReadonlyMap<string, number>, soSemMarca?: boolean): Promise<JogoSalvo[]>;
+}
+
+/**
+ * Marca resultante: sem marca, vale a nova; com marca, só avança (nunca volta), e com
+ * `soSemMarca` a marca existente nunca muda.
+ */
+export function proximaMarca(atual: number | null, nova: number, soSemMarca: boolean): number {
+  if (atual === null) return nova;
+  if (soSemMarca) return atual;
+  return Math.max(atual, nova);
 }
 
 export class RepositorioEmMemoria implements RepositorioJogos {
@@ -48,5 +64,20 @@ export class RepositorioEmMemoria implements RepositorioJogos {
 
   async apagar(id: string): Promise<void> {
     this.jogos.delete(id);
+  }
+
+  async avancarMarcas(
+    marcas: ReadonlyMap<string, number>,
+    soSemMarca = false,
+  ): Promise<JogoSalvo[]> {
+    const saida: JogoSalvo[] = [];
+    for (const [id, nova] of marcas) {
+      const atual = this.jogos.get(id);
+      if (!atual) continue;
+      const novo = { ...atual, conferidoAte: proximaMarca(atual.conferidoAte, nova, soSemMarca) };
+      this.jogos.set(id, novo);
+      saida.push(novo);
+    }
+    return saida;
   }
 }

@@ -503,6 +503,8 @@ describe('Conferir jogo: salvar jogo (6.3)', () => {
       loteria: 'quina',
       nome: 'Meu jogo',
       dezenas: [5, 12, 33, 47, 71],
+      // 6.4: o passado não vira novidade; o jogo começa conferido até o último concurso mostrado.
+      conferidoAte: 7141,
     });
     expect(mensagem(alvo)).toBe(textos.conferir.salvar.salvo);
     expect(alvo.querySelector('form.salvar .mensagem')?.getAttribute('role')).toBe('status');

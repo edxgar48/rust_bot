@@ -1,8 +1,11 @@
 // Arquivo de backup dos jogos (formato próprio do app, não é o contrato de dados):
 //
 //   { "formato": "forca-loterias-jogos", "versao": 1, "exportadoEm": "...",
-//     "jogos": [ { "id", "loteria", "nome", "dezenas", "criadoEm" } ] }
+//     "jogos": [ { "id", "loteria", "nome", "dezenas", "criadoEm",
+//                 "conferidoAte" } ] }
 //
+// "conferidoAte" (6.4) é opcional: arquivos antigos sem ele seguem válidos (vira `null`,
+// sem marca) e apps antigos ignoram o campo; por isso a versão continua 1.
 // Campos desconhecidos são ignorados (compatível para a frente dentro da versão 1);
 // versão maior que a conhecida é recusada. Importar valida item a item e nunca
 // altera nada quando o arquivo como um todo é recusado.
@@ -27,6 +30,7 @@ export function serializarJogos(jogos: readonly JogoSalvo[], agora: Date): strin
       nome: j.nome,
       dezenas: [...j.dezenas],
       criadoEm: j.criadoEm,
+      conferidoAte: j.conferidoAte,
     })),
   };
   return `${JSON.stringify(corpo, null, 2)}\n`;

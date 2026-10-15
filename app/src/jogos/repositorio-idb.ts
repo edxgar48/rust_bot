@@ -6,7 +6,7 @@
 // real por uma memória vazia.
 import type { Slug } from '../dados/tipos';
 import { ordenarJogos, validarJogoSalvo, validarNome, type JogoSalvo } from './jogo';
-import { RepositorioEmMemoria, type RepositorioJogos } from './repositorio';
+import { RepositorioEmMemoria, proximaMarca, type RepositorioJogos } from './repositorio';
 
 export const NOME_BANCO_JOGOS = 'forca-loterias-jogos';
 const VERSAO_BANCO = 1;
@@ -141,6 +141,34 @@ export class RepositorioIndexedDB implements RepositorioJogos {
     await concluida;
   }
 
+  async avancarMarcas(
+    marcas: ReadonlyMap<string, number>,
+    soSemMarca = false,
+  ): Promise<JogoSalvo[]> {
+    if (marcas.size === 0) return [];
+    const banco = await this.obterBanco();
+    const transacao = banco.transaction(LOJA, 'readwrite');
+    const concluida = concluir(transacao);
+    const loja = transacao.objectStore(LOJA);
+    const saida: JogoSalvo[] = [];
+    try {
+      for (const [id, nova] of marcas) {
+        const atual = validarJogoSalvo(await esperar(loja.get(id)));
+        if (!atual.ok) continue;
+        const marca = proximaMarca(atual.valor.conferidoAte, nova, soSemMarca);
+        const novo: JogoSalvo = { ...atual.valor, conferidoAte: marca };
+        if (marca !== atual.valor.conferidoAte) loja.put({ ...novo, dezenas: [...novo.dezenas] });
+        saida.push(novo);
+      }
+    } catch (e) {
+      transacao.abort();
+      await concluida.catch(() => undefined);
+      throw e;
+    }
+    await concluida;
+    return saida;
+  }
+
   /** Libera a conexão (testes e troca de banco). */
   async fechar(): Promise<void> {
     if (!this.banco) return;
@@ -240,6 +268,13 @@ export class RepositorioResiliente implements RepositorioJogos {
     return this.executar(
       (r) => r.renomear(id, nome),
       () => this.memoria.renomear(id, nome),
+    );
+  }
+
+  avancarMarcas(marcas: ReadonlyMap<string, number>, soSemMarca = false): Promise<JogoSalvo[]> {
+    return this.executar(
+      (r) => r.avancarMarcas(marcas, soSemMarca),
+      () => this.memoria.avancarMarcas(marcas, soSemMarca),
     );
   }
 

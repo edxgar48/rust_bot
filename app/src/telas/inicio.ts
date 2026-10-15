@@ -4,6 +4,8 @@ import type { SituacaoDados } from '../dados/abertura';
 import type { TipoEstadoSincronizacao } from '../dados/estado-sincronizacao';
 import { formatarDataSorteio } from '../lib/datas';
 import { SLUGS, type Slug } from '../dados/tipos';
+import { FAIXA_PREMIO, type NovidadeLoteria } from '../jogos/conferencia-automatica';
+import { hashDosJogos } from '../lib/rotas';
 import { textos } from '../lib/textos';
 
 export interface CartaoInicio {
@@ -79,4 +81,43 @@ export function montarVisaoInicio(situacao: SituacaoDados | null): VisaoInicio {
     erro: situacao.estado.tipo === 'recusado',
     cartoes: SLUGS.map((slug) => montarCartao(slug, situacao)),
   };
+}
+
+/** Aviso discreto "Concurso N saiu: seus jogos salvos" (6.4), já com os textos prontos. */
+export interface AvisoNovidade {
+  readonly slug: Slug;
+  readonly titulo: string;
+  /** "2 jogos conferidos; melhor: 13 acertos"; `null` se nenhum jogo pôde ser conferido ainda. */
+  readonly resumo: string | null;
+  /** Quando há mais de um concurso novo. */
+  readonly concursos: string | null;
+  /** Jogos que atingiram a faixa com prêmio; `null` se nenhum. */
+  readonly faixa: string | null;
+  /** Jogos que esperam o histórico; `null` se nenhum. */
+  readonly pendente: string | null;
+  /** Link para Meus jogos da loteria. */
+  readonly href: string;
+}
+
+/** Um aviso por loteria com novidade (nada se não há jogos ou concurso novo), na ordem das loterias. */
+export function montarAvisosNovidade(novidades: readonly NovidadeLoteria[]): AvisoNovidade[] {
+  return SLUGS.flatMap((slug) => {
+    const n = novidades.find((x) => x.slug === slug);
+    if (!n || n.jogos.length === 0) return [];
+    return [
+      {
+        slug,
+        titulo: textos.novidade.titulo(textos.loterias[slug], n.ultimoConcurso),
+        resumo:
+          n.conferidos > 0 && n.melhorAcertos !== null
+            ? textos.novidade.resumo(n.conferidos, n.melhorAcertos)
+            : null,
+        concursos: n.concursosNovos > 1 ? textos.novidade.concursosNovos(n.concursosNovos) : null,
+        faixa:
+          n.naFaixaPremio > 0 ? textos.novidade.faixa(n.naFaixaPremio, FAIXA_PREMIO[slug]) : null,
+        pendente: n.pendentes > 0 ? textos.novidade.pendente(n.pendentes) : null,
+        href: hashDosJogos(slug),
+      },
+    ];
+  });
 }

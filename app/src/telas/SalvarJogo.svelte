@@ -12,11 +12,13 @@
     /** Quantidade de dezenas aceita pela loteria: só então o botão fica habilitado. */
     valido: boolean;
     jogos: RepositorioJogos;
+    /** Último concurso do histórico mostrado: o jogo novo começa conferido até ele (6.4). */
+    ultimoConcurso?: number | null;
     /** Leva para a lista Meus jogos. */
     aoVerJogos: () => void;
   }
 
-  let { loteria, dezenas, valido, jogos, aoVerJogos }: Props = $props();
+  let { loteria, dezenas, valido, jogos, ultimoConcurso = null, aoVerJogos }: Props = $props();
 
   const idCampo = $props.id();
   let nome = $state('');
@@ -41,7 +43,7 @@
     mensagem = null;
     salvouAgora = false;
     try {
-      const r = await salvarJogo(jogos, { loteria, dezenas, nome });
+      const r = await salvarJogo(jogos, { loteria, dezenas, nome, conferidoAte: ultimoConcurso });
       if (r.tipo === 'salvo') {
         salvouAgora = true;
         nome = '';
