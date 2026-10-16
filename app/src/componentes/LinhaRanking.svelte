@@ -172,21 +172,26 @@
     position: relative;
     grid-column: 4;
     grid-row: 1;
-    align-self: start;
+    align-self: center;
     justify-self: stretch;
     z-index: 1;
     box-sizing: border-box;
-    min-width: var(--alvo-minimo);
-    min-height: var(--alvo-minimo);
-    margin-top: var(--esp-1);
-    padding: 0 var(--esp-1);
+    min-height: 2rem;
+    padding: 0 var(--esp-2);
     border: 1px solid var(--cor-contorno);
     border-radius: var(--raio-cheio);
     background: transparent;
     color: var(--cor-primaria);
     font: var(--fonte-rotulo-m);
+    font-size: 0.75rem;
     white-space: nowrap;
     cursor: pointer;
+  }
+  /* O botão é menor, mas o alvo de toque continua com 44px de altura. */
+  .inserir::after {
+    content: '';
+    position: absolute;
+    inset: calc((2rem - var(--alvo-minimo)) / 2) -4px;
   }
   /* Marcada: borda mais grossa, fundo e "✓" (a cor nunca é a única informação). */
   .inserir[aria-pressed='true'] {
