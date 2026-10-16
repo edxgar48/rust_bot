@@ -17,7 +17,7 @@ function dimensoesPng(caminho: string): [number, number] {
 
 describe('manifesto', () => {
   it('traz os campos de instalação em português', () => {
-    expect(manifesto.name).toBe('Força das Dezenas');
+    expect(manifesto.name).toBe('Fezinha');
     expect(manifesto.short_name).toBeTruthy();
     expect(manifesto.short_name?.length).toBeLessThanOrEqual(12);
     expect(manifesto.description).toMatch(/Lotofácil/);
@@ -93,12 +93,7 @@ describe('index.html', () => {
       (m) => m[1] ?? '',
     );
     expect(hrefs).toEqual(
-      expect.arrayContaining([
-        'icone.svg',
-        'favicon-32.png',
-        'favicon.ico',
-        'apple-touch-icon.png',
-      ]),
+      expect.arrayContaining(['favicon-32.png', 'favicon.ico', 'apple-touch-icon.png']),
     );
     for (const h of hrefs) expect(existsSync(new URL(`public/${h}`, RAIZ))).toBe(true);
   });

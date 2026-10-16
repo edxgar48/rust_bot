@@ -1,4 +1,4 @@
-# App Força das Dezenas
+# App Fezinha
 
 Front-end estático (Vite + Svelte 5 + TypeScript estrito). Lê apenas os JSON do
 contrato `v1` (`docs/contrato-v1.md`); sem servidor, sem analytics. Plano em
@@ -36,9 +36,9 @@ npm run preview    # serve dist/ localmente
   responsivo e tabelas/volantes pedem o aparelho deitado; cores = tokens: `theme_color` #E8EFEC (barra do
   topo), `background_color` #F4FBF8, e `<meta name="theme-color">` claro/escuro em `index.html`). Ícones PNG
   versionados em `public/` (192/512 `any`, 192/512 `maskable` com o desenho dentro da zona segura de 80%,
-  `apple-touch-icon.png` 180, `favicon-32.png`, `favicon.ico`), gerados do `public/icone.svg` por
-  `py -3.12 scripts/gerar-icones.py` (Playwright + Chrome instalado + Pillow); o build NÃO roda o script, só
-  rode se o SVG mudar. Splash do Android = `background_color` + ícone 512 (sempre claro, mesmo com o aparelho
+  `apple-touch-icon.png` 180, `favicon-32.png`, `favicon.ico`), gerados de `arte/Logo_app.png` por
+  `py -3.12 scripts/gerar-icones.py` (Pillow); o build NÃO roda o script, só
+  rode se a arte mudar. Splash do Android = `background_color` + ícone 512 (sempre claro, mesmo com o aparelho
   escuro); no iOS não há `apple-touch-startup-image`. Lógica de instalação em `src/lib/instalacao.ts` (iOS Safari, modo
   standalone, dispensa em localStorage tolerante a falha, `ControleInstalacao` que guarda o
   `beforeinstallprompt`; criado em `main.ts` para não perder o evento) e `componentes/InstalarApp.svelte`:

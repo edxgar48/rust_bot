@@ -14,8 +14,8 @@ export const COR_TEMA_CLARO = '#E8EFEC';
 export const COR_TEMA_ESCURO = '#1A211F';
 
 export const manifesto: Partial<ManifestOptions> = {
-  name: 'Força das Dezenas',
-  short_name: 'Dezenas',
+  name: 'Fezinha',
+  short_name: 'Fezinha',
   description:
     'Resultados, estatísticas e conferência de jogos da Lotofácil, Mega-Sena e Quina. Não prevê sorteios.',
   lang: 'pt-BR',
@@ -35,6 +35,5 @@ export const manifesto: Partial<ManifestOptions> = {
     { src: 'icone-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
     { src: 'icone-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
     { src: 'icone-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    { src: 'icone.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
   ],
 };

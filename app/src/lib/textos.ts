@@ -24,7 +24,7 @@ function descreverPerfilJanela(perfil: string, janela: number): string {
 }
 
 export const textos = {
-  appNome: 'Força das Dezenas',
+  appNome: 'Fezinha',
   navegacao: 'Navegação principal',
   abas: {
     inicio: 'Início',

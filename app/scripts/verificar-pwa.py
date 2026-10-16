@@ -197,7 +197,6 @@ def main() -> int:
             "icone-maskable-512.png",
             "apple-touch-icon.png",
             "favicon.ico",
-            "icone.svg",
             "index.html",
         ):
             conferir(any(u.split("?")[0].endswith("/" + nome) for u in precache), f"precache contém {nome}")
