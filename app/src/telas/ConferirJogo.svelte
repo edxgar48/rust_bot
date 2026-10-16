@@ -31,6 +31,7 @@
   import type { EstadoTela, SituacaoTela } from './estado-tela';
   import type { JogoInicial } from './jogo-inicial';
   import FaixaAcertos from './FaixaAcertos.svelte';
+  import { consumirRascunho } from './rascunho-jogo';
   import SalvarJogo from './SalvarJogo.svelte';
 
   interface Props {
@@ -58,12 +59,20 @@
 
   // Precedência: URL (#/conferir?loteria=quina), depois a última escolha guardada, depois Lotofácil.
   // Um jogo vindo de Meus jogos manda na loteria e nas dezenas iniciais.
-  const inicial = untrack(() => jogoInicial);
+  // Sem jogo salvo, as dezenas separadas na tabela de força (rascunho) entram só se o usuário
+  // pediu "Abrir em Conferir"; o rascunho é consumido na montagem, com o volante ainda vazio.
+  const salvoInicial = untrack(() => jogoInicial);
+  const rascunho = salvoInicial ? null : consumirRascunho();
+  const inicial = salvoInicial ?? rascunho;
   let loteria = $state<Slug>(
     inicial?.loteria ?? loteriaDoHash(location.hash) ?? lerLoteriaGuardada() ?? LOTERIA_PADRAO,
   );
   let avisoCarregado = $state<string | null>(
-    inicial ? textos.conferir.salvar.carregado(inicial.nome) : null,
+    salvoInicial
+      ? textos.conferir.salvar.carregado(salvoInicial.nome)
+      : rascunho
+        ? textos.conferir.rascunhoCarregado
+        : null,
   );
   // raw: o histórico tem milhares de listas; um proxy reativo em cada uma só custaria tempo.
   let situacao = $state.raw<SituacaoTela | null>(null);
@@ -162,7 +171,7 @@
   }
 
   onMount(() => {
-    if (inicial) aoUsarJogoInicial?.();
+    if (salvoInicial) aoUsarJogoInicial?.();
     void carregar(loteria);
     return () => {
       sequencia++;

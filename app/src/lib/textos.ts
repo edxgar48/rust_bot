@@ -82,8 +82,19 @@ export const textos = {
       posicao: 'Pos.',
       dezena: 'Dez.',
       variacao: 'Variação',
+      jogo: 'Jogo',
       indice: 'Índice',
       evidencia: 'Evidência (grau · direção)',
+    },
+    // Montar um jogo a partir da tabela (7.5): só uma conveniência para marcar dezenas.
+    rascunho: {
+      inserida: (dezena: string) => `Dezena ${dezena} inserida no jogo.`,
+      removida: (dezena: string) => `Dezena ${dezena} removida do jogo.`,
+      cheio: (dezena: string, maximo: number) =>
+        `Dezena ${dezena} não inserida: limite de ${maximo} dezenas por jogo. Remova uma para inserir outra.`,
+      contador: (quantidade: number) =>
+        `${quantidade} ${quantidade === 1 ? 'dezena' : 'dezenas'} no jogo`,
+      abrir: 'Abrir em Conferir',
     },
     lista: (loteria: string, quantidade: number) =>
       `Ranking das ${quantidade} dezenas da ${loteria}`,
@@ -446,6 +457,7 @@ export const textos = {
     marcadas: (quantidade: number) =>
       `${quantidade} ${quantidade === 1 ? 'dezena marcada' : 'dezenas marcadas'}`,
     limpar: 'Limpar',
+    rascunhoCarregado: 'Dezenas inseridas na tabela de força carregadas no volante.',
     limite: (maximo: number) => `Limite de ${maximo} dezenas por jogo. Desmarque uma para trocar.`,
     quantidade: {
       vazia: (minimo: number, maximo: number) =>
@@ -761,6 +773,9 @@ export const textos = {
     caiu: (n: number) => `caiu ${n} ${n === 1 ? 'posição' : 'posições'}`,
     igual: 'manteve a posição',
     semVariacao: 'sem concurso anterior para comparar',
+    inserir: 'Inserir',
+    inserida: 'Inserida',
+    paraODezena: (dezena: string) => `dezena ${dezena} no jogo`,
   },
 } as const;
 

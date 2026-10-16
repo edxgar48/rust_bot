@@ -97,7 +97,7 @@ describe('Força: atualizado (Lotofácil, padrão)', () => {
       'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
     );
     expect(texto(alvo.querySelector('.cabecalho'))).toBe(
-      'Pos. Dez. Variação Índice Evidência (grau · direção)',
+      'Pos. Dez. Variação Jogo Índice Evidência (grau · direção)',
     );
     expect(selecionada(alvo)).toEqual(['✓ Lotofácil', '✓ Lista']);
     expect(texto(alvo.querySelector('[role="status"][data-estado]'))).toBe(
@@ -133,7 +133,8 @@ describe('Força: atualizado (Lotofácil, padrão)', () => {
   it('cada linha é um botão que abre o detalhe da dezena', async () => {
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     await esperarLinhas(alvo, 25);
-    expect(alvo.querySelectorAll('ul.lista button')).toHaveLength(25);
+    expect(alvo.querySelectorAll('ul.lista button.linha')).toHaveLength(25);
+    expect(alvo.querySelectorAll('ul.lista button.inserir')).toHaveLength(25);
     expect(alvo.querySelector('[role="dialog"]')).toBeNull();
   });
 

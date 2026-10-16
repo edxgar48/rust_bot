@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DirecaoEvidencia, GrauEvidencia } from '../dados/tipos';
   import { rotuloEvidenciaDirecao, rotuloEvidenciaGrau, textos } from '../lib/textos';
+  import { doisDigitos } from '../lib/numeros';
   import BolaDezena from './BolaDezena.svelte';
   import {
     SETAS_VARIACAO,
@@ -23,6 +24,10 @@
     aoEscolher?: (numero: number) => void;
     /** `false` quando um cabeçalho de coluna já diz "Evidência" (o leitor de tela ainda ouve). */
     rotuloEvidenciaVisivel?: boolean;
+    /** Se informado, mostra o botão Inserir entre a variação e o índice (só com `aoEscolher`). */
+    aoInserir?: (numero: number) => void;
+    /** Dezena já inserida no jogo: o botão fica marcado e tocar de novo a remove. */
+    inserida?: boolean;
   }
 
   let {
@@ -34,7 +39,12 @@
     direcao,
     aoEscolher,
     rotuloEvidenciaVisivel = true,
+    aoInserir,
+    inserida = false,
   }: Props = $props();
+
+  const comInserir = $derived(aoEscolher !== undefined && aoInserir !== undefined);
+  const dezenaTexto = $derived(doisDigitos(numero));
 
   const sentido = $derived(sentidoVariacao(variacao));
   const setas = SETAS_VARIACAO;
@@ -57,6 +67,10 @@
     <span aria-hidden="true">{setas[sentido]} {formatarVariacao(variacao)}</span>
     <span class="so-leitor">{falado}</span>
   </span>
+  {#if comInserir}
+    <!-- Reserva a coluna do botão Inserir, que fica por cima (um botão não contém outro). -->
+    <span class="vaga-inserir" aria-hidden="true"></span>
+  {/if}
   <span class="indice">
     <span class="so-leitor">{textos.ranking.indice}:</span>
     {formatarIndice(indice)}
@@ -76,7 +90,7 @@
   </span>
 {/snippet}
 
-<li>
+<li class:com-inserir={comInserir}>
   {#if aoEscolher}
     <button
       type="button"
@@ -87,6 +101,18 @@
     >
       {@render corpo()}
     </button>
+    {#if aoInserir}
+      <button
+        type="button"
+        class="inserir"
+        data-inserir={numero}
+        aria-pressed={inserida}
+        onclick={() => aoInserir(numero)}
+      >
+        <span>{inserida ? `✓ ${textos.ranking.inserida}` : textos.ranking.inserir}</span>
+        <span class="so-leitor">{textos.ranking.paraODezena(dezenaTexto)}</span>
+      </button>
+    {/if}
   {:else}
     <div class="linha">
       {@render corpo()}
@@ -112,6 +138,62 @@
     color: inherit;
     font: inherit;
     text-align: left;
+  }
+  /*
+   * Com o botão Inserir: o <li> é a grade (posição, dezena, variação, Inserir, índice); a linha-botão
+   * ocupa todas as colunas por subgrade e o Inserir fica por cima, na 4ª coluna (botão não
+   * aninha botão). A coluna do Inserir tem largura fixa, igual à do cabeçalho da tabela.
+   */
+  li.com-inserir {
+    display: grid;
+    grid-template-columns: 2.5rem auto 1fr 5.5rem auto;
+  }
+  li.com-inserir .linha {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    grid-template-columns: subgrid;
+  }
+  /* Sem subgrade: li e linha-botão usam as mesmas 5 colunas fixas e o recuo passa para o li. */
+  @supports not (grid-template-columns: subgrid) {
+    li.com-inserir {
+      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4rem;
+      column-gap: var(--esp-3);
+      padding: 0 var(--esp-4);
+    }
+    li.com-inserir .linha {
+      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4rem;
+      padding-inline: 0;
+    }
+  }
+  .vaga-inserir {
+    min-width: 0;
+  }
+  .inserir {
+    position: relative;
+    grid-column: 4;
+    grid-row: 1;
+    align-self: start;
+    justify-self: stretch;
+    z-index: 1;
+    box-sizing: border-box;
+    min-width: var(--alvo-minimo);
+    min-height: var(--alvo-minimo);
+    margin-top: var(--esp-1);
+    padding: 0 var(--esp-1);
+    border: 1px solid var(--cor-contorno);
+    border-radius: var(--raio-cheio);
+    background: transparent;
+    color: var(--cor-primaria);
+    font: var(--fonte-rotulo-m);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  /* Marcada: borda mais grossa, fundo e "✓" (a cor nunca é a única informação). */
+  .inserir[aria-pressed='true'] {
+    border-width: 2px;
+    background: var(--cor-cont-altissimo);
+    color: var(--cor-texto);
+    font-weight: 600;
   }
   /* Interativa (botão): alvo de toque inteiro e foco por dentro da linha. */
   button.linha {

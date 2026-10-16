@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import Aviso from '../componentes/Aviso.svelte';
   import FolhaModal from '../componentes/FolhaModal.svelte';
   import Icone from '../componentes/Icone.svelte';
@@ -22,15 +22,18 @@
     dezenaDoHash,
     exibicaoDoHash,
     hashDaForca,
+    hashDoJogo,
     loteriaDoHash,
     rotaDoHash,
     type ExibicaoForca,
   } from '../lib/rotas';
+  import { doisDigitos } from '../lib/numeros';
   import { textos } from '../lib/textos';
   import DetalheDezena from './DetalheDezena.svelte';
   import { montarDetalheDaDezena } from './detalhe-dezena';
   import type { EstadoTela, SituacaoTela } from './estado-tela';
   import { montarVisaoForca } from './forca';
+  import { alternarNoRascunho, dezenasDoRascunho, pedirAbertura } from './rascunho-jogo';
 
   interface Props {
     /** O que a tela precisa da sessão de dados (injetável nos testes). */
@@ -72,6 +75,32 @@
       : null,
   );
 
+  // Jogo em montagem (botão Inserir): o rascunho vive em memória de módulo; aqui fica o espelho reativo.
+  let inseridas = $state<readonly number[]>(dezenasDoRascunho(untrack(() => loteria)));
+  let avisoRascunho = $state('');
+
+  async function inserirNoJogo(dezena: number): Promise<void> {
+    const resultado = alternarNoRascunho(loteria, dezena);
+    inseridas = dezenasDoRascunho(loteria);
+    const rotulo = doisDigitos(dezena);
+    const mensagem =
+      resultado.tipo === 'cheio'
+        ? textos.forca.rascunho.cheio(rotulo, resultado.maximo)
+        : resultado.tipo === 'inserida'
+          ? textos.forca.rascunho.inserida(rotulo)
+          : textos.forca.rascunho.removida(rotulo);
+    // Limpa e regrava depois do tick: o leitor de tela reanuncia mesmo que o texto se repita.
+    avisoRascunho = '';
+    await tick();
+    avisoRascunho = mensagem;
+  }
+
+  function abrirEmConferir(): void {
+    pedirAbertura();
+    gravarLoteriaGuardada(loteria);
+    location.hash = hashDoJogo(loteria);
+  }
+
   const urlAtual = (dezena: number | null = null): string =>
     hashDaForca(loteria, { visao: visaoEscolhida, dezena });
 
@@ -99,6 +128,8 @@
     if (slug === loteria) return;
     loteria = slug;
     gravarLoteriaGuardada(slug);
+    inseridas = dezenasDoRascunho(slug);
+    avisoRascunho = '';
     dezenaAberta = null;
     // replaceState: não polui o histórico nem dispara hashchange.
     history.replaceState(history.state, '', urlAtual());
@@ -155,6 +186,8 @@
     const daUrl = loteriaDoHash(location.hash);
     if (daUrl !== null && daUrl !== loteria) {
       loteria = daUrl;
+      inseridas = dezenasDoRascunho(daUrl);
+      avisoRascunho = '';
       void carregar(daUrl);
     }
     const exibicao = exibicaoDoHash(location.hash);
@@ -232,8 +265,21 @@
           <span>{textos.forca.colunas.posicao}</span>
           <span>{textos.forca.colunas.dezena}</span>
           <span>{textos.forca.colunas.variacao}</span>
+          <span class="centro">{textos.forca.colunas.jogo}</span>
           <span class="direita">{textos.forca.colunas.indice}</span>
           <span class="evidencia">{textos.forca.colunas.evidencia}</span>
+        </div>
+        <div class="rascunho">
+          <p class="aviso-rascunho" role="status">{avisoRascunho}</p>
+          {#if inseridas.length > 0}
+            <p class="atalho">
+              <span>{textos.forca.rascunho.contador(inseridas.length)}</span>
+              <span aria-hidden="true">·</span>
+              <button type="button" class="link" onclick={abrirEmConferir}>
+                {textos.forca.rascunho.abrir}
+              </button>
+            </p>
+          {/if}
         </div>
         <ul class="lista" aria-label={textos.forca.lista(visao.nomeLoteria, visao.linhas.length)}>
           {#each visao.linhas as linha (linha.dezena)}
@@ -245,6 +291,8 @@
               grau={linha.grau}
               direcao={linha.direcao}
               aoEscolher={abrirDetalhe}
+              aoInserir={(n) => void inserirNoJogo(n)}
+              inserida={inseridas.includes(linha.dezena)}
               rotuloEvidenciaVisivel={false}
             />
           {/each}
@@ -305,10 +353,10 @@
     box-shadow: var(--elev-1);
     overflow: hidden;
   }
-  /* Mesmas colunas de LinhaRanking (posição, dezena, variação, índice). */
+  /* Mesmas colunas de LinhaRanking (posição, dezena, variação, Inserir, índice). */
   .cabecalho {
     display: grid;
-    grid-template-columns: 2.5rem 2.5rem 1fr auto;
+    grid-template-columns: 2.5rem 2.5rem 1fr 5.5rem auto;
     column-gap: var(--esp-3);
     padding: var(--esp-2) var(--esp-4);
     border-bottom: 1px solid var(--cor-contorno);
@@ -317,6 +365,34 @@
   }
   .direita {
     text-align: right;
+  }
+  .centro {
+    text-align: center;
+  }
+  /* Feedback e atalho do jogo em montagem, logo abaixo do cabeçalho. */
+  .rascunho {
+    padding: 0 var(--esp-4);
+    color: var(--cor-texto-var);
+    font: var(--fonte-corpo-m);
+  }
+  .aviso-rascunho:not(:empty) {
+    padding-top: var(--esp-2);
+  }
+  .atalho {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--esp-2);
+  }
+  .link {
+    min-height: var(--alvo-minimo);
+    padding: 0 var(--esp-1);
+    border: 0;
+    background: transparent;
+    color: var(--cor-primaria);
+    font: var(--fonte-rotulo-g);
+    text-decoration: underline;
+    cursor: pointer;
   }
   .evidencia {
     grid-column: 2 / -1;
