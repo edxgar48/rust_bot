@@ -106,6 +106,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Decisões em aberto
 
+- [ ] Dependências Rust com advisories do RustSec (auditoria de 2026-10-23) → adiado pelo usuário para não arriscar quebrar o app durante o desenvolvimento (ver nota de 2026-10-23)
 - [x] Front-end: valor enumerado novo no contrato (grau/direção/normalização) recusa o arquivo e o app mantém o cache; decidido pelo usuário em 2026-10-14 ("deixar como está")
 - [x] Front-end: backup dos jogos salvos = arquivo exportado, sem nuvem; decidido pelo usuário em 2026-10-15
 - [x] Front-end: gráficos em SVG próprio, sem biblioteca; decidido pelo usuário em 2026-10-15
@@ -2161,3 +2162,15 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   com `LastTaskResult` 0xC000013A e sem linha de fim no `agendador.log`. Na 1ª tentativa da Lotofácil o
   Playwright falhou ao iniciar e na 2ª deu timeout; a 3ª passou. Release recompilado às 07:36 (0.3b e texto
   do `.eml` da 3.8). Sugestão ao usuário: horário ativo do Windows Update cobrindo 23h–01h.
+
+- 2026-10-23 — Auditoria de dependências (pedida após novas vulnerabilidades do PHP; o projeto não
+  tem PHP: o único `.php` é `app/node_modules/flatted/php/flatted.php`, dev-dep do ESLint, não executada).
+  Ferramentas instaladas: `cargo-audit` 0.22.2 e `pip-audit` (no `ml/.venv`). Resultados: `npm audit` e
+  `pip-audit` limpos; `cargo audit` com 11 vulnerabilidades em 5 crates + 3 avisos (`paste`,
+  `rustls-pemfile`, `tokio` 1.42.0 unsound). Risco real baixo: `zip` 8.6.0 (RUSTSEC-2026-0367/0368/0369,
+  `extract()`, que o `src/` não chama) vem do `calamine` e do `[dev-dependencies]`; `zip` 0.5.13, `time`
+  0.1.45, `openssl` 0.10.68, `h2` 0.3.26 e `bytes` 1.9.0 vêm só do build do `playwright` 0.0.18
+  (via `reqwest` 0.11). **Nada foi alterado**; o usuário adiou as correções. Para retomar, num commit
+  separado: `cargo update -p bytes` e `cargo update -p tokio`, depois `cargo test` e `cargo audit`
+  (`git checkout Cargo.lock` desfaz); `zip` do `[dev-dependencies]` → 9; `zip` do `calamine` só quando
+  houver versão que use `zip` ≥ 9; reavaliar `playwright` 0.0.18 (maior fonte do ruído).
