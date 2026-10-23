@@ -356,7 +356,7 @@
   /* Mesmas colunas de LinhaRanking (posição, dezena, variação, Inserir, índice). */
   .cabecalho {
     display: grid;
-    grid-template-columns: 2.5rem 2.5rem 1fr 5.5rem auto;
+    grid-template-columns: 2.5rem 2.5rem 1fr 5.5rem 4.5rem;
     column-gap: var(--esp-3);
     padding: var(--esp-2) var(--esp-4);
     border-bottom: 1px solid var(--cor-contorno);

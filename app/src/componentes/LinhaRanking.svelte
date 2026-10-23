@@ -146,7 +146,7 @@
    */
   li.com-inserir {
     display: grid;
-    grid-template-columns: 2.5rem auto 1fr 5.5rem auto;
+    grid-template-columns: 2.5rem auto 1fr 5.5rem 4.5rem;
   }
   /* O índice ocupa as duas linhas e fica centrado na vertical, na mesma altura do Inserir. */
   li.com-inserir .indice {
@@ -164,12 +164,12 @@
   /* Sem subgrade: li e linha-botão usam as mesmas 5 colunas fixas e o recuo passa para o li. */
   @supports not (grid-template-columns: subgrid) {
     li.com-inserir {
-      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4rem;
+      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4.5rem;
       column-gap: var(--esp-3);
       padding: 0 var(--esp-4);
     }
     li.com-inserir .linha {
-      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4rem;
+      grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr) 5.5rem 4.5rem;
       padding-inline: 0;
     }
   }
