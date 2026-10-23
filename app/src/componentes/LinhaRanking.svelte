@@ -150,6 +150,7 @@
   }
   /* O índice ocupa as duas linhas e fica centrado na vertical, na mesma altura do Inserir. */
   li.com-inserir .indice {
+    grid-column: 5;
     grid-row: 1 / span 2;
     align-self: center;
   }
