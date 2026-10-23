@@ -230,8 +230,6 @@
     />
   </div>
 
-  <Aviso>{textos.avisos.naoPreveForca}</Aviso>
-
   {#if visao.tipo === 'carregando'}
     <div class="carregando" aria-busy="true">
       <p class="discreto" role="status">{textos.forca.carregando}</p>
@@ -300,6 +298,8 @@
       </div>
     {/if}
   {/if}
+
+  <Aviso>{textos.avisos.naoPreveForca}</Aviso>
 </div>
 
 {#if detalhe}

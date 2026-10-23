@@ -196,8 +196,6 @@
     />
   </div>
 
-  <Aviso>{textos.avisos.naoPreveConferir} {textos.avisos.jogoResponsavel}</Aviso>
-
   {#if visao.tipo === 'carregando'}
     <div class="carregando" aria-busy="true">
       <p class="discreto" role="status">{textos.conferir.carregando}</p>
@@ -318,6 +316,8 @@
       </Cartao>
     {/if}
   {/if}
+
+  <Aviso>{textos.avisos.naoPreveConferir} {textos.avisos.jogoResponsavel}</Aviso>
 </div>
 
 <style>

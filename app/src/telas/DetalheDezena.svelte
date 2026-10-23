@@ -43,8 +43,6 @@
     {/if}
   </section>
 
-  <Aviso>{textos.avisos.naoPreveDetalhe}</Aviso>
-
   <section class="componentes" aria-labelledby="det-componentes">
     <h3 id="det-componentes">{textos.detalhe.componentes}</h3>
     <p class="nota">{textos.detalhe.componentesIntro}</p>
@@ -62,6 +60,8 @@
       {/each}
     </dl>
   </section>
+
+  <Aviso>{textos.avisos.naoPreveDetalhe}</Aviso>
 </div>
 
 <style>

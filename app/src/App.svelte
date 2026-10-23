@@ -80,14 +80,9 @@
     </header>
 
     <main id="conteudo" aria-labelledby="titulo-aba">
-      {#if sessao.aviso || atualizacaoPronta}
+      {#if sessao.aviso}
         <div class="avisos">
-          {#if sessao.aviso}
-            <Aviso tipo="erro">{textos.sincronizacao.armazenamentoVolatil}</Aviso>
-          {/if}
-          {#if atualizacaoPronta}
-            <Aviso>{textos.sincronizacao.atualizacaoDisponivel}</Aviso>
-          {/if}
+          <Aviso tipo="erro">{textos.sincronizacao.armazenamentoVolatil}</Aviso>
         </div>
       {/if}
       {#if abaAtual === 'inicio'}
@@ -110,6 +105,11 @@
         />
       {:else}
         <Estatisticas fonte={sessao} />
+      {/if}
+      {#if atualizacaoPronta}
+        <div class="avisos avisos-fim">
+          <Aviso>{textos.sincronizacao.atualizacaoDisponivel}</Aviso>
+        </div>
       {/if}
     </main>
 
@@ -138,6 +138,10 @@
     display: grid;
     gap: var(--esp-3);
     margin-bottom: var(--esp-3);
+  }
+  .avisos-fim {
+    margin-top: var(--esp-3);
+    margin-bottom: 0;
   }
   main {
     flex: 1;

@@ -310,8 +310,6 @@
     />
   </div>
 
-  <Aviso>{textos.avisos.naoPreveHistorico}</Aviso>
-
   {#if visao.tipo === 'carregando'}
     <div class="carregando" aria-busy="true">
       <p class="discreto" role="status">{textos.historico.carregando}</p>
@@ -470,6 +468,8 @@
       {/if}
     </div>
   {/if}
+
+  <Aviso>{textos.avisos.naoPreveHistorico}</Aviso>
 </div>
 
 <style>

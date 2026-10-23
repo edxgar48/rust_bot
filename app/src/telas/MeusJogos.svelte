@@ -408,11 +408,9 @@
     />
   </div>
 
-  <Aviso>{textos.jogos.localAviso}</Aviso>
   {#if volatil}
     <Aviso tipo="erro">{textos.jogos.volatil}</Aviso>
   {/if}
-  <Aviso>{textos.avisos.naoPreveConferir} {textos.avisos.jogoResponsavel}</Aviso>
 
   <div class="acoes" role="group" aria-label={textos.jogos.rotuloBackup}>
     <button
@@ -614,6 +612,9 @@
       </ul>
     {/if}
   {/if}
+
+  <Aviso>{textos.jogos.localAviso}</Aviso>
+  <Aviso>{textos.avisos.naoPreveConferir} {textos.avisos.jogoResponsavel}</Aviso>
 </div>
 
 {#if paraApagar}

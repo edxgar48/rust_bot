@@ -178,8 +178,6 @@
     />
   </div>
 
-  <Aviso>{textos.avisos.naoPreveEvidencia}</Aviso>
-
   {#if visao.tipo === 'carregando'}
     <div class="carregando" aria-busy="true">
       <p class="discreto">{t.carregando}</p>
@@ -262,6 +260,8 @@
 
     <Aviso>{textos.avisos.jogoResponsavel}</Aviso>
   {/if}
+
+  <Aviso>{textos.avisos.naoPreveEvidencia}</Aviso>
 </div>
 
 {#if detalhe}
