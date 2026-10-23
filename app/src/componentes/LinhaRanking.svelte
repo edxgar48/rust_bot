@@ -148,6 +148,14 @@
     display: grid;
     grid-template-columns: 2.5rem auto 1fr 5.5rem auto;
   }
+  /* O índice ocupa as duas linhas e fica centrado na vertical, na mesma altura do Inserir. */
+  li.com-inserir .indice {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  li.com-inserir .evidencia {
+    grid-column: 2 / -2;
+  }
   li.com-inserir .linha {
     grid-column: 1 / -1;
     grid-row: 1;
