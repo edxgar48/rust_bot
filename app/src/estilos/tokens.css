@@ -33,6 +33,7 @@
   --cor-sobre-erro: #ffffff;
   --cor-erro-cont: #ffdad6;
   --cor-sobre-erro-cont: #410002;
+  --cor-sorteada: #b26a00;
   --cor-faixa-1: #006b5e;
   --cor-sobre-faixa-1: #ffffff;
   --cor-faixa-2: #2f7f72;
@@ -65,6 +66,7 @@
   --cor-sobre-erro: #690005;
   --cor-erro-cont: #93000a;
   --cor-sobre-erro-cont: #ffdad6;
+  --cor-sorteada: #ffb95c;
   --cor-faixa-1: #82d5c5;
   --cor-sobre-faixa-1: #00382f;
   --cor-faixa-2: #4fa697;
@@ -98,6 +100,7 @@
     --cor-sobre-erro: #690005;
     --cor-erro-cont: #93000a;
     --cor-sobre-erro-cont: #ffdad6;
+    --cor-sorteada: #ffb95c;
     --cor-faixa-1: #82d5c5;
     --cor-sobre-faixa-1: #00382f;
     --cor-faixa-2: #4fa697;

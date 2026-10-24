@@ -96,6 +96,9 @@ export const textos = {
         `${quantidade} ${quantidade === 1 ? 'dezena' : 'dezenas'} no jogo`,
       abrir: 'Abrir em Conferir',
     },
+    legendaPosicoesSorteadas: (ultimoSorteado: number) =>
+      `Borda: posição ocupada, antes do concurso ${ultimoSorteado}, por uma dezena sorteada nele`,
+    posicaoSorteada: 'posição sorteada no concurso anterior',
     lista: (loteria: string, quantidade: number) =>
       `Ranking das ${quantidade} dezenas da ${loteria}`,
     carregando: 'Carregando a tabela de força…',

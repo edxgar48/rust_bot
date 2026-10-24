@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { lerFixtureTexto } from '../../testes/servidor-falso';
 import { formatarIndice, formatarVariacao } from '../componentes/ranking';
 import type { ResultadoCache } from '../dados/cliente';
-import type { IndiceV1, LoteriaNoIndice, Slug, TabelaGeralV1 } from '../dados/tipos';
+import type { IndiceV1, LoteriaNoIndice, Slug, TabelaGeralV1, UltimoV1 } from '../dados/tipos';
 import { validarTabelaGeral } from '../dados/validacao';
 import { textos } from '../lib/textos';
 import type { SituacaoTela } from './estado-tela';
-import { linhasDaTabela, montarVisaoForca } from './forca';
+import { linhasDaTabela, montarVisaoForca, posicoesSorteadasNoAnterior } from './forca';
 
 const AGORA = new Date('2026-10-14T12:30:00Z');
 const SINCRONIZADO = '2026-10-14T12:30:00.000Z'; // 09:30 em Brasília
@@ -42,6 +42,34 @@ function conteudo(slug: Slug, situacao: SituacaoTela | null) {
   if (v.tipo !== 'conteudo') throw new Error(`esperava conteúdo, veio ${v.tipo}`);
   return v;
 }
+
+describe('posições sorteadas no concurso anterior', () => {
+  const ultimo = (t: TabelaGeralV1, dezenas: number[], concurso = t.ultimoSorteado): UltimoV1 => ({
+    schemaVersion: 1,
+    loteria: t.loteria,
+    concurso,
+    data: '2026-10-14',
+    dezenas,
+  });
+
+  it('marca a posição que a dezena sorteada ocupava antes (posição atual + variação)', () => {
+    const t = tabela('lotofacil');
+    const d = t.dezenas.find((x) => x.variacaoPosicao !== null)!;
+    const marcadas = posicoesSorteadasNoAnterior(t, ultimo(t, [d.dezena]));
+    expect([...marcadas]).toEqual([d.posicao + d.variacaoPosicao!]);
+  });
+
+  it('sem ultimo, de outro concurso ou sem variação, não marca nada', () => {
+    const t = tabela('lotofacil');
+    const dez = t.dezenas[0]!.dezena;
+    expect(posicoesSorteadasNoAnterior(t, null).size).toBe(0);
+    expect(posicoesSorteadasNoAnterior(t, ultimo(t, [dez], t.ultimoSorteado - 1)).size).toBe(0);
+    const semVariacao = tabela('lotofacil', (j) => {
+      for (const x of j.dezenas) x.variacao_posicao = null;
+    });
+    expect(posicoesSorteadasNoAnterior(semVariacao, ultimo(semVariacao, [dez])).size).toBe(0);
+  });
+});
 
 describe('linhas da tabela', () => {
   it('uma linha por dezena, em ordem de posição de 1 a N (25, 60 e 80)', () => {

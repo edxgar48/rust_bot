@@ -1,7 +1,13 @@
 // Lógica da tela Força, sem Svelte: converte o que há em cache (e o resultado da
 // sincronização) no que a tela mostra. O app NÃO recalcula nada do motor: posição,
 // índice, variação e evidência vêm prontos de tabela_geral.json. Testada sem navegador.
-import type { DirecaoEvidencia, GrauEvidencia, Slug, TabelaGeralV1 } from '../dados/tipos';
+import type {
+  DirecaoEvidencia,
+  GrauEvidencia,
+  Slug,
+  TabelaGeralV1,
+  UltimoV1,
+} from '../dados/tipos';
 import { textos } from '../lib/textos';
 import { estadoEData, type EstadoTela, type SituacaoTela } from './estado-tela';
 
@@ -34,6 +40,8 @@ export type VisaoForca =
       readonly linhas: readonly LinhaForca[];
       /** Posição de cada dezena (volante). */
       readonly posicoes: Readonly<Record<number, number>>;
+      /** Posições (do ranking atual) que o último concurso sorteou; ver `posicoesSorteadasNoAnterior`. */
+      readonly posicoesSorteadas: ReadonlySet<number>;
       /** Tabela validada, de onde sai o detalhe da dezena. */
       readonly tabela: TabelaGeralV1;
     };
@@ -55,6 +63,25 @@ export function linhasDaTabela(tabela: TabelaGeralV1): LinhaForca[] {
 /** Dezena -> posição no ranking, como o volante a recebe. */
 export function posicoesDaTabela(tabela: TabelaGeralV1): Record<number, number> {
   return Object.fromEntries(tabela.dezenas.map((d) => [d.dezena, d.posicao]));
+}
+
+/**
+ * Posições da tabela atual que o último concurso sorteou: para cada dezena sorteada, a posição
+ * que ela ocupava ANTES do sorteio (`posição atual + variação`). É a posição que sai, não a
+ * dezena. Sem `ultimo` (ou de outro concurso) ou sem variação, não marca nada.
+ */
+export function posicoesSorteadasNoAnterior(
+  tabela: TabelaGeralV1,
+  ultimo: UltimoV1 | null,
+): ReadonlySet<number> {
+  const marcadas = new Set<number>();
+  if (ultimo === null || ultimo.concurso !== tabela.ultimoSorteado) return marcadas;
+  const sorteadas = new Set(ultimo.dezenas);
+  for (const d of tabela.dezenas) {
+    if (!sorteadas.has(d.dezena) || d.variacaoPosicao === null) continue;
+    marcadas.add(d.posicao + d.variacaoPosicao);
+  }
+  return marcadas;
 }
 
 export function montarVisaoForca(
@@ -90,6 +117,7 @@ export function montarVisaoForca(
     erro: estado === 'recusado',
     linhas: linhasDaTabela(tabela),
     posicoes: posicoesDaTabela(tabela),
+    posicoesSorteadas: posicoesSorteadasNoAnterior(tabela, entrada?.dados.ultimo ?? null),
     tabela,
   };
 }

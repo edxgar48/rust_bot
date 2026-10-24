@@ -28,6 +28,8 @@
     aoInserir?: (numero: number) => void;
     /** Dezena já inserida no jogo: o botão fica marcado e tocar de novo a remove. */
     inserida?: boolean;
+    /** Posição que o último concurso sorteou (a dezena que a ocupava saiu): ganha borda colorida. */
+    posicaoSorteada?: boolean;
   }
 
   let {
@@ -41,6 +43,7 @@
     rotuloEvidenciaVisivel = true,
     aoInserir,
     inserida = false,
+    posicaoSorteada = false,
   }: Props = $props();
 
   const comInserir = $derived(aoEscolher !== undefined && aoInserir !== undefined);
@@ -61,6 +64,9 @@
   <span class="posicao">
     <span aria-hidden="true">{posicao}º</span>
     <span class="so-leitor">{textos.ranking.posicao(posicao)}</span>
+    {#if posicaoSorteada}
+      <span class="so-leitor">{textos.forca.posicaoSorteada}</span>
+    {/if}
   </span>
   <BolaDezena {numero} />
   <span class="variacao" data-sentido={sentido}>
@@ -90,7 +96,7 @@
   </span>
 {/snippet}
 
-<li class:com-inserir={comInserir}>
+<li class:com-inserir={comInserir} data-sorteada={posicaoSorteada}>
   {#if aoEscolher}
     <button
       type="button"
@@ -124,6 +130,10 @@
   li {
     border-bottom: 1px solid var(--cor-contorno-var);
     list-style: none;
+  }
+  /* Posição sorteada no concurso anterior: borda por dentro da linha (não desloca a grade). */
+  li[data-sorteada='true'] {
+    box-shadow: inset 0 0 0 2px var(--cor-sorteada);
   }
   .linha {
     display: grid;

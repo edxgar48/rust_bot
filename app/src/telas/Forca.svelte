@@ -114,7 +114,7 @@
   /** Mostra o cache na hora e só depois sincroniza; respostas de uma loteria antiga são descartadas. */
   async function carregar(slug: Slug): Promise<void> {
     const minha = ++sequencia;
-    const opcoes: OpcoesSincronizacao = { arquivos: ['tabela_geral'], loterias: [slug] };
+    const opcoes: OpcoesSincronizacao = { arquivos: ['tabela_geral', 'ultimo'], loterias: [slug] };
     situacao = null;
     const cache = await fonte.lerCache(opcoes);
     if (minha !== sequencia) return;
@@ -291,6 +291,7 @@
               aoEscolher={abrirDetalhe}
               aoInserir={(n) => void inserirNoJogo(n)}
               inserida={inseridas.includes(linha.dezena)}
+              posicaoSorteada={visao.posicoesSorteadas.has(linha.posicao)}
               rotuloEvidenciaVisivel={false}
             />
           {/each}
@@ -299,6 +300,12 @@
     {/if}
   {/if}
 
+  {#if visao.tipo === 'conteudo' && visaoEscolhida === 'lista' && visao.posicoesSorteadas.size > 0}
+    <p class="legenda-sorteadas">
+      <span class="amostra" aria-hidden="true"></span>
+      {textos.forca.legendaPosicoesSorteadas(visao.tabela.ultimoSorteado)}
+    </p>
+  {/if}
   <Aviso>{textos.avisos.naoPreveForca}</Aviso>
 </div>
 
@@ -368,6 +375,21 @@
   }
   .centro {
     text-align: center;
+  }
+  .legenda-sorteadas {
+    display: flex;
+    align-items: center;
+    gap: var(--esp-2);
+    color: var(--cor-texto-var);
+    font: var(--fonte-rotulo-m);
+  }
+  .amostra {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    box-sizing: border-box;
+    border: 2px solid var(--cor-sorteada);
+    border-radius: var(--raio-s, 0.25rem);
   }
   /* Feedback e atalho do jogo em montagem, logo abaixo do cabeçalho. */
   .rascunho {
