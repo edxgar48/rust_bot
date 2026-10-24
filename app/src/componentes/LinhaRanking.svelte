@@ -131,10 +131,6 @@
     border-bottom: 1px solid var(--cor-contorno-var);
     list-style: none;
   }
-  /* Posição sorteada no concurso anterior: borda por dentro da linha (não desloca a grade). */
-  li[data-sorteada='true'] {
-    box-shadow: inset 0 0 0 2px var(--cor-sorteada);
-  }
   .linha {
     display: grid;
     grid-template-columns: 2.5rem auto 1fr auto;
@@ -230,6 +226,15 @@
   .posicao {
     font: var(--fonte-titulo-m);
     font-variant-numeric: tabular-nums;
+  }
+  /* Posição sorteada no concurso anterior: borda só em volta do número, sem mudar a largura da coluna. */
+  li[data-sorteada='true'] .posicao {
+    box-sizing: border-box;
+    justify-self: start;
+    padding: 0 0.125rem;
+    border: 2px solid var(--cor-sorteada);
+    border-radius: var(--raio-s, 0.25rem);
+    text-align: center;
   }
   .variacao {
     font: var(--fonte-rotulo-g);
