@@ -530,6 +530,19 @@ Tarefas:
   roda nas três loterias e regenera igual.
 - **1f.4** — Avaliação de A e B na régua da 1c/1e; números das três loterias
   em `PROGRESSO.md`; `docs/GUIA.md` com a leitura e o aviso de não-previsão.
+  Decisões de 2026-10-27:
+  - **Onde roda**: opção `--avaliar` do `sync ranking`; só lê o banco e não
+    altera o `sync avaliar`.
+  - **A**: log loss e Brier de A são idênticos aos do perfil no `sync
+    avaliar` (A = `calibrar`), então não se repetem; mostra-se só o que é
+    novo — top-k pela ordem de A e calibração linear (1e) sobre a ordem de A —,
+    com teste que confirma a igualdade com a 1c.
+  - **B**: probabilidade por `calibrar` (m = 100) sobre `posicao_ranking_b`,
+    mais a calibração linear, para A e B terem a mesma régua; log loss,
+    Brier, top-k e bootstrap como na 1c.
+  - **Trancado**: fechado — só as dobras 2 a 5, sem `--trancado` e sem
+    registro de uso.
+  - **Só código novo**: em arquivos existentes entram só acréscimos.
 - **2.x (a numerar)** — `ranking_taxa.json` no `sync exportar` e no contrato,
   com auditoria do `auditor-contrato`.
 - **7.7** — tela no app (ver `PLANEJAMENTO-FRONTEND.md`).
