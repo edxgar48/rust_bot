@@ -501,7 +501,19 @@ independentes e o resultado esperado da avaliação é "não supera o acaso".
   taxa_posicao, nota_b, posicao_ranking_a, posicao_ranking_b)` (duas ordens: por
   A e por B; decisão de 2026-10-27), regenerável de `resultados`,
   `features_dezena` e `indice`; mais as taxas agregadas por posição e faixa
-  numa tabela própria (`taxa_posicao`, `taxa_faixa`), definidas na 1f.3.
+  em `taxa_posicao` e `taxa_faixa` (definidas na 1f.3, decisão de 2026-10-27):
+  - `taxa_posicao(perfil, posicao, saidas, exposicoes, taxa, grau, direcao)` e
+    `taxa_faixa(perfil, componente, faixa, saidas, exposicoes, taxa, grau,
+    direcao)` guardam só o retrato do histórico inteiro, por perfil, conjunto
+    trancado incluso. Servem só para descrever.
+  - `exposicoes` conta concursos na posição e pares concurso × dezena na faixa.
+  - Grau e direção vêm da evidência da 1d com priori de 5 %.
+  - Faixa que nunca teve dezena vira linha com taxa K/N e grau e direção
+    vazios; as tabelas têm sempre N e 36 linhas.
+  - O perfil fica preso pelo nome; o hash é conferido em `perfis` (sem coluna
+    de hash).
+  - `ranking_taxa.taxa_posicao` (nota A em t, só com concursos até t−1) não é
+    o mesmo número que `taxa_posicao.taxa` (histórico inteiro).
 - **Contrato**: arquivo novo `ranking_taxa.json` (aditivo; `tabela_geral.json`
   e `ultimo.json` não mudam). Entra no `index.json` com hash, em
   `docs/contrato-v1.md`.

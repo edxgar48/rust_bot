@@ -31,7 +31,8 @@
 //! `gravacao` e a geração/gravação do `sync exportar` em `exportar`
 //! (tarefa 3.1a); a API é reexportada aqui. Os alertas do `sync ciclo`
 //! (rascunhos de e-mail após N noites com falha, tarefa 3.6) ficam em
-//! `alertas`.
+//! `alertas`. O ranking por taxa histórica de posição e componentes (`sync
+//! ranking`, Fase 1f, tarefa 1f.3) fica em `ranking_taxa`.
 
 use crate::avaliacao::{
     self, Cauda, Classificacao, EsperadoAcaso, EvidenciaIndice, EvidenciaJanela, IndiceInerte,
@@ -56,6 +57,7 @@ mod calendario;
 mod ciclo;
 mod exportar;
 mod gravacao;
+mod ranking_taxa;
 
 pub use aguardar::*;
 pub use alertas::*;
@@ -63,6 +65,7 @@ pub use calendario::*;
 pub use ciclo::*;
 pub use exportar::*;
 pub use gravacao::*;
+pub use ranking_taxa::*;
 
 /// Por que as features foram recalculadas do zero.
 #[derive(Debug, Clone, PartialEq, Eq)]

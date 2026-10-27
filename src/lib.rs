@@ -19,6 +19,7 @@ pub mod orquestracao;
 pub mod parser;
 pub mod perfil;
 pub mod publicacao;
+pub mod ranking;
 pub mod registros;
 pub mod tabela;
 pub mod tempo;

@@ -49,6 +49,7 @@ src/
 ├── perfil.rs      # perfis de pesos (`perfis/<loteria>/<nome>.toml`): leitura, validação e hash
 ├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela`, `exportar` e `dataset`: validação + motor/avaliação + banco
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
+├── ranking.rs     # CSV e relatório em texto do `sync ranking` (taxa histórica de posição e componentes)
 ├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
 ├── publicacao/    # `sync publicar`: confere o publico/v1/, decide se mudou e publica num `Destino` (clone git)
 ├── calendario.rs         # calendário de sorteios (3.2): dia/horário de procura, conferência, tolerância (puro)
@@ -148,6 +149,13 @@ cargo run --bin sync -- evidencia quina --perfil busca_v1 --perfis outra/pasta
 # o anterior —, com os mesmos rótulos do `evidencia`; vazias no concurso 1. Como ler: docs/GUIA.md.
 cargo run --bin sync -- tabela todas --perfil padrao_v1                  # próximo concurso
 cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concurso já sorteado (com `saiu`)
+
+# ranking por taxa histórica de posição e componentes (Fase 1f): grava ranking_taxa, taxa_posicao e
+# taxa_faixa no banco (regenera as do perfil; padrão: perfil ativo), imprime o relatório e grava o CSV do
+# próximo concurso em ranking/<loteria>/ranking_<loteria>_<perfil>_<concurso>.csv. Uma loteria por vez.
+# É descrição do passado, não previsão; a nota B é experimental. Recusa se features/índice estiverem defasados.
+cargo run --bin sync -- ranking quina
+cargo run --bin sync -- ranking megasena --perfil padrao_v1 --saida ranking
 
 # JSON do contrato `v1` para o app, em publico/v1/ (fora do git): index.json (SHA-256 de cada arquivo)
 # e, por loteria, ultimo.json, tabela_geral.json (próximo concurso, perfil ativo da loteria) e

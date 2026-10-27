@@ -7,7 +7,7 @@ use rust_spider::orquestracao::{
 };
 use rust_spider::{
     backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil, publicacao,
-    registros, tabela, tempo, trava, validacao, SpiderError,
+    ranking, registros, tabela, tempo, trava, validacao, SpiderError,
 };
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
@@ -294,6 +294,33 @@ enum Comando {
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
     },
+    /// Ranking por taxa histórica de posição e componentes (Fase 1f): cruza a
+    /// posição que cada dezena tinha na tabela de força (e a faixa de cada
+    /// componente) antes de cada sorteio com o resultado, e ordena as dezenas
+    /// do próximo concurso pela taxa de saída da posição (nota A, principal) e
+    /// por um naive Bayes sobre a posição e as faixas (nota B, EXPERIMENTAL).
+    /// Grava `ranking_taxa`, `taxa_posicao` e `taxa_faixa` no banco
+    /// (regenerando as do perfil), imprime o relatório e grava o CSV do
+    /// próximo concurso em `<saida>/<loteria>/`. É descrição do passado, não
+    /// previsão: os sorteios são independentes. Recusa se o índice ou as
+    /// features não estiverem em dia.
+    Ranking {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Nome do perfil de pesos, já registrado pelo `indice` (padrão: o
+        /// perfil ativo da loteria)
+        #[arg(long)]
+        perfil: Option<String>,
+        /// Pasta onde gravar o CSV (uma subpasta por loteria)
+        #[arg(long, default_value = "ranking")]
+        saida: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+    },
     /// Exporta os JSON do contrato `v1` para o app: `<saida>/v1/index.json` e,
     /// por loteria, `ultimo.json`, `tabela_geral.json` (snapshot do próximo
     /// concurso com o perfil ativo) e `historico.json`, com `schema_version` e
@@ -503,6 +530,10 @@ const MOTIVO_INDICE_UMA_LOTERIA: &str =
 const MOTIVO_AVALIAR_UMA_LOTERIA: &str =
     "avalie uma loteria e um perfil por vez (cada loteria tem seu banco, seus perfis e seu trancado)";
 
+/// Por que `ranking` não aceita `todas`.
+const MOTIVO_RANKING_UMA_LOTERIA: &str =
+    "calcule uma loteria por vez (cada uma tem seu banco, seus perfis e suas tabelas)";
+
 /// Nome do comando se ele grava (e portanto toma a trava `sync.lock`, 3.4);
 /// `None` para os que só leem. Sem `_`: comando novo obriga a decidir aqui.
 /// `tabela` fica livre: lê o banco e grava só em `tabelas/`, que nenhum outro
@@ -519,6 +550,7 @@ fn nome_se_grava(comando: &Comando) -> Option<&'static str> {
         Comando::Publicar { .. } => Some("publicar"),
         Comando::Ciclo { .. } => Some("ciclo"),
         Comando::Dataset { .. } => Some("dataset"),
+        Comando::Ranking { .. } => Some("ranking"),
         Comando::Avaliar { trancado, .. } => trancado.then_some("avaliar --trancado"),
         Comando::Listar { .. }
         | Comando::Validar { .. }
@@ -816,6 +848,18 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
                 execucao.registrar(cfg, r)?;
             }
             execucao.concluir()?;
+        }
+        Comando::Ranking {
+            loteria,
+            perfil,
+            saida,
+            db,
+            perfis,
+        } => {
+            let cfg = buscar_config_unica(&loteria, "ranking", MOTIVO_RANKING_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            let nome_perfil = perfil.as_deref().unwrap_or(cfg.perfil_ativo);
+            gravar_ranking(cfg, &db_caminho, &perfis, nome_perfil, &saida)?;
         }
         Comando::Exportar {
             loteria,
@@ -1853,6 +1897,66 @@ macro_rules! linha {
         use std::fmt::Write as _;
         let _ = writeln!($s, $($arg)*);
     }};
+}
+
+/// `sync ranking`: calcula e grava as tabelas do ranking por taxa histórica
+/// (tudo em `orquestracao`, numa transação), grava o CSV do próximo concurso
+/// em `<saida>/<loteria>/` e imprime o relatório. Banco inexistente é erro,
+/// sem criar arquivo. O CSV só é gravado depois de as tabelas serem
+/// confirmadas; o texto da saída padrão é determinístico (mesma entrada,
+/// mesmos bytes) e o tempo de execução vai para a saída de erro.
+fn gravar_ranking(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+    saida: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let mut conn = db::abrir(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let r = orquestracao::sincronizar_ranking(&mut conn, cfg, &carregado)?;
+    let duracao = inicio.elapsed();
+
+    let pasta = saida.join(cfg.slug);
+    std::fs::create_dir_all(&pasta).map_err(|origem| SpiderError::Io {
+        caminho: pasta.clone(),
+        origem,
+    })?;
+    let arquivo = pasta.join(ranking::nome_arquivo(&r));
+    std::fs::write(&arquivo, ranking::formatar_csv(&r)).map_err(|origem| SpiderError::Io {
+        caminho: arquivo.clone(),
+        origem,
+    })?;
+
+    let mut texto = String::new();
+    linha!(
+        texto,
+        "Ranking gravado no perfil {} (hash {}, registrado em perfis e conferido contra o .toml): {} linha(s) em \
+         ranking_taxa ({} substituída(s)), {} em taxa_posicao e {} em taxa_faixa.",
+        r.perfil,
+        r.hash_toml,
+        r.linhas_gravadas,
+        r.linhas_apagadas,
+        r.posicoes_gravadas,
+        r.faixas_gravadas
+    );
+    linha!(
+        texto,
+        "CSV do ranking do concurso {}: {}",
+        r.proximo_concurso,
+        absoluto(&arquivo).display()
+    );
+    linha!(texto);
+    texto.push_str(&ranking::formatar_relatorio(cfg, &r));
+    imprimir(&texto)?;
+    let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    registrar_no_log(Nivel::Info, &tempo);
+    let _ = escrever_stderr(&format!("{tempo}\n"));
+    Ok(())
 }
 
 /// Pasta dos registros do trancado: a escolhida (`--registros`, escondida,
@@ -3411,5 +3515,60 @@ mod tests {
         for args in livres {
             assert_eq!(trava_de(args), None, "{args:?}");
         }
+    }
+
+    #[test]
+    fn ranking_grava_toma_a_trava_e_tem_padroes() {
+        assert_eq!(trava_de(&["ranking", "quina"]), Some("ranking"));
+        let cli = Cli::try_parse_from(["sync", "ranking", "quina"]).expect("sem opções");
+        match cli.comando {
+            Comando::Ranking {
+                loteria,
+                perfil,
+                saida,
+                db,
+                perfis,
+            } => {
+                assert_eq!(loteria, "quina");
+                // Sem `--perfil`, vale o perfil ativo da loteria (decidido na execução).
+                assert_eq!(perfil, None);
+                assert_eq!(saida, PathBuf::from("ranking"));
+                assert_eq!(db, None);
+                assert_eq!(perfis, PathBuf::from("perfis"));
+            }
+            _ => panic!("esperava o comando ranking"),
+        }
+        let cli = Cli::try_parse_from([
+            "sync", "ranking", "megasena", "--perfil", "busca_v1", "--saida", "x/r", "--db",
+            "y.db", "--perfis", "z",
+        ])
+        .expect("com todas as opções");
+        match cli.comando {
+            Comando::Ranking {
+                perfil,
+                saida,
+                db,
+                perfis,
+                ..
+            } => {
+                assert_eq!(perfil.as_deref(), Some("busca_v1"));
+                assert_eq!(saida, PathBuf::from("x/r"));
+                assert_eq!(db, Some(PathBuf::from("y.db")));
+                assert_eq!(perfis, PathBuf::from("z"));
+            }
+            _ => panic!("esperava o comando ranking"),
+        }
+    }
+
+    #[test]
+    fn ranking_recusa_todas() {
+        let erro = buscar_config_unica("todas", "ranking", MOTIVO_RANKING_UMA_LOTERIA)
+            .expect_err("`todas` é recusada");
+        let texto = erro.to_string();
+        assert!(texto.contains("`ranking` não aceita `todas`"), "{texto}");
+        assert!(
+            buscar_config_unica("quina", "ranking", MOTIVO_RANKING_UMA_LOTERIA).is_ok(),
+            "um slug passa"
+        );
     }
 }

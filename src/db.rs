@@ -655,6 +655,314 @@ pub fn ler_indice(conn: &Connection, perfil: &str) -> Result<Vec<IndiceDezena>> 
     Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+// ---------------------------------------------------------------------------
+// Tabelas `ranking_taxa`, `taxa_posicao` e `taxa_faixa`: ranking por taxa
+// histórica de posição e componentes (Fase 1f, tarefa 1f.3).
+//
+// Derivadas como `indice`: `sync ranking` apaga as linhas do perfil nas três
+// tabelas e insere tudo de novo, na mesma transação. Os tipos de linha são
+// daqui (texto e números simples): quem converte de/para `avaliacao` é a
+// orquestração, para esta camada não depender dela.
+// ---------------------------------------------------------------------------
+
+/// Cria `ranking_taxa`, `taxa_posicao` e `taxa_faixa` se ainda não existem.
+/// Idempotente.
+///
+/// - `ranking_taxa`: esquema do plano, uma linha por (concurso, dezena,
+///   perfil), inclusive o snapshot do próximo concurso. `taxa_posicao` é a
+///   nota A; `nota_b` é experimental; as duas `posicao_ranking_*` são as
+///   ordens por A e por B. `perfil` é `perfis.nome` (sem chave estrangeira,
+///   como em `indice`: a imutabilidade do perfil vem do registro).
+/// - `taxa_posicao` e `taxa_faixa`: o snapshot com o histórico inteiro (o que
+///   vale para o próximo concurso), por perfil. `exposicoes` é o `n` da taxa
+///   (concursos para a posição; pares concurso × dezena para a faixa). `grau`
+///   e `direcao` são a evidência da 1d (priori principal), **descritiva**:
+///   `NULL` na célula sem exposição, que não tem fator de Bayes. A taxa vale
+///   sempre (sem exposição ela é o prior, *K/N*). `componente`, `faixa`,
+///   `grau` e `direcao` guardam os mesmos textos dos relatórios.
+///
+/// `WITHOUT ROWID` pelo mesmo motivo de `indice`.
+pub fn criar_tabelas_ranking(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ranking_taxa (
+            concurso           INTEGER NOT NULL,
+            dezena             INTEGER NOT NULL,
+            perfil             TEXT NOT NULL,
+            posicao_indice     INTEGER NOT NULL,
+            taxa_posicao       REAL NOT NULL,
+            nota_b             REAL NOT NULL,
+            posicao_ranking_a  INTEGER NOT NULL,
+            posicao_ranking_b  INTEGER NOT NULL,
+            PRIMARY KEY (concurso, dezena, perfil)
+        ) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS taxa_posicao (
+            perfil      TEXT NOT NULL,
+            posicao     INTEGER NOT NULL,
+            saidas      INTEGER NOT NULL,
+            exposicoes  INTEGER NOT NULL,
+            taxa        REAL NOT NULL,
+            grau        TEXT,
+            direcao     TEXT,
+            PRIMARY KEY (perfil, posicao)
+        ) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS taxa_faixa (
+            perfil      TEXT NOT NULL,
+            componente  TEXT NOT NULL,
+            faixa       TEXT NOT NULL,
+            saidas      INTEGER NOT NULL,
+            exposicoes  INTEGER NOT NULL,
+            taxa        REAL NOT NULL,
+            grau        TEXT,
+            direcao     TEXT,
+            PRIMARY KEY (perfil, componente, faixa)
+        ) WITHOUT ROWID;",
+    )?;
+    Ok(())
+}
+
+/// Uma linha de `ranking_taxa` (sem o `perfil`, que vem de quem grava).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinhaRankingTaxa {
+    pub concurso: u32,
+    pub dezena: u32,
+    pub posicao_indice: u32,
+    /// Nota A: a taxa da posição.
+    pub taxa_posicao: f64,
+    /// Nota B (experimental).
+    pub nota_b: f64,
+    pub posicao_ranking_a: u32,
+    pub posicao_ranking_b: u32,
+}
+
+/// Uma linha de `taxa_posicao` (sem o `perfil`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinhaTaxaPosicao {
+    pub posicao: u32,
+    pub saidas: u64,
+    pub exposicoes: u64,
+    pub taxa: f64,
+    /// `None` sem exposição (sem fator de Bayes).
+    pub grau: Option<String>,
+    pub direcao: Option<String>,
+}
+
+/// Uma linha de `taxa_faixa` (sem o `perfil`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinhaTaxaFaixa {
+    pub componente: String,
+    pub faixa: String,
+    pub saidas: u64,
+    pub exposicoes: u64,
+    pub taxa: f64,
+    pub grau: Option<String>,
+    pub direcao: Option<String>,
+}
+
+/// Apaga as linhas do perfil nas **três** tabelas do ranking. Devolve quantas
+/// linhas de `ranking_taxa` apagou (a tabela grande; as outras são pequenas).
+pub fn apagar_ranking_do_perfil(conn: &Connection, perfil: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM taxa_posicao WHERE perfil = ?1",
+        params![perfil],
+    )?;
+    conn.execute("DELETE FROM taxa_faixa WHERE perfil = ?1", params![perfil])?;
+    Ok(conn.execute(
+        "DELETE FROM ranking_taxa WHERE perfil = ?1",
+        params![perfil],
+    )?)
+}
+
+const COLUNAS_RANKING_TAXA: usize = 8;
+
+/// Insere linhas em `ranking_taxa` com o `perfil` dado, em blocos de
+/// [`LINHAS_POR_INSERT`] linhas por `INSERT` (como [`inserir_indice`]). Linha
+/// com chave já existente é erro: quem chama apaga antes as do perfil.
+pub fn inserir_ranking_taxa(
+    conn: &Connection,
+    perfil: &str,
+    linhas: &[LinhaRankingTaxa],
+) -> Result<usize> {
+    let (blocos, resto) = linhas.as_chunks::<LINHAS_POR_INSERT>();
+    if !blocos.is_empty() {
+        let mut stmt = conn.prepare_cached(&sql_inserir_ranking_taxa(LINHAS_POR_INSERT))?;
+        let mut valores = Vec::with_capacity(LINHAS_POR_INSERT * COLUNAS_RANKING_TAXA);
+        for bloco in blocos {
+            valores.clear();
+            for l in bloco {
+                valores.extend(valores_ranking_taxa(l, perfil));
+            }
+            stmt.execute(rusqlite::params_from_iter(&valores))?;
+        }
+    }
+    if !resto.is_empty() {
+        let mut stmt = conn.prepare_cached(&sql_inserir_ranking_taxa(1))?;
+        for l in resto {
+            stmt.execute(rusqlite::params_from_iter(valores_ranking_taxa(l, perfil)))?;
+        }
+    }
+    Ok(linhas.len())
+}
+
+fn sql_inserir_ranking_taxa(linhas: usize) -> String {
+    let marcadores = vec!["(?, ?, ?, ?, ?, ?, ?, ?)"; linhas].join(", ");
+    format!(
+        "INSERT INTO ranking_taxa (
+            concurso, dezena, perfil, posicao_indice, taxa_posicao, nota_b,
+            posicao_ranking_a, posicao_ranking_b
+         ) VALUES {marcadores}"
+    )
+}
+
+/// Valores de uma linha, na ordem das colunas de `sql_inserir_ranking_taxa`.
+fn valores_ranking_taxa(
+    l: &LinhaRankingTaxa,
+    perfil: &str,
+) -> [rusqlite::types::Value; COLUNAS_RANKING_TAXA] {
+    use rusqlite::types::Value;
+    [
+        Value::Integer(i64::from(l.concurso)),
+        Value::Integer(i64::from(l.dezena)),
+        Value::Text(perfil.to_string()),
+        Value::Integer(i64::from(l.posicao_indice)),
+        // `f64` inteiro no REAL: o valor lido de volta tem os mesmos bits.
+        Value::Real(l.taxa_posicao),
+        Value::Real(l.nota_b),
+        Value::Integer(i64::from(l.posicao_ranking_a)),
+        Value::Integer(i64::from(l.posicao_ranking_b)),
+    ]
+}
+
+/// Contagem para o `INTEGER` do SQLite. As contagens são concursos × dezenas
+/// (ordem de 10^6); o teto só existiria para um `u64` absurdo.
+fn contagem_sql(valor: u64) -> Result<i64> {
+    i64::try_from(valor).map_err(|_| {
+        SpiderError::AvaliacaoEntradaInvalida(format!(
+            "contagem {valor} não cabe no INTEGER do SQLite"
+        ))
+    })
+}
+
+/// Lê uma contagem do `INTEGER` do SQLite (nunca negativa).
+fn contagem_lida(row: &rusqlite::Row<'_>, indice: usize) -> rusqlite::Result<u64> {
+    let valor: i64 = row.get(indice)?;
+    u64::try_from(valor).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(indice, valor))
+}
+
+/// Insere as linhas de `taxa_posicao` do perfil. Chave já existente é erro.
+pub fn inserir_taxa_posicao(
+    conn: &Connection,
+    perfil: &str,
+    linhas: &[LinhaTaxaPosicao],
+) -> Result<usize> {
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO taxa_posicao (perfil, posicao, saidas, exposicoes, taxa, grau, direcao)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )?;
+    for l in linhas {
+        stmt.execute(params![
+            perfil,
+            l.posicao,
+            contagem_sql(l.saidas)?,
+            contagem_sql(l.exposicoes)?,
+            l.taxa,
+            l.grau,
+            l.direcao
+        ])?;
+    }
+    Ok(linhas.len())
+}
+
+/// Insere as linhas de `taxa_faixa` do perfil. Chave já existente é erro.
+pub fn inserir_taxa_faixa(
+    conn: &Connection,
+    perfil: &str,
+    linhas: &[LinhaTaxaFaixa],
+) -> Result<usize> {
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO taxa_faixa
+            (perfil, componente, faixa, saidas, exposicoes, taxa, grau, direcao)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )?;
+    for l in linhas {
+        stmt.execute(params![
+            perfil,
+            l.componente,
+            l.faixa,
+            contagem_sql(l.saidas)?,
+            contagem_sql(l.exposicoes)?,
+            l.taxa,
+            l.grau,
+            l.direcao
+        ])?;
+    }
+    Ok(linhas.len())
+}
+
+/// Lê as linhas de `ranking_taxa` do perfil, ordenadas por (concurso, dezena).
+pub fn ler_ranking_taxa(conn: &Connection, perfil: &str) -> Result<Vec<LinhaRankingTaxa>> {
+    let mut stmt = conn.prepare(
+        "SELECT concurso, dezena, posicao_indice, taxa_posicao, nota_b,
+                posicao_ranking_a, posicao_ranking_b
+         FROM ranking_taxa WHERE perfil = ?1
+         ORDER BY concurso, dezena",
+    )?;
+    let linhas = stmt.query_map(params![perfil], |row| {
+        Ok(LinhaRankingTaxa {
+            concurso: row.get(0)?,
+            dezena: row.get(1)?,
+            posicao_indice: row.get(2)?,
+            taxa_posicao: row.get(3)?,
+            nota_b: row.get(4)?,
+            posicao_ranking_a: row.get(5)?,
+            posicao_ranking_b: row.get(6)?,
+        })
+    })?;
+    Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Lê as linhas de `taxa_posicao` do perfil, ordenadas por posição.
+pub fn ler_taxa_posicao(conn: &Connection, perfil: &str) -> Result<Vec<LinhaTaxaPosicao>> {
+    let mut stmt = conn.prepare(
+        "SELECT posicao, saidas, exposicoes, taxa, grau, direcao
+         FROM taxa_posicao WHERE perfil = ?1
+         ORDER BY posicao",
+    )?;
+    let linhas = stmt.query_map(params![perfil], |row| {
+        Ok(LinhaTaxaPosicao {
+            posicao: row.get(0)?,
+            saidas: contagem_lida(row, 1)?,
+            exposicoes: contagem_lida(row, 2)?,
+            taxa: row.get(3)?,
+            grau: row.get(4)?,
+            direcao: row.get(5)?,
+        })
+    })?;
+    Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Lê as linhas de `taxa_faixa` do perfil, ordenadas por (componente, faixa)
+/// em ordem alfabética do texto. (A ordem de apresentação dos relatórios é a
+/// do código, não esta.)
+pub fn ler_taxa_faixa(conn: &Connection, perfil: &str) -> Result<Vec<LinhaTaxaFaixa>> {
+    let mut stmt = conn.prepare(
+        "SELECT componente, faixa, saidas, exposicoes, taxa, grau, direcao
+         FROM taxa_faixa WHERE perfil = ?1
+         ORDER BY componente, faixa",
+    )?;
+    let linhas = stmt.query_map(params![perfil], |row| {
+        Ok(LinhaTaxaFaixa {
+            componente: row.get(0)?,
+            faixa: row.get(1)?,
+            saidas: contagem_lida(row, 2)?,
+            exposicoes: contagem_lida(row, 3)?,
+            taxa: row.get(4)?,
+            grau: row.get(5)?,
+            direcao: row.get(6)?,
+        })
+    })?;
+    Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1044,5 +1352,173 @@ mod tests {
             concursos(listar_crescente(&conn, "quina").expect("lista")),
             [1, 2, 3]
         );
+    }
+
+    // --- ranking_taxa, taxa_posicao e taxa_faixa ----------------------------
+
+    fn linha_ranking(concurso: u32, dezena: u32, i: u32) -> LinhaRankingTaxa {
+        LinhaRankingTaxa {
+            concurso,
+            dezena,
+            posicao_indice: 1 + i % 80,
+            // Bits "difíceis": fração sem representação exata, subnormal, zero
+            // e negativo (a nota B pode ser negativa).
+            taxa_posicao: match i % 4 {
+                0 => 0.1 + 0.2,
+                1 => f64::MIN_POSITIVE / 4.0,
+                2 => 0.0,
+                _ => 1.0 / 3.0,
+            },
+            nota_b: -1.234_567_891 * f64::from(i + 1),
+            posicao_ranking_a: 1 + (i * 7) % 80,
+            posicao_ranking_b: 1 + (i * 11) % 80,
+        }
+    }
+
+    fn banco_com_tabelas_ranking() -> Connection {
+        let conn = abrir(Path::new(":memory:")).expect("banco em memória");
+        criar_tabelas_ranking(&conn).expect("cria");
+        criar_tabelas_ranking(&conn).expect("idempotente");
+        conn
+    }
+
+    #[test]
+    fn ranking_taxa_round_trip_em_blocos_e_no_resto_preserva_bits() {
+        let conn = banco_com_tabelas_ranking();
+        let total = 2 * LINHAS_POR_INSERT + 7;
+        let gravadas: Vec<LinhaRankingTaxa> = (0..total as u32)
+            .map(|i| linha_ranking(1 + i / 10, 1 + i % 10, i))
+            .collect();
+        assert_eq!(
+            inserir_ranking_taxa(&conn, "p_v1", &gravadas).expect("insere"),
+            total
+        );
+        let lidas = ler_ranking_taxa(&conn, "p_v1").expect("lê");
+        assert_eq!(lidas, gravadas);
+        for (l, g) in lidas.iter().zip(&gravadas) {
+            assert_eq!(l.taxa_posicao.to_bits(), g.taxa_posicao.to_bits());
+            assert_eq!(l.nota_b.to_bits(), g.nota_b.to_bits());
+        }
+        let tipos: String = conn
+            .query_row(
+                "SELECT group_concat(DISTINCT typeof(taxa_posicao) || typeof(nota_b)) FROM ranking_taxa",
+                [],
+                |r| r.get(0),
+            )
+            .expect("tipos");
+        assert_eq!(tipos, "realreal");
+    }
+
+    #[test]
+    fn ranking_taxa_com_chave_repetida_e_erro_e_outro_perfil_nao() {
+        let conn = banco_com_tabelas_ranking();
+        inserir_ranking_taxa(&conn, "a_v1", &[linha_ranking(1, 1, 0)]).expect("insere");
+        assert!(inserir_ranking_taxa(&conn, "a_v1", &[linha_ranking(1, 1, 1)]).is_err());
+        inserir_ranking_taxa(&conn, "b_v1", &[linha_ranking(1, 1, 1)]).expect("outro perfil");
+    }
+
+    #[test]
+    fn taxa_posicao_e_taxa_faixa_round_trip_com_nulls() {
+        let conn = banco_com_tabelas_ranking();
+        let posicoes = vec![
+            LinhaTaxaPosicao {
+                posicao: 1,
+                saidas: 7,
+                exposicoes: 10,
+                taxa: 0.1 + 0.2,
+                grau: Some("moderada".to_string()),
+                direcao: Some("a favor de viés".to_string()),
+            },
+            LinhaTaxaPosicao {
+                posicao: 2,
+                saidas: 0,
+                exposicoes: 0,
+                taxa: 0.5,
+                grau: None,
+                direcao: None,
+            },
+        ];
+        let faixas = vec![
+            LinhaTaxaFaixa {
+                componente: "frequencia".to_string(),
+                faixa: "alto".to_string(),
+                saidas: 5_000_000_000,
+                exposicoes: 9_000_000_000,
+                taxa: 1.0 / 3.0,
+                grau: Some("fraca".to_string()),
+                direcao: Some("a favor do acaso".to_string()),
+            },
+            LinhaTaxaFaixa {
+                componente: "frequencia".to_string(),
+                faixa: "nulo".to_string(),
+                saidas: 0,
+                exposicoes: 0,
+                taxa: 0.6,
+                grau: None,
+                direcao: None,
+            },
+        ];
+        assert_eq!(
+            inserir_taxa_posicao(&conn, "p_v1", &posicoes).expect("insere"),
+            2
+        );
+        assert_eq!(
+            inserir_taxa_faixa(&conn, "p_v1", &faixas).expect("insere"),
+            2
+        );
+        assert_eq!(ler_taxa_posicao(&conn, "p_v1").expect("lê"), posicoes);
+        // Ordem alfabética do texto da faixa: "alto" antes de "nulo".
+        assert_eq!(ler_taxa_faixa(&conn, "p_v1").expect("lê"), faixas);
+        // NULL de verdade no banco, não texto vazio.
+        let nulos: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM taxa_posicao WHERE grau IS NULL AND direcao IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("conta");
+        assert_eq!(nulos, 1);
+        assert!(inserir_taxa_posicao(&conn, "p_v1", &posicoes[..1]).is_err());
+        assert!(inserir_taxa_faixa(&conn, "p_v1", &faixas[..1]).is_err());
+    }
+
+    #[test]
+    fn apagar_ranking_do_perfil_apaga_as_tres_tabelas_e_so_as_dele() {
+        let conn = banco_com_tabelas_ranking();
+        let posicao = LinhaTaxaPosicao {
+            posicao: 1,
+            saidas: 1,
+            exposicoes: 2,
+            taxa: 0.5,
+            grau: None,
+            direcao: None,
+        };
+        let faixa = LinhaTaxaFaixa {
+            componente: "frequencia".to_string(),
+            faixa: "baixo".to_string(),
+            saidas: 1,
+            exposicoes: 2,
+            taxa: 0.5,
+            grau: None,
+            direcao: None,
+        };
+        for perfil in ["a_v1", "b_v1"] {
+            inserir_ranking_taxa(
+                &conn,
+                perfil,
+                &[linha_ranking(1, 1, 0), linha_ranking(1, 2, 1)],
+            )
+            .expect("ranking");
+            inserir_taxa_posicao(&conn, perfil, std::slice::from_ref(&posicao)).expect("posição");
+            inserir_taxa_faixa(&conn, perfil, std::slice::from_ref(&faixa)).expect("faixa");
+        }
+        assert_eq!(apagar_ranking_do_perfil(&conn, "a_v1").expect("apaga"), 2);
+        assert!(ler_ranking_taxa(&conn, "a_v1").expect("lê").is_empty());
+        assert!(ler_taxa_posicao(&conn, "a_v1").expect("lê").is_empty());
+        assert!(ler_taxa_faixa(&conn, "a_v1").expect("lê").is_empty());
+        assert_eq!(ler_ranking_taxa(&conn, "b_v1").expect("lê").len(), 2);
+        assert_eq!(ler_taxa_posicao(&conn, "b_v1").expect("lê"), [posicao]);
+        assert_eq!(ler_taxa_faixa(&conn, "b_v1").expect("lê"), [faixa]);
+        assert_eq!(apagar_ranking_do_perfil(&conn, "nenhum").expect("apaga"), 0);
     }
 }

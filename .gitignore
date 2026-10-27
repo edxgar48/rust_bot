@@ -3,6 +3,7 @@
 *.db
 /backups
 /tabelas
+/ranking
 /datasets
 /ml/.venv
 __pycache__/

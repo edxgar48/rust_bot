@@ -62,7 +62,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 - [x] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
 - [x] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
-- [ ] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
+- [x] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
 - [ ] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
 - [ ] 2.x `ranking_taxa.json` no `sync exportar` e em `docs/contrato-v1.md` (numerar ao entrar na Fase 2)
 
@@ -2241,3 +2241,29 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   prevê uma só coluna `posicao_ranking` em `ranking_taxa`, mas há duas ordens (A e B) — decidir no plano
   antes do código. Para a 1f.3/1f.4: evidência e esperado descrevem o histórico inteiro e não podem
   alimentar nota, ranking, escolha de perfil nem walk-forward.
+- 2026-10-27 — 1f.3 `[x]` (`engenheiro-avaliacao`). Criados `src/orquestracao/ranking_taxa.rs` (+ `tests.rs`
+  vazio), `src/ranking.rs` (+ `tests.rs`, CSV e texto) e `tests/ranking.rs` (16 testes); em arquivos existentes
+  só acréscimos (`db.rs`: 3 tabelas + 4 testes; `sync.rs`: comando `ranking`, `nome_se_grava` → `"ranking"`;
+  `lib.rs`, `orquestracao.rs`, README, `.gitignore` com `/ranking`). Comando: `sync ranking <loteria>
+  [--perfil] [--db] [--perfis] [--saida ranking]`, recusa `todas`; CSV em
+  `ranking/<loteria>/ranking_<loteria>_<perfil>_<proximo>.csv` (`;`, vírgula decimal, BOM, 9 casas). Esquema
+  adotado (o plano deixava `taxa_posicao`/`taxa_faixa` para a 1f.3; **texto ainda não levado ao plano,
+  aguarda aprovação do usuário**): `ranking_taxa` com as colunas do plano e PK (concurso, dezena, perfil),
+  incluindo o próximo concurso; `taxa_posicao(perfil, posicao, saidas, exposicoes, taxa, grau, direcao)` e
+  `taxa_faixa(perfil, componente, faixa, saidas, exposicoes, taxa, grau, direcao)` só com o snapshot do
+  histórico inteiro (trancado incluído; só descrevem), `exposicoes` = concursos (posição) ou pares concurso ×
+  dezena (faixa), grau/direção da 1d com priori de 5 %, célula sem exposição vira linha com taxa K/N e
+  grau/direção NULL (sempre N e 36 linhas). Perfil amarrado por nome; exige registro e hash iguais (recusa
+  `PerfilNaoRegistrado`/`PerfilAlterado`), sem coluna de hash. Tudo numa transação `BEGIN IMMEDIATE`; recusas
+  não gravam. Rodado nas 3 loterias (padrao_v1; próximos 3815/3076/7153; ~1 s, ~0,9 s, ~2,8 s em release);
+  duas execuções com tabelas, CSV e texto idênticos (SHA-256). Nada além do acaso: posições com grau
+  moderado ou maior 0 nas três (esperado 0,05–0,14); faixas da Lotofácil 10 moderadas, todas "a favor do
+  acaso" (esperado 8,81). `verificador-vazamento`: sem vazamento (4 mutantes pegos). Gate: fmt/clippy ok,
+  lib 761, bin 26, integração ok, pytest 175, `validar todas` ok; app não rodado (diff não toca `app/`).
+  Revisor: aprovado com ressalvas. MÉDIA: esquema de `taxa_posicao`/`taxa_faixa` não está no plano
+  (pendente de aprovação do usuário). BAIXA, não corrigidas: `src/orquestracao/ranking_taxa/tests.rs` vazio
+  (CRLF) com `mod tests;`; `format!` com quebra literal em `sync.rs` (~1958); `ranking_taxa.taxa_posicao`
+  (nota A em t, até t−1) × `taxa_posicao.taxa` (histórico inteiro) têm nomes parecidos — explicitar no
+  comentário e no plano; `contagem_sql` satura em `i64::MAX`; linha de `orquestracao.rs` no README não cita
+  `ranking`. Outros desvios: mensagens de recusa herdadas do `avaliar` dizem "nada foi avaliado"; SQLite
+  grava `-0.0` como `0.0` (não ocorre em produção).
