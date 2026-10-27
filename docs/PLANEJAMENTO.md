@@ -464,6 +464,20 @@ independentes e o resultado esperado da avaliação é "não supera o acaso".
   normalizados é dividido em **tercis** entre as dezenas daquele concurso
   (baixo, médio, alto); `NULL` é uma faixa própria. Taxa por (componente,
   faixa), com o mesmo encolhimento em direção a K/N.
+  Decisões de 2026-10-27:
+  - **Tercil** = `floor(3 · menores / n)`, com `menores` = quantas dezenas têm
+    valor estritamente menor e n = dezenas com valor não `NULL` no concurso.
+    Empatados caem na mesma faixa; contas em inteiros, sobre os valores crus
+    de `features_dezena` (z-score e minmax preservam a ordem).
+  - **Componente constante** no concurso (todas as dezenas com o mesmo valor):
+    todas em "médio", como o neutro do índice. Consequências da regra: com
+    uma só dezena com valor, ela conta como constante e fica em "médio"; com
+    duas, nunca aparece "alto".
+  - **Denominador da taxa por faixa**: `(saídas na faixa antes de t + m·K/N) /
+    (pares concurso × dezena na faixa antes de t + m)`, m = 100 contado em
+    pares.
+  - **Janela dos componentes**: a do perfil ativo (50 no `padrao_v1`), a mesma
+    do índice que dá a posição.
 - **Nota A (principal)**: a taxa da posição atual de cada dezena. Ordena as N
   dezenas; desempate pela menor dezena, com o total arredondado (1e-9) como no
   índice.
