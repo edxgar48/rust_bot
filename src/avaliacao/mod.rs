@@ -44,6 +44,10 @@
 //! vez de *N*, para uma régua que distingue "sem sinal" de "sinal fraco".
 //! A calibração por posição da 1c ([`calibrar`]) não muda.
 //!
+//! Taxas históricas por posição e por (componente, faixa) (1f.1,
+//! [`calcular_taxas`]): a taxa da 1c por posição mais a taxa de cada tercil
+//! dos 9 componentes, só com o passado, em contagens incrementais.
+//!
 //! Régua sensível (1e.2, [`Regua`]): B e o índice inerte passam a usar a
 //! calibração linear; o `sync avaliar` ganha uma linha só informativa de log
 //! loss com ela ([`log_loss_linear_da_busca`]).
@@ -54,6 +58,7 @@ mod calibracao;
 mod evidencia;
 mod evidencia_indice;
 mod metricas;
+mod posicoes;
 mod topk;
 mod walk_forward;
 
@@ -91,6 +96,10 @@ pub use evidencia_indice::{
 pub use metricas::{
     brier, log_loss, metricas_por_concurso, resumir, Comparacao, Intervalo, MetricasConcurso,
     ResumoAvaliacao, LIMITE_PROBABILIDADE, Z_95,
+};
+pub use posicoes::{
+    calcular_taxas, faixas_do_componente, Contagem, Faixa, LinhaTaxas, ObservacaoPosicoes,
+    SerieTaxas, TaxasAcumuladas, NOMES_COMPONENTES, QTD_COMPONENTES, QTD_FAIXAS,
 };
 pub use topk::{
     acertos_por_concurso, binomial, p_valor_soma, resumir_topk, AcertosConcurso, Cauda,

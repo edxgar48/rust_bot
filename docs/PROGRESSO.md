@@ -60,7 +60,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 
 ## Fase 1f — Ranking por taxa histórica de posição e componentes · `engenheiro-avaliacao`
 
-- [ ] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
+- [x] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
 - [ ] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
 - [ ] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
 - [ ] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
@@ -2191,3 +2191,26 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   por 3; feito sobre os valores inteiros crus, que têm a mesma ordem dos normalizados?); (2) faixa de
   componente sem variação no concurso (todas iguais); (3) denominador da taxa por faixa (o `m = 100`
   conta concursos ou pares concurso × dezena?); (4) janela dos componentes = a do perfil ativo?
+- 2026-10-27 — As quatro perguntas da 1f.1 foram respondidas no PLANEJAMENTO.md (seção "Fase 1f",
+  "Decisões de 2026-10-27", edição do usuário ainda não commitada): tercil = `floor(3 · menores / n)`
+  sobre os valores crus, empates na mesma faixa, n = dezenas não `NULL`; componente constante → tudo em
+  "médio"; taxa por faixa com m = 100 contado em pares concurso × dezena; janela dos componentes = a do
+  perfil ativo. 1f.1 marcada `[~]` e delegada ao `engenheiro-avaliacao`.
+- 2026-10-27 — 1f.1 `[x]` (`engenheiro-avaliacao`). Criados `src/avaliacao/posicoes.rs` e
+  `src/avaliacao/posicoes/tests.rs`; `mod.rs` reexporta. API: `calcular_taxas(&LoteriaConfig,
+  &[ObservacaoPosicoes]) -> Result<SerieTaxas>` (linhas por (concurso, dezena) com `taxa_posicao`, 9 faixas e
+  9 taxas de faixa, mais o snapshot do próximo concurso com todo o histórico); estado incremental
+  `TaxasAcumuladas` (`linhas(t)` antes de `incorporar(t)`, exige t = último + 1); `faixas_do_componente`;
+  `Faixa { Baixo, Medio, Alto, Nulo }`. Taxa da posição igual bit a bit à de `calibrar` (1c), conferida nas
+  três loterias. Testes: valores à mão na MINI, ponto no tempo, incremental = completo, NULL, empates,
+  constante, referência ingênua independente nas 3 loterias e na MINI. `verificador-vazamento`: sem
+  vazamento (6 mutações pegas). Gate: fmt/clippy ok, lib 725 testes (36–41 novos), demais binários ok,
+  pytest 175 ok, `validar todas` ok; app não rodado (diff não toca `app/`). Revisor: aprovado com
+  ressalvas, só BAIXA, não corrigidas: (1) nomes/extração dos 9 componentes duplicam
+  `Pesos::componentes()` e `resolver_componentes` do motor — unificar numa função do `motor` na 1f.3;
+  (2) `SerieTaxas`/`TaxasAcumuladas` sem `PartialEq` (testes comparam por `Debug`); (3) registrar no plano
+  que n=1 conta como constante (médio) e n=2 só dá baixo/médio — depende de aprovação do usuário;
+  (4) `ultimo + 1` sem `checked_add` (mesmo padrão de `calibracao.rs`). Desvio de arquitetura aceito:
+  `avaliacao` passou a importar `motor::FeaturesDezena` (só dado, sem ciclo). Para a 1f.3: a montagem da
+  entrada deve usar `indice(t)` e `features_dezena(t)` do próprio t, na janela do perfil ativo. Para a 1f.4:
+  avaliar A/B com perfil cujos pesos não leram acima do corte do trancado.
