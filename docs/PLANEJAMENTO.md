@@ -498,7 +498,8 @@ independentes e o resultado esperado da avaliação é "não supera o acaso".
   conjunto trancado segue a regra da 1c: nada que escolhe lê acima do corte.
   Descrever as taxas pode ler o histórico inteiro (como a 1d-A); avaliar não.
 - **Tabela derivada** `ranking_taxa(concurso, dezena, perfil, posicao_indice,
-  taxa_posicao, nota_b, posicao_ranking)`, regenerável de `resultados`,
+  taxa_posicao, nota_b, posicao_ranking_a, posicao_ranking_b)` (duas ordens: por
+  A e por B; decisão de 2026-10-27), regenerável de `resultados`,
   `features_dezena` e `indice`; mais as taxas agregadas por posição e faixa
   numa tabela própria (`taxa_posicao`, `taxa_faixa`), definidas na 1f.3.
 - **Contrato**: arquivo novo `ranking_taxa.json` (aditivo; `tabela_geral.json`
