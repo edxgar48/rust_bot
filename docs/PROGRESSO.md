@@ -2324,3 +2324,17 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `_intervalo` duplicam funções do `sync.rs`; (5) sem correção para múltiplas comparações (avisado no texto
   e no GUIA). Lacunas de teste apontadas pelo vazamento (sem vazamento): `retain` da orquestração sem teste
   isolado; mapeamento A/B só em testes de unidade; linear sem teste de ponto no tempo no nível do banco.
+- 2026-10-27 — 2.x (`ranking_taxa.json`, proposta de número: 2.5) não iniciada (continua `[ ]`): o plano diz
+  só "arquivo novo `ranking_taxa.json` (aditivo), no `index.json` com hash, em `docs/contrato-v1.md`". Fatos
+  conferidos: `ranking_taxa` não guarda a faixa de cada componente por dezena (a 7.7 pede "a faixa de cada
+  componente"), e o `sync exportar` "só lê o banco, não calcula nada"; o `sync ciclo` não roda `sync
+  ranking`; o app (4.2, `validacao.ts`) lê só as chaves conhecidas de `arquivos`, então uma 4ª chave não o
+  quebra. Perguntas devolvidas ao usuário: (1) conteúdo: só o snapshot do próximo concurso (N dezenas com
+  posição no índice, nota A, diferença para K/N, nota B, posições A e B), mais `taxa_posicao` (N linhas) e
+  `taxa_faixa` (36 linhas) com grau/direção? Grau por dezena = grau da sua posição atual?; (2) faixa de cada
+  componente por dezena: acrescentar 9 colunas em `ranking_taxa` (mexe na 1f.3), o exportar calcular os
+  tercis a partir de `features_dezena` (quebra "não calcula nada"), ou deixar fora do JSON e da 7.7?;
+  (3) ranking ausente ou atrasado: recusar o exportar inteiro (como features/índice), ou exportar sem o
+  arquivo, com `arquivos.ranking_taxa` ausente/`null`?; (4) o `sync ciclo` passa a rodar `sync ranking`
+  antes do exportar (mexe na Fase 3)?; (5) chave nova `ranking_taxa` em `arquivos` do `index.json` como
+  campo opcional, mudando o texto "Três chaves" do contrato?
