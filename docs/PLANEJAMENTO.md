@@ -516,7 +516,19 @@ independentes e o resultado esperado da avaliação é "não supera o acaso".
     o mesmo número que `taxa_posicao.taxa` (histórico inteiro).
 - **Contrato**: arquivo novo `ranking_taxa.json` (aditivo; `tabela_geral.json`
   e `ultimo.json` não mudam). Entra no `index.json` com hash, em
-  `docs/contrato-v1.md`.
+  `docs/contrato-v1.md`. Decisões de 2026-10-27 (tarefa 2.5):
+  - **Conteúdo**: só o retrato do próximo concurso, uma linha por dezena:
+    dezena, posição no índice, nota A, diferença para o acaso (A − K/N), nota
+    B e as duas posições no ranking (por A e por B). Sem `taxa_posicao`, sem
+    `taxa_faixa`, sem grau de evidência e sem a faixa de cada componente.
+  - **Exportar não calcula**: só lê `ranking_taxa`.
+  - **Ranking ausente ou atrasado**: o `sync exportar` publica o resto sem o
+    `ranking_taxa.json`; a chave fica ausente de `arquivos` no `index.json`.
+  - **`sync ciclo`** passa a rodar `sync ranking` antes do exportar; falha do
+    ranking não derruba o ciclo (registra alerta e segue sem o arquivo).
+  - **Contrato**: `ranking_taxa` é chave opcional de `arquivos`;
+    `docs/contrato-v1.md` descreve três chaves obrigatórias e uma opcional.
+    Aditivo, `schema_version` inalterado.
 
 Tarefas:
 - **1f.1** — `src/avaliacao/posicoes.rs` (função pura, sem banco): taxas por
