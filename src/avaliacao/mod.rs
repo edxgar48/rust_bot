@@ -48,6 +48,11 @@
 //! [`calcular_taxas`]): a taxa da 1c por posição mais a taxa de cada tercil
 //! dos 9 componentes, só com o passado, em contagens incrementais.
 //!
+//! Notas A e B do ranking por taxa histórica (1f.2, [`ranquear`]): a nota A é
+//! a taxa da posição (igual à da 1c), a B é experimental; ordenação com
+//! desempate pela menor dezena, graus da 1d por posição e faixa
+//! ([`evidencia_das_taxas`]) e esperado sob o acaso ([`esperado_das_taxas`]).
+//!
 //! Régua sensível (1e.2, [`Regua`]): B e o índice inerte passam a usar a
 //! calibração linear; o `sync avaliar` ganha uma linha só informativa de log
 //! loss com ela ([`log_loss_linear_da_busca`]).
@@ -59,6 +64,7 @@ mod evidencia;
 mod evidencia_indice;
 mod metricas;
 mod posicoes;
+mod ranking_taxa;
 mod topk;
 mod walk_forward;
 
@@ -100,6 +106,10 @@ pub use metricas::{
 pub use posicoes::{
     calcular_taxas, faixas_do_componente, Contagem, Faixa, LinhaTaxas, ObservacaoPosicoes,
     SerieTaxas, TaxasAcumuladas, NOMES_COMPONENTES, QTD_COMPONENTES, QTD_FAIXAS,
+};
+pub use ranking_taxa::{
+    esperado_das_taxas, evidencia_das_taxas, nota_b, ranquear, AvaliacaoFb, EsperadoTaxas,
+    EvidenciaFaixa, EvidenciaPosicao, EvidenciaTaxas, LinhaRanking,
 };
 pub use topk::{
     acertos_por_concurso, binomial, p_valor_soma, resumir_topk, AcertosConcurso, Cauda,

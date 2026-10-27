@@ -61,7 +61,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Fase 1f — Ranking por taxa histórica de posição e componentes · `engenheiro-avaliacao`
 
 - [x] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
-- [ ] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
+- [x] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
 - [ ] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
 - [ ] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
 - [ ] 2.x `ranking_taxa.json` no `sync exportar` e em `docs/contrato-v1.md` (numerar ao entrar na Fase 2)
@@ -2214,3 +2214,30 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   `avaliacao` passou a importar `motor::FeaturesDezena` (só dado, sem ciclo). Para a 1f.3: a montagem da
   entrada deve usar `indice(t)` e `features_dezena(t)` do próprio t, na janela do perfil ativo. Para a 1f.4:
   avaliar A/B com perfil cujos pesos não leram acima do corte do trancado.
+- 2026-10-27 — 1f.2 `[x]` (`engenheiro-avaliacao`). Restrição do usuário: só código novo, nada existente
+  muda (única edição em arquivo existente: `mod`/`pub use`/doc em `src/avaliacao/mod.rs`, +10 linhas,
+  conferido pelo revisor). Criados `src/avaliacao/ranking_taxa.rs` e `src/avaliacao/ranking_taxa/tests.rs`.
+  API: `ranquear(&cfg, &[LinhaTaxas]) -> Result<Vec<LinhaRanking>>` (nota A = `taxa_posicao`, nota B =
+  Σ `ln(taxa/(K/N))` sobre posição e 9 faixas, `posicao_ranking_a` e `_b`), `nota_b`,
+  `evidencia_das_taxas(&cfg, &TaxasAcumuladas) -> Result<EvidenciaTaxas>` e `esperado_das_taxas(&cfg,
+  &[LinhaTaxas], replicas, semente) -> Result<EsperadoTaxas>`. Nota A igual bit a bit à `calibrar` (1c) na
+  MINI e nas 3 loterias (critério de pronto). Interpretações tomadas pelo orquestrador (sem pergunta ao
+  usuário; confirmar): (1) notas guardadas cruas, ordenação sobre o valor arredondado a 1e-9 com -0.0 → 0.0
+  (espelho local do `arredondar` privado do índice), desempate pela menor dezena, vale para A e B; (2) faixa
+  Nulo entra na nota B e na evidência como faixa própria; (3) evidência só no histórico inteiro (sem janela
+  de 500), 3 prioris da 1d, principal 5 %; células com n = 0 ficam ausentes e fora da contagem; (4) FB
+  binomial da 1d aplicado às faixas em pares concurso × dezena, embora dependentes no concurso
+  (hipergeométrica) — por isso o esperado é simulado mantendo as posições e faixas reais e sorteando K de N
+  (`SplitMix64`, `SEMENTE_ESPERADO` = 20261008, `REPLICAS_ESPERADO` = 1000); para posições bate bit a bit
+  com `esperado_sob_o_acaso` da 1d quando a posição é fixa. Desempenho (release, 1000 réplicas): ~0,7 s
+  Lotofácil e Quina, ~0,3 s Mega-Sena. 30 testes novos. `verificador-vazamento`: sem vazamento (6 mutantes
+  pegos). Gate: fmt/clippy ok, lib 755 testes (+30), demais binários ok, pytest 175 ok, `validar todas` ok;
+  app não rodado (diff não toca `app/`). Revisor: aprovado com ressalvas, só BAIXA, não corrigidas:
+  (1) `agrupar` confere posição em 1..=N mas não a permutação por concurso, e `esperado_das_taxas` a supõe —
+  linhas de `calcular_taxas` já vêm validadas; corrigir ou documentar a pré-condição; (2) cópias locais de
+  `arredondar` (motor/indice.rs) e de `chance_e_prioris`/`celula`/`grade_de` (evidencia.rs) por causa da
+  restrição — unificar com `pub(super)` na origem quando permitido; (3) `esperado_das_taxas` mistura
+  `EvidenciaEntradaInvalida` e `AvaliacaoEntradaInvalida` (segue a 1d, documentado). Para a 1f.3: o plano
+  prevê uma só coluna `posicao_ranking` em `ranking_taxa`, mas há duas ordens (A e B) — decidir no plano
+  antes do código. Para a 1f.3/1f.4: evidência e esperado descrevem o histórico inteiro e não podem
+  alimentar nota, ranking, escolha de perfil nem walk-forward.
