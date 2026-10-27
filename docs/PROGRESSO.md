@@ -58,6 +58,14 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1e.2 B e índice inerte na calibração linear; linha extra no `sync avaliar`
 - [x] 1e.3 `docs/GUIA.md` e README com a leitura nova; números das três loterias
 
+## Fase 1f — Ranking por taxa histórica de posição e componentes · `engenheiro-avaliacao`
+
+- [ ] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
+- [ ] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
+- [ ] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
+- [ ] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
+- [ ] 2.x `ranking_taxa.json` no `sync exportar` e em `docs/contrato-v1.md` (numerar ao entrar na Fase 2)
+
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
 - [x] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
@@ -2175,3 +2183,11 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   separado: `cargo update -p bytes` e `cargo update -p tokio`, depois `cargo test` e `cargo audit`
   (`git checkout Cargo.lock` desfaz); `zip` do `[dev-dependencies]` → 9; `zip` do `calamine` só quando
   houver versão que use `zip` ≥ 9; reavaliar `playwright` 0.0.18 (maior fonte do ruído).
+
+- 2026-10-27 — Fase 1f incluída no PLANEJAMENTO.md (seção "Fase 1f", pedido do usuário de 2026-10-27;
+  edição ainda não commitada, junto da 7.7 no PLANEJAMENTO-FRONTEND.md). 1f.1 não iniciada: a seção
+  não define pontos que mudam as taxas calculadas. Perguntas devolvidas ao usuário: (1) regra dos
+  tercis (corte por posto com empates na mesma faixa, ou por valor; tamanhos com N não divisível
+  por 3; feito sobre os valores inteiros crus, que têm a mesma ordem dos normalizados?); (2) faixa de
+  componente sem variação no concurso (todas iguais); (3) denominador da taxa por faixa (o `m = 100`
+  conta concursos ou pares concurso × dezena?); (4) janela dos componentes = a do perfil ativo?

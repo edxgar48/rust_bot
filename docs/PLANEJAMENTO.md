@@ -449,6 +449,64 @@ Tarefas:
 - **1e.3** — `docs/GUIA.md` e README com a leitura nova de B e da linha extra
   do `avaliar`; números das três loterias em `PROGRESSO.md`.
 
+### Fase 1f — Ranking por taxa histórica de posição e componentes
+
+Pedido do usuário (2026-10-27). Para cada concurso passado, a posição que cada
+dezena ocupava na tabela de força **antes** do sorteio (e a faixa de cada
+componente) é cruzada com o resultado; a taxa de saída de cada posição e faixa
+classifica as dezenas do próximo concurso. É descrição do passado: sorteios são
+independentes e o resultado esperado da avaliação é "não supera o acaso".
+
+- **Taxa por posição** `p(r)`: a mesma da 1c, `(saídas da posição r antes de t
+  + m·K/N) / (concursos antes de t + m)`, m = 100, histórico inteiro. A posição
+  vem de `indice` (perfil ativo), medida antes do sorteio.
+- **Faixas dos componentes**: em cada concurso, cada um dos 9 componentes
+  normalizados é dividido em **tercis** entre as dezenas daquele concurso
+  (baixo, médio, alto); `NULL` é uma faixa própria. Taxa por (componente,
+  faixa), com o mesmo encolhimento em direção a K/N.
+- **Nota A (principal)**: a taxa da posição atual de cada dezena. Ordena as N
+  dezenas; desempate pela menor dezena, com o total arredondado (1e-9) como no
+  índice.
+- **Nota B (experimental)**: soma, sobre a posição e as 9 faixas, de
+  `ln(taxa / (K/N))` (naive Bayes). Os componentes são correlacionados
+  (colinearidade já descrita em *Casos de borda*), então B conta a mesma
+  informação mais de uma vez: sai rotulada como experimental, nunca como
+  principal. Regressão logística fica fora (é ML, vai para `ml/` se um dia
+  fizer sentido).
+- **Ponto no tempo**: as taxas usadas no concurso t veem só concursos até t−1;
+  o snapshot do próximo concurso usa todo o histórico.
+- **Evidência**: grau e direção da 1d (fator de Bayes, H0 = K/N) por posição e
+  por faixa, mais a contagem de graus esperada sob o acaso (simulação com
+  semente fixa), porque com 25 posições e 9 × 3 faixas algumas aparecem por
+  acaso.
+- **Avaliação**: A e B passam pela régua da 1c (walk-forward, top-k contra a
+  hipergeométrica, bootstrap) e, para A, pela calibração linear da 1e. O
+  conjunto trancado segue a regra da 1c: nada que escolhe lê acima do corte.
+  Descrever as taxas pode ler o histórico inteiro (como a 1d-A); avaliar não.
+- **Tabela derivada** `ranking_taxa(concurso, dezena, perfil, posicao_indice,
+  taxa_posicao, nota_b, posicao_ranking)`, regenerável de `resultados`,
+  `features_dezena` e `indice`; mais as taxas agregadas por posição e faixa
+  numa tabela própria (`taxa_posicao`, `taxa_faixa`), definidas na 1f.3.
+- **Contrato**: arquivo novo `ranking_taxa.json` (aditivo; `tabela_geral.json`
+  e `ultimo.json` não mudam). Entra no `index.json` com hash, em
+  `docs/contrato-v1.md`.
+
+Tarefas:
+- **1f.1** — `src/avaliacao/posicoes.rs` (função pura, sem banco): taxas por
+  posição e por (componente, faixa), só com o passado. Testes: valores à mão
+  na MINI, ponto no tempo, incremental = completo, `NULL` como faixa, tercis
+  com empate. **Pronto quando:** testes verdes e referência independente.
+- **1f.2** — Notas A e B, ordenação e desempate; graus da 1d por posição e
+  faixa; esperado sob o acaso. **Pronto quando:** A reproduz a taxa da 1c.
+- **1f.3** — Tabelas derivadas, `sync ranking <loteria>` (relatório em texto
+  e CSV; uma loteria por vez) e registro do perfil/hash. **Pronto quando:**
+  roda nas três loterias e regenera igual.
+- **1f.4** — Avaliação de A e B na régua da 1c/1e; números das três loterias
+  em `PROGRESSO.md`; `docs/GUIA.md` com a leitura e o aviso de não-previsão.
+- **2.x (a numerar)** — `ranking_taxa.json` no `sync exportar` e no contrato,
+  com auditoria do `auditor-contrato`.
+- **7.7** — tela no app (ver `PLANEJAMENTO-FRONTEND.md`).
+
 ### Fase 2 — Exportação para o app
 
 - Comando `sync exportar [loteria|todas] --saida publico/`:
@@ -574,7 +632,7 @@ novo publicado no mesmo dia, e uma falha simulada dispara o alerta.
 
 ## Ordem e dependências
 
-0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 2 → 3. O contrato da Fase 2 é o ponto de encontro
+0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 1f → 2 → 3. O contrato da Fase 2 é o ponto de encontro
 com o planejamento do front-end.
 
 ## Decisões em aberto
