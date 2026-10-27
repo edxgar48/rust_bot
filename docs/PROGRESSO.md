@@ -63,7 +63,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1f.1 `src/avaliacao/posicoes.rs`: taxas por posição e por (componente, tercil) + testes
 - [x] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
 - [x] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
-- [ ] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
+- [x] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
 - [ ] 2.x `ranking_taxa.json` no `sync exportar` e em `docs/contrato-v1.md` (numerar ao entrar na Fase 2)
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
@@ -2267,3 +2267,60 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   comentário e no plano; `contagem_sql` satura em `i64::MAX`; linha de `orquestracao.rs` no README não cita
   `ranking`. Outros desvios: mensagens de recusa herdadas do `avaliar` dizem "nada foi avaliado"; SQLite
   grava `-0.0` como `0.0` (não ocorre em produção).
+- 2026-10-27 — 1f.4 não iniciada (continua `[ ]`): a seção "Fase 1f" diz só "A e B passam pela régua da
+  1c (walk-forward, top-k contra a hipergeométrica, bootstrap) e, para A, pela calibração linear da 1e".
+  Faltam pontos que mudam o que se constrói. Perguntas devolvidas ao usuário: (1) onde roda a avaliação
+  (seção nova do `sync ranking`, opção `--avaliar` no `sync ranking`, ou linha nova no `sync avaliar`);
+  (2) log loss/Brier de A são, por construção, os mesmos do perfil no `sync avaliar` (A = taxa da posição
+  = `calibrar` da 1c): mostrar mesmo assim, como conferência bit a bit, ou só o que é novo (top-k pela
+  ordem de A e calibração linear sobre a ordem de A)?; (3) B é escore, não probabilidade: para log loss e
+  Brier, calibrar pela posição de B (`calibrar`, m = 100, sobre `posicao_ranking_b`)? B também na linear,
+  ou só A como diz o plano?; (4) trancado: fica fechado (só dobras 2 a 5, sem `--trancado`)?; (5) a
+  restrição da 1f.2/1f.3 "só código novo, arquivos existentes só com acréscimos" continua valendo?
+- 2026-10-27 — As cinco perguntas da 1f.4 foram respondidas no PLANEJAMENTO.md (bloco "1f.4 ... Decisões de
+  2026-10-27", já commitado): `--avaliar` no `sync ranking`; A sem repetir log loss/Brier (teste de igualdade
+  com a 1c); B por `calibrar` (m = 100) sobre `posicao_ranking_b` mais a linear; trancado fechado (dobras 2 a
+  5); só acréscimos. Interpretações do orquestrador (sem pergunta ao usuário; confirmar): (1) métricas por
+  dobra 2, 3, 4, 5 e total sobre 2–5, dobra 1 só treina (como a parte B do `evidencia`) — por isso o total
+  de B não é comparável ao total do `avaliar` (5 dobras); (2) `--avaliar` recalcula em memória e não grava
+  nada (nem tabelas, nem CSV); não lê `ranking_taxa`; (3) k = K, sem `--k`; (4) trava `ranking` mantida
+  (`nome_se_grava` não mudou); (5) sem bootstrap para A (seria o do `avaliar`) nem nas linhas lineares.
+- 2026-10-27 — 1f.4 `[x]` (`engenheiro-avaliacao`). Criados `src/avaliacao/avaliacao_ranking.rs` (+ `tests.rs`,
+  35 testes; função pura `avaliar_ranking(cfg, &[LinhaRanking], k)`), `src/orquestracao/ranking_taxa/
+  avaliar_ranking.rs` (`avaliar_ranking_do_banco`, sem SQL novo, corta em `ultimo_concurso_busca` antes de
+  `calcular_taxas`), `src/ranking/avaliar.rs` (+ `tests.rs`, 4; `formatar_avaliacao`) e `tests/ranking_avaliar.rs`
+  (11, banco em memória e CLI). Acréscimos: `avaliacao/mod.rs`, `orquestracao/ranking_taxa.rs`, `ranking.rs`
+  (`mod`/`pub use`), `sync.rs` (campo `avaliar` com `conflicts_with = "saida"`, função `avaliar_ranking`, 1
+  teste), `docs/GUIA.md` (subseção na seção 2 e seção 9 nova com leitura, aviso de não-previsão e números),
+  README (2 linhas). Linhas existentes alteradas (desvio da restrição, impacto nulo): `..` na desestruturação
+  de um teste do `sync.rs`; doc-comment de `Comando::Ranking` estendido; chamada `gravar_ranking` movida para
+  dentro de `if avaliar {…} else {…}` (inevitável). Teste A = 1c (critério de pronto): `nota_a` = `calibrar`
+  bit a bit e log loss/Brier por dobra = `walk_forward` da 1c, na MINI e nas 3 loterias; no banco, contra
+  `avaliar_perfil`. `verificador-vazamento` (implementador e revisor): sem vazamento (15 mutantes; sobrevivem
+  só os que tiram uma das três camadas redundantes de corte). Gate: fmt/clippy ok, lib 800 (+39), bin 27,
+  integração ok (ranking_avaliar 11), pytest 175, `validar todas` ok; app n/a. Rodado nas 3 loterias em
+  release (padrao_v1; 1,7 s / ~1 s / ~3,4 s), duas execuções idênticas (SHA-256). Números (dobras 2–5,
+  k = K; trechos Lotofácil 685–3416, Mega-Sena 553–2759, Quina 1286–6421):
+
+  | | Lotofácil | Mega-Sena | Quina |
+  |---|---|---|---|
+  | A top-k (obs × acaso, p) | 8,9978 × 9, p 0,540 | 0,6081 × 0,6, p 0,299 | 0,3154 × 0,3125, p 0,350 |
+  | A log loss linear (A − acaso) | +1,41e-5 | +1,28e-5 | +1,72e-6 |
+  | B log loss 1c (B − acaso) | +1,34e-4 | +2,32e-4 | +1,55e-4 |
+  | B IC 95 % bootstrap | [−1,42e-5, +2,82e-4] | [+8,6e-5, +3,82e-4] | [+1,01e-4, +2,10e-4] |
+  | B veredito (p) | não supera (0,963) | não supera (0,999) | não supera (1,000) |
+  | B Brier (B − acaso) | +6,41e-5 | +4,09e-5 | +1,81e-5 |
+  | B top-k (obs × acaso, p) | 8,9956 × 9, p 0,577 | 0,6153 × 0,6, p 0,157 | 0,3094 × 0,3125, p 0,668 |
+  | B log loss linear (B − acaso) | +9,99e-6 | +1,4e-7 | +1,11e-6 |
+
+  Nenhum p ≤ 0,05: nem A nem B superam o acaso, como esperado. B fica pior na régua da 1c pelo custo de
+  aprender uma taxa por posição; na linear fica perto de zero. Revisor: aprovado com ressalvas, só BAIXA, não
+  corrigidas: (1) texto fixo do relatório (`src/ranking/avaliar.rs:313-316`, `avaliacao_ranking.rs:45-47`) diz
+  que o p exato vale por ser "o perfil ativo, sem busca", mas `--perfil busca_v1` é aceito e esse perfil saiu
+  da busca sobre as mesmas dobras — o p fica otimista; corrigir com aviso quando perfil ≠ ativo; (2) "esta
+  avaliação não o lê" (`src/ranking/avaliar.rs:184`) é impreciso — o trancado é lido para as conferências,
+  só não entra na avaliação; (3) `format!` com quebra literal em `sync.rs` ~2000 (mesmo padrão da 1f.3);
+  (4) `descrever_janela` duplicada em `src/ranking/avaliar.rs:23` (dava `super::`); `formatar_p`/`_cauda`/
+  `_intervalo` duplicam funções do `sync.rs`; (5) sem correção para múltiplas comparações (avisado no texto
+  e no GUIA). Lacunas de teste apontadas pelo vazamento (sem vazamento): `retain` da orquestração sem teste
+  isolado; mapeamento A/B só em testes de unidade; linear sem teste de ponto no tempo no nível do banco.

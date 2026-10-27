@@ -425,3 +425,7 @@ fn escrever_graus(
 
 #[cfg(test)]
 mod tests;
+
+// `sync ranking --avaliar` (1f.4): relatório em texto da avaliação do ranking.
+mod avaliar;
+pub use avaliar::formatar_avaliacao;

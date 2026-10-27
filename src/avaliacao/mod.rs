@@ -56,8 +56,13 @@
 //! Régua sensível (1e.2, [`Regua`]): B e o índice inerte passam a usar a
 //! calibração linear; o `sync avaliar` ganha uma linha só informativa de log
 //! loss com ela ([`log_loss_linear_da_busca`]).
+//!
+//! Avaliação do ranking por taxa histórica (1f.4, [`avaliar_ranking`]): A e B
+//! na régua da 1c e da 1e, só nas dobras de teste 2 a 5 da busca; o trancado
+//! fica fechado.
 
 mod aleatoriedade;
+mod avaliacao_ranking;
 mod bootstrap;
 mod calibracao;
 mod evidencia;
@@ -80,6 +85,9 @@ pub(crate) use topk::{acertos_por_concurso_entre, avaliar_topk, avaliar_topk_ent
 pub use aleatoriedade::{
     bonferroni, holm, p_valor_qui_quadrado, qui_quadrado_frequencia, testar_aleatoriedade,
     teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena, TesteRuns, ALFA,
+};
+pub use avaliacao_ranking::{
+    avaliar_ranking, AvaliacaoOrdemA, AvaliacaoOrdemB, AvaliacaoRanking, DobraDeTeste, PorTrecho,
 };
 pub use bootstrap::{
     bootstrap_circular, concursos_minimos, Bootstrap, SplitMix64, BLOCO_BOOTSTRAP,

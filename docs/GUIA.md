@@ -28,6 +28,7 @@ e, para as Fases 1 e 1.5, `docs/decisoes/fases-1-e-1.5.md`.
  aleatoriedade  → lê só resultados, independente de perfil
  evidencia      → lê resultados (parte A) e, para a parte B, o índice do perfil
  tabela         → CSV do concurso, com grau e direção da evidência por dezena
+ ranking        → taxa histórica por posição e faixa; ordena as dezenas (descrição do passado)
 ```
 
 Cada loteria tem o próprio banco (`resultados_<loteria>.db`). As tabelas
@@ -186,6 +187,21 @@ conferências do `avaliar` (índice e features em dia).
   20;25;...;moderada;a favor de viés
   21;12;...;fraca;a favor do acaso
   ```
+
+### Ranking por taxa histórica
+
+`ranking <lot> [--perfil padrao_v1] [--saida ranking] [--perfis pasta]` cruza,
+para cada concurso passado, a posição que cada dezena tinha na tabela de força
+**antes** do sorteio (e a faixa de cada um dos 9 componentes) com o resultado, e
+ordena as dezenas do próximo concurso pela taxa de saída dessas posições e
+faixas. Grava as tabelas derivadas `ranking_taxa`, `taxa_posicao` e
+`taxa_faixa` (regeneradas a cada execução) e o CSV do próximo concurso em
+`ranking/<lot>/`. Uma loteria por vez (não aceita `todas`) e as mesmas
+conferências do `avaliar` (perfil registrado, features e índice em dia).
+
+`ranking <lot> --avaliar` **não grava nada**: avalia esse ranking contra o
+acaso, só nas dobras de teste 2 a 5 do walk-forward da busca (o trancado fica
+fora e não há `--trancado`). Não aceita `--saida`. Como ler: seção 9.
 
 ### Dataset para o Python
 
@@ -641,3 +657,77 @@ Rotina depois de cada sorteio, para cada loteria:
   antes de baixar a planilha completa. A pasta fica fora do git.
 - **SQLite:** para abrir o banco fora do programa, use a URL com `?mode=ro`,
   que abre só para leitura, como nos exemplos acima.
+
+## 9. Como interpretar o `ranking` e o `ranking --avaliar`
+
+**Aviso antes de tudo.** O `ranking` é a **descrição do passado**, não uma
+previsão. Os sorteios são independentes: a posição de uma dezena na tabela de
+força, ou a faixa de um componente, não muda a chance de ela sair no próximo
+concurso. O resultado esperado de qualquer ranking feito com essas taxas é
+**empatar com o acaso**, e a avaliação existe para conferir isso. Um ranking
+que "acerta" acima do acaso é suspeita de vazamento ou de sobreajuste até prova
+em contrário. Nada neste comando diz o que vai sair.
+
+### O que são A e B
+
+- **Taxa por posição.** Para cada posição `r` da tabela de força, quantas vezes
+  a dezena que estava nela saiu, encolhida em direção a K/N com m = 100
+  concursos fictícios: é a mesma probabilidade da calibração da 1c do
+  `avaliar`. Cada concurso usa só os concursos anteriores a ele.
+- **Faixas dos componentes.** Em cada concurso, cada um dos 9 componentes
+  (frequência, maior espaço…) divide as dezenas em tercis (baixo, médio, alto;
+  `nulo` quando o componente não tem valor). Há uma taxa de saída por
+  (componente, faixa), com o mesmo encolhimento.
+- **Nota A (principal).** A taxa da posição atual de cada dezena. Ordena as N
+  dezenas; empate vai para a menor dezena.
+- **Nota B (EXPERIMENTAL).** Soma de `ln(taxa / (K/N))` sobre a posição e as 9
+  faixas (naive Bayes). Os componentes são correlacionados, então B conta a
+  mesma informação várias vezes e exagera a distância ao acaso. Nunca é a nota
+  principal.
+
+O relatório do `ranking` (sem `--avaliar`) mostra o topo de A e de B, a taxa de
+cada posição e faixa com **grau e direção da evidência** (a escala da seção 5)
+e a contagem de graus observada contra a esperada sob o acaso. Com 25, 60 ou 80
+posições e 9 × 3 faixas, algumas saem destacadas só por acaso: compare sempre
+com a contagem esperada. O grau e a direção só descrevem; nenhuma nota nem
+ordem os usa. Essa descrição lê o histórico inteiro, trancado incluso.
+
+### O `ranking --avaliar`
+
+Só lê o banco. Recalcula as taxas e as ordens em memória e as avalia no mesmo
+trecho do `avaliar`, mas **só nas dobras de teste 2 a 5** (a dobra 1 só treina a
+calibração). Nada acima do corte da busca é lido para avaliar.
+
+- **A.** O log loss e o Brier de A são idênticos aos do perfil no `avaliar` (A é
+  aquela calibração) e **não se repetem**. Aparece o que é novo: o **top-k pela
+  ordem de A** (acertos por concurso contra a hipergeométrica, com p exato, como
+  na seção 3) e o **log loss com a calibração linear** sobre a ordem de A (linha
+  só informativa, sem bootstrap).
+- **B.** Como B é um escore, a probabilidade vem da calibração pela posição da
+  1c sobre a ordem de B. Aparecem log loss, Brier, a linha linear, o top-k e o
+  **veredito** pelo bootstrap por blocos (50 concursos, 10 000 reamostragens),
+  tudo como na seção 3.
+- **Como ler as tabelas.** Cada uma traz concursos avaliados, T, a métrica do
+  ranking, a do acaso, a diferença e a incerteza (EP e IC normal; o IC normal
+  sai estreito demais, quem decide é o bootstrap). Log loss e Brier: diferença
+  **negativa** = melhor que o acaso. Top-k: diferença **positiva** = melhor.
+- **Múltiplos testes.** A saída traz vários p-valores (top-k de A e de B,
+  bootstrap de B, mais os de cada dobra) e **nenhum é corrigido** por múltiplas
+  comparações. Um p ≤ 0,05 solto aparece por acaso uma vez em 20.
+- **Trancado fechado.** Não há `--trancado` e nenhum uso é registrado. O
+  trancado é de uso único por perfil campeão, e este ranking não é um perfil.
+
+**Resultado com `padrao_v1` em 2026-10-27** (dobras de teste 2 a 5; veredito de
+B pelo bootstrap; top-k com k = K, p exato do trecho inteiro):
+
+| Loteria | A: top-k (observado × acaso, p) | A: log loss linear, diferença | B: log loss, diferença (p do bootstrap) | B: top-k (p) |
+|---|---|---|---|---|
+| Lotofácil | 8,9978 × 9,0000, p 0,54 | +1,41e-5 | +1,34e-4 (0,96), não supera | 8,9956 × 9,0000, p 0,58 |
+| Mega-Sena | 0,6081 × 0,6000, p 0,30 | +1,28e-5 | +2,32e-4 (0,9986), não supera | 0,6153 × 0,6000, p 0,16 |
+| Quina | 0,3154 × 0,3125, p 0,35 | +1,72e-6 | +1,55e-4 (1,00), não supera | 0,3094 × 0,3125, p 0,67 |
+
+Leitura: nas três loterias nada supera o acaso. B fica **pior** que o acaso no
+log loss (diferença positiva) porque estima uma taxa por posição de B e esse
+aprendizado custa; é o mesmo custo descrito na seção 3, e a linha linear, que
+custa pouco, fica perto de zero. Os top-k têm p grandes. É o esperado para
+sorteios independentes.

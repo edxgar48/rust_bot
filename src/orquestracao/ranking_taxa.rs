@@ -292,3 +292,9 @@ fn linhas_taxa_faixa(
         })
         .collect()
 }
+
+// `sync ranking --avaliar` (1f.4): avaliação do ranking, só leitura. Fica num
+// módulo filho para usar a montagem da entrada (`montar_observacoes`) sem
+// alterar a visibilidade dela.
+mod avaliar_ranking;
+pub use avaliar_ranking::*;

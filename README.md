@@ -156,6 +156,8 @@ cargo run --bin sync -- tabela quina --perfil padrao_v1 --concurso 7134  # concu
 # É descrição do passado, não previsão; a nota B é experimental. Recusa se features/índice estiverem defasados.
 cargo run --bin sync -- ranking quina
 cargo run --bin sync -- ranking megasena --perfil padrao_v1 --saida ranking
+# --avaliar: não grava nada; avalia o ranking (A e B) contra o acaso nas dobras de teste 2 a 5 da busca (trancado fora)
+cargo run --release --bin sync -- ranking quina --avaliar
 
 # JSON do contrato `v1` para o app, em publico/v1/ (fora do git): index.json (SHA-256 de cada arquivo)
 # e, por loteria, ultimo.json, tabela_geral.json (próximo concurso, perfil ativo da loteria) e

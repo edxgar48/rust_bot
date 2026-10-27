@@ -303,7 +303,9 @@ enum Comando {
     /// (regenerando as do perfil), imprime o relatório e grava o CSV do
     /// próximo concurso em `<saida>/<loteria>/`. É descrição do passado, não
     /// previsão: os sorteios são independentes. Recusa se o índice ou as
-    /// features não estiverem em dia.
+    /// features não estiverem em dia. Com `--avaliar`, em vez de gravar,
+    /// avalia o ranking (A e B) contra o acaso nas dobras de teste 2 a 5 da
+    /// busca, só lendo o banco.
     Ranking {
         /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
         loteria: String,
@@ -320,6 +322,14 @@ enum Comando {
         /// Pasta dos perfis de pesos (uma subpasta por loteria)
         #[arg(long, default_value = "perfis")]
         perfis: PathBuf,
+        /// Em vez de gravar, avalia o ranking contra o acaso: A (top-k pela
+        /// ordem de A e log loss com a calibração linear) e B (experimental:
+        /// log loss, Brier, top-k, bootstrap e a linha linear), só nas dobras
+        /// de teste 2 a 5 do walk-forward da busca. Só lê o banco: não grava
+        /// tabelas nem CSV. O conjunto trancado fica fora (não há
+        /// `--trancado`). Descrição do passado, não previsão
+        #[arg(long, conflicts_with = "saida")]
+        avaliar: bool,
     },
     /// Exporta os JSON do contrato `v1` para o app: `<saida>/v1/index.json` e,
     /// por loteria, `ultimo.json`, `tabela_geral.json` (snapshot do próximo
@@ -855,11 +865,16 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
             saida,
             db,
             perfis,
+            avaliar,
         } => {
             let cfg = buscar_config_unica(&loteria, "ranking", MOTIVO_RANKING_UMA_LOTERIA)?;
             let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
             let nome_perfil = perfil.as_deref().unwrap_or(cfg.perfil_ativo);
-            gravar_ranking(cfg, &db_caminho, &perfis, nome_perfil, &saida)?;
+            if avaliar {
+                avaliar_ranking(cfg, &db_caminho, &perfis, nome_perfil)?;
+            } else {
+                gravar_ranking(cfg, &db_caminho, &perfis, nome_perfil, &saida)?;
+            }
         }
         Comando::Exportar {
             loteria,
@@ -1953,6 +1968,33 @@ fn gravar_ranking(
     linha!(texto);
     texto.push_str(&ranking::formatar_relatorio(cfg, &r));
     imprimir(&texto)?;
+    let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    registrar_no_log(Nivel::Info, &tempo);
+    let _ = escrever_stderr(&format!("{tempo}\n"));
+    Ok(())
+}
+
+/// `sync ranking --avaliar`: avalia o ranking por taxa histórica (ordens de A
+/// e de B) contra o acaso nas dobras de teste 2 a 5 da busca. Tudo em
+/// `orquestracao`, que só lê o banco; aqui o banco é aberto só para leitura
+/// (inexistente é erro, sem criar arquivo) e nada é gravado: nem tabelas, nem
+/// CSV, nem registro do trancado (que fica fechado). A saída padrão é
+/// determinística; o tempo de execução vai para a saída de erro.
+fn avaliar_ranking(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let carregado = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let r = orquestracao::avaliar_ranking_do_banco(&mut conn, cfg, &carregado)?;
+    let duracao = inicio.elapsed();
+    imprimir(&ranking::formatar_avaliacao(cfg, &r))?;
     let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
     registrar_no_log(Nivel::Info, &tempo);
     let _ = escrever_stderr(&format!("{tempo}\n"));
@@ -3528,6 +3570,7 @@ mod tests {
                 saida,
                 db,
                 perfis,
+                ..
             } => {
                 assert_eq!(loteria, "quina");
                 // Sem `--perfil`, vale o perfil ativo da loteria (decidido na execução).
@@ -3558,6 +3601,52 @@ mod tests {
             }
             _ => panic!("esperava o comando ranking"),
         }
+    }
+
+    #[test]
+    fn ranking_aceita_avaliar_sem_gravar_e_recusa_saida() {
+        // `--avaliar` só lê o banco (a trava do comando continua a de `ranking`).
+        assert_eq!(
+            trava_de(&["ranking", "quina", "--avaliar"]),
+            Some("ranking")
+        );
+        let cli = Cli::try_parse_from(["sync", "ranking", "quina"]).expect("sem opções");
+        assert!(matches!(
+            cli.comando,
+            Comando::Ranking { avaliar: false, .. }
+        ));
+        let cli = Cli::try_parse_from([
+            "sync",
+            "ranking",
+            "megasena",
+            "--avaliar",
+            "--perfil",
+            "busca_v1",
+            "--db",
+            "y.db",
+            "--perfis",
+            "z",
+        ])
+        .expect("com --avaliar");
+        match cli.comando {
+            Comando::Ranking {
+                avaliar,
+                perfil,
+                db,
+                perfis,
+                ..
+            } => {
+                assert!(avaliar);
+                assert_eq!(perfil.as_deref(), Some("busca_v1"));
+                assert_eq!(db, Some(PathBuf::from("y.db")));
+                assert_eq!(perfis, PathBuf::from("z"));
+            }
+            _ => panic!("esperava o comando ranking"),
+        }
+        // Nada é gravado: `--saida` junto de `--avaliar` não faz sentido.
+        assert!(
+            Cli::try_parse_from(["sync", "ranking", "quina", "--avaliar", "--saida", "x"]).is_err()
+        );
     }
 
     #[test]

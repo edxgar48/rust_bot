@@ -543,6 +543,12 @@ Tarefas:
   - **Trancado**: fechado — só as dobras 2 a 5, sem `--trancado` e sem
     registro de uso.
   - **Só código novo**: em arquivos existentes entram só acréscimos.
+  - **Interpretações confirmadas na entrega**: a dobra 1 só treina (o total
+    de B não é comparável ao do `sync avaliar`, que usa as 5 dobras);
+    `--avaliar` recalcula em memória e não lê `ranking_taxa`; k = K, sem
+    `--k`; `--avaliar` toma a trava `ranking`; sem bootstrap para A nem para
+    as linhas da calibração linear. Perfil que não é o ativo (ex.: `busca_v1`)
+    leva aviso de p-valores otimistas.
 - **2.x (a numerar)** — `ranking_taxa.json` no `sync exportar` e no contrato,
   com auditoria do `auditor-contrato`.
 - **7.7** — tela no app (ver `PLANEJAMENTO-FRONTEND.md`).
