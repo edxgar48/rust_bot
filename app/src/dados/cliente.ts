@@ -19,7 +19,13 @@ import {
   type LoteriaNoIndice,
   type Slug,
 } from './tipos';
-import { validarHistorico, validarIndice, validarTabelaGeral, validarUltimo } from './validacao';
+import {
+  validarHistorico,
+  validarIndice,
+  validarRankingTaxa,
+  validarTabelaGeral,
+  validarUltimo,
+} from './validacao';
 
 export type FetchInjetavel = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -89,7 +95,9 @@ function interpretar<K extends ChaveArquivo>(
       ? validarUltimo(valor, slug)
       : chave === 'tabela_geral'
         ? validarTabelaGeral(valor, slug)
-        : validarHistorico(valor, slug);
+        : chave === 'ranking_taxa'
+          ? validarRankingTaxa(valor, slug)
+          : validarHistorico(valor, slug);
   return dados as DadosPorChave[K];
 }
 
@@ -225,8 +233,8 @@ export function criarCliente(opcoes: OpcoesCliente) {
     chave: K,
     slug: Slug,
     entrada: LoteriaNoIndice,
+    descritor: DescritorArquivo,
   ): Promise<ResultadoArquivo<K>> {
-    const descritor = entrada.arquivos[chave];
     const guardado = await lerDoCache(chave, slug, descritor.caminho);
     if (guardado && guardado.sha256 === descritor.sha256) {
       // O índice atual confirma que este arquivo continua o vigente.
@@ -280,8 +288,11 @@ export function criarCliente(opcoes: OpcoesCliente) {
     const arquivos: { [K in ChaveArquivo]?: ResultadoArquivo<K> } = {};
     await Promise.all(
       chaves.map(async (chave) => {
+        // Arquivo opcional que o índice não lista (ranking_taxa): não há o que baixar.
+        const descritor = entrada.arquivos[chave];
+        if (!descritor) return;
         // Atribuição por chave: o tipo do resultado acompanha a chave.
-        Object.assign(arquivos, { [chave]: await obterArquivo(chave, slug, entrada) });
+        Object.assign(arquivos, { [chave]: await obterArquivo(chave, slug, entrada, descritor) });
       }),
     );
     return { indice: entrada, arquivos };
@@ -339,7 +350,8 @@ export function criarCliente(opcoes: OpcoesCliente) {
       }
       const dados: { [K in ChaveArquivo]?: DadosPorChave[K] | null } = {};
       for (const chave of chaves) {
-        const lido = await lerDoCache(chave, slug, entrada.arquivos[chave].caminho);
+        const descritor = entrada.arquivos[chave];
+        const lido = descritor ? await lerDoCache(chave, slug, descritor.caminho) : null;
         Object.assign(dados, { [chave]: lido?.dados ?? null });
         if (lido) {
           if (lido.sincronizadoEm) datas.push(lido.sincronizadoEm);

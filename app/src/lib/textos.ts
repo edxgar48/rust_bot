@@ -196,6 +196,7 @@ export const textos = {
     rotuloSecao: 'Seção',
     secaoFrequencia: 'Frequência e atraso',
     secaoEvidencia: 'Por evidência',
+    secaoRanking: 'Taxa histórica',
     rotuloJanela: 'Quantos concursos considerar',
     janelas: { '10': '10', '50': '50', '100': '100', total: 'Todos' },
     carregando: 'Carregando as estatísticas…',
@@ -403,6 +404,54 @@ export const textos = {
         'A tabela não traz grau nem direção de evidência para estas dezenas. Isso quer dizer "sem cálculo", e não "evidência fraca".',
     },
   },
+  // Seção "Taxa histórica" da aba Estatísticas (7.7): o ranking_taxa.json como veio. Descreve o
+  // passado; o esperado de qualquer ranking feito com essas taxas é não superar o acaso.
+  rankingTaxa: {
+    anuncio: (loteria: string) => `Mostrando ${loteria}, ranking por taxa histórica.`,
+    carregando: 'Carregando o ranking por taxa histórica…',
+    tentarDeNovo: 'Tentar de novo',
+    semLoteria: 'Ainda sem dados desta loteria.',
+    naoPublicado:
+      'O ranking por taxa histórica não foi publicado para esta loteria. Isso não é um erro: ele só aparece quando é gerado em dia com o último concurso. As outras abas e seções continuam funcionando.',
+    semRedeSemAnterior:
+      'Sem conexão e sem ranking guardado neste aparelho. Conecte-se à internet para tentar baixar.',
+    recusadoSemAnterior:
+      'O ranking desta loteria foi recusado (falha de conferência ou arquivo inválido) e não há versão anterior guardada.',
+    semDezenas: 'O ranking desta loteria não traz dezenas.',
+    perfilJanela: (perfil: string, janela: number) =>
+      `${descreverPerfilJanela(perfil, janela)} (o do motor)`,
+    intro:
+      'Para cada dezena, a taxa com que a posição dela no índice saiu no passado, comparada à taxa que o acaso daria. A tabela está ordenada pela Posição A (1º = maior Nota A).',
+    taxaAcaso: (taxa: string) =>
+      `Taxa do acaso (K/N): ${taxa}. É a chance de qualquer dezena sair se tudo fosse acaso.`,
+    tabela: (loteria: string, quantidade: number) =>
+      `Ranking por taxa histórica da ${loteria}: ${quantidade} dezenas, ordenadas pela Posição A`,
+    colunas: {
+      dezena: 'Dezena',
+      posicaoA: 'Posição A',
+      notaA: 'Nota A',
+      diferenca: 'Dif. do acaso',
+      indice: 'No índice',
+      posicaoB: 'Posição B',
+      notaB: 'Nota B (experimental)',
+    },
+    legenda: {
+      titulo: 'Como ler as colunas',
+      posicaoA: 'Posição A: o lugar da dezena na ordem pela Nota A (1º = maior nota).',
+      notaA:
+        'Nota A (principal): a taxa histórica da posição do índice em que a dezena está, suavizada em direção ao acaso.',
+      diferenca:
+        'Dif. do acaso: Nota A menos a taxa do acaso. Positivo, a posição saiu mais que o acaso no passado; negativo, menos. Diferenças pequenas são o normal, e a maior parte delas é ruído.',
+      indice: 'No índice: a posição da dezena no índice de força (a mesma da tela Força).',
+      posicaoB: 'Posição B: o lugar da dezena na ordem pela Nota B.',
+      notaB:
+        'Nota B (experimental): soma de comparações com o acaso na posição e em 9 faixas de componente. Os componentes são correlacionados, então a Nota B conta a mesma informação mais de uma vez. Só compara dezenas deste mesmo ranking.',
+      formato:
+        'Notas mostradas com 4 casas decimais. As posições usam o valor completo do arquivo: notas iguais na tela (A ou B) podem ter posições diferentes.',
+    },
+    ordemAviso:
+      'Esta tabela descreve o passado. Ela não indica que dezena tem mais chance no próximo concurso: o esperado de qualquer ranking feito com essas taxas é não superar o acaso.',
+  },
   detalhe: {
     titulo: (dezena: number, posicao: number) => `Dezena ${dezena} · ${posicao}º lugar`,
     fechar: 'Fechar',
@@ -436,6 +485,8 @@ export const textos = {
       'As estatísticas mostram o que já foi sorteado. Elas não preveem o sorteio: cada concurso é independente dos anteriores.',
     naoPreveEvidencia:
       'Agrupar as dezenas por evidência descreve o passado e não prevê o sorteio: nenhum grupo tem mais chance de sair.',
+    naoPreveRanking:
+      'O ranking por taxa histórica descreve o passado e não prevê o sorteio: cada concurso é independente, e o esperado de um ranking feito com essas taxas é não superar o acaso.',
     naoPreveConferir:
       'Conferir o passado não aumenta a chance de acertar. Cada sorteio é independente dos anteriores.',
     // Telas de jogo (Entenda e Conferir jogo).

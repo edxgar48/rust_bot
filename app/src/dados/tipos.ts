@@ -5,8 +5,11 @@
 export const SLUGS = ['lotofacil', 'megasena', 'quina'] as const;
 export type Slug = (typeof SLUGS)[number];
 
+// Os três arquivos obrigatórios (o padrão de sincronização e de leitura do cache) e o
+// opcional `ranking_taxa`, que só é baixado quando a aba que o usa pede.
 export const CHAVES_ARQUIVO = ['ultimo', 'tabela_geral', 'historico'] as const;
-export type ChaveArquivo = (typeof CHAVES_ARQUIVO)[number];
+export type ChaveObrigatoria = (typeof CHAVES_ARQUIVO)[number];
+export type ChaveArquivo = ChaveObrigatoria | 'ranking_taxa';
 
 export interface ParametrosLoteria {
   /** Quantidade de dezenas do volante (25, 60 ou 80). */
@@ -47,7 +50,10 @@ export interface DescritorArquivo {
 export interface LoteriaNoIndice {
   readonly ultimoConcurso: number;
   readonly data: string;
-  readonly arquivos: Readonly<Record<ChaveArquivo, DescritorArquivo>>;
+  readonly arquivos: Readonly<Record<ChaveObrigatoria, DescritorArquivo>> & {
+    /** Opcional no contrato: a chave some do índice quando o ranking não foi publicado. */
+    readonly ranking_taxa?: DescritorArquivo;
+  };
 }
 
 export interface IndiceV1 {
@@ -127,8 +133,40 @@ export interface TabelaGeralV1 {
   readonly dezenas: readonly DezenaDaTabela[];
 }
 
+// ranking_taxa.json (opcional): uma linha por dezena, em ordem crescente de dezena.
+export interface DezenaDoRanking {
+  readonly dezena: number;
+  readonly posicaoIndice: number;
+  /** Nota A (principal): taxa histórica da posição do índice. */
+  readonly notaA: number;
+  /** `notaA - taxaAcaso`, como veio no arquivo. */
+  readonly diferencaAcaso: number;
+  /** Nota B (experimental). */
+  readonly notaB: number;
+  readonly posicaoA: number;
+  readonly posicaoB: number;
+}
+
+export interface RankingTaxaV1 {
+  readonly schemaVersion: 1;
+  readonly loteria: Slug;
+  readonly perfil: string;
+  readonly hashToml: string;
+  readonly janela: number;
+  readonly normalizacao: Normalizacao;
+  readonly featureVersion: number;
+  /** Próximo concurso (ainda não sorteado). */
+  readonly concurso: number;
+  readonly ultimoSorteado: number;
+  /** K/N: a chance de qualquer dezena sair se tudo fosse acaso. */
+  readonly taxaAcaso: number;
+  /** Em ordem crescente de dezena, como no arquivo. */
+  readonly dezenas: readonly DezenaDoRanking[];
+}
+
 export interface DadosPorChave {
   readonly ultimo: UltimoV1;
   readonly tabela_geral: TabelaGeralV1;
   readonly historico: HistoricoV1;
+  readonly ranking_taxa: RankingTaxaV1;
 }

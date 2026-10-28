@@ -107,7 +107,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 7.4 Seção "Por evidência" nas Estatísticas (dezenas agrupadas por grau × direção, ordem de posição dentro do grupo, dados idênticos à tabela_geral.json conferidos nas 3 loterias; cada grupo com a frase de evidência do projeto, explicação do grau conforme o contrato e frase de que a ordem dos grupos não é chance de sair; 1040 testes; revisão aprovada com ressalvas, corrigidas; capturas 360 px claro de Lotofácil/Quina conferidas, 1280 px e escuro da primeira versão; duplicação com Forca.svelte registrada como dívida; pedido do usuário, 2026-10-15)
 - [x] 7.5 Botão "Inserir" na tabela da Força (dezena vai marcada para o volante de Conferir jogo via rascunho em memória de módulo; sem duplicar, limite do volante com aviso em texto, outra loteria começa novo, tocar de novo remove; atalho "Abrir em Conferir" pede a abertura e o rascunho é consumido na montagem de Conferir jogo, sem sobrescrever edição nem Meus jogos; botão não aninha botão: Inserir fica sobre a linha por subgrade; testes do store, da Força e da integração; conferência visual em 360 px (claro e escuro) pendente no aparelho; pedido do usuário, 2026-10-16)
 - [x] 7.6 Borda nas posições da Força sorteadas no concurso anterior (posição que a dezena sorteada ocupava antes do sorteio = posição atual + variação; calculada no app com `tabela_geral` + `ultimo.json`; ranking, índice e contrato inalterados; borda só em volta do número da posição; legenda no fim da tela; seletor de períodos descartado; teste de `posicoesSorteadasNoAnterior`; commit fc5bae1; conferência visual no aparelho pendente; pedido do usuário, 2026-10-24)
-- [ ] 7.7 Ranking por taxa histórica (tela do `ranking_taxa.json`; pedido do usuário, 2026-10-27; aguarda decisão: o plano pede grau de evidência e faixa de cada componente, que o contrato da 2.5 deixou fora — ver nota de 2026-10-27)
+- [x] 7.7 Ranking por taxa histórica (3ª seção `secao=ranking` "Taxa histórica" na tela Estatísticas; só o que o `ranking_taxa.json` traz, ordenado pela Posição A, Nota B rotulada "experimental", sem grau nem faixa; chave opcional → "não publicado"; baixado só ao abrir a seção; 1146 testes; revisão aprovada com ressalvas BAIXA, corrigidas; capturas Quina/Lotofácil 360/1280 px claro/escuro, sem rolagem horizontal; não commitada; 2026-10-27)
 - [~] 8.1 Instalação PWA (manifesto completo, ícones PNG any/maskable, apple-touch-icon, metas iOS, cartão "Instalar app" na Início e seção na Entenda; 1077 testes; verificado em Chrome desktop: instalabilidade sem erros, Service Worker, offline com cache; PENDENTE DO USUÁRIO: instalar de verdade em Android (Chrome) e iOS (Safari) e abrir offline, exige HTTPS/8.4; conferir recorte maskable, ícone iOS, splash; 2026-10-15)
 - [ ] 8.2 Testes ponta a ponta
 - [ ] 8.3 Lighthouse
@@ -2388,3 +2388,28 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   conferência por recálculo (que já existia para o índice); texto proposto: "não calcula o que publica; pode
   recalcular só para conferir se a tabela está em dia, como já faz com o índice". O ciclo calcula o ranking duas
   vezes por loteria (passo 5b e conferência do exportar), custo aceito.
+- 2026-10-27 — 7.7 `[x]` (`engenheiro-app`; escopo do plano, commit 9c201b8). Interpretações adotadas (o
+  orquestrador rodava sem poder perguntar): "nova aba" = 3ª opção no seletor de seções já existente da tela
+  Estatísticas (`#/estatisticas?loteria=X&secao=ranking`), rótulo "Taxa histórica"; Frequência continua padrão e
+  URLs antigas valem; ordem pela `posicao_a` crescente; notas e diferença exibidas com 4 casas (o JSON tem 9; a
+  legenda diz isso e que notas iguais na tela podem ter posições diferentes); em 360 px cada dezena vira bloco
+  com rótulos (`role=table/row/cell`, rótulo em `span aria-hidden`), a partir de 40rem tabela de 7 colunas.
+  Dados: `ranking_taxa` como chave opcional em `tipos.ts`/`validacao.ts`/`cliente.ts`, fora de `CHAVES_ARQUIVO`
+  (abertura e segundo plano não baixam o ranking; só a seção pede); `validarRankingTaxa` confere forma, domínio,
+  posições 1..N únicas, 9 casas, concurso = último + 1 e `diferenca_acaso` ≈ `nota_a − taxa_acaso` (tolerância
+  2e-9, só para recusar arquivo incoerente; não exibe nada calculado). Estados: não publicado (chave ausente no
+  índice recém-conferido), sem conexão e sem cache, carregando, recusado (hash/forma; inválido não substitui o
+  cache válido). Fixtures `app/testes/fixtures/*/ranking_taxa.json` são cópias da exportação de 2026-10-27
+  (concursos 3815/3076/7153), de snapshot diferente das demais fixtures (3804/3070/7142) — registrado em
+  comentário em `publicarRankingTaxa`; o app não cruza os arquivos. Único teste existente alterado:
+  `Estatisticas.evidencia.test.ts` (2 → 3 seções). Gate: fmt, clippy, cargo test 1327, pytest 175, validar
+  todas, app lint/check/1146 testes/build — aprovado; back-end, contrato e planos sem diff. Revisão: aprovado
+  com ressalvas, 6 BAIXAs corrigidas na mesma rodada (formatação reaproveita `lib/numeros.ts` com "−"
+  tipográfico; legenda sobre empates a 4 casas; comentário das fixtures; comentário do itálico; testes de
+  "sem grau/faixa" restritos às linhas da tabela e de "nada é guardado" verificando o armazenamento; rótulo
+  móvel em `span aria-hidden` em vez de `::before`). Capturas (Playwright, Python 3.12) em 360/1280 px
+  claro/escuro, Quina e Lotofácil, e do estado "não publicado": rolagem horizontal 0 nas 12 combinações; o
+  orquestrador abriu 360 escuro, 1280 claro, não publicado 1280 claro e o fim da página em 360 escuro. Pendente:
+  leitura dos textos pelo usuário e conferência no aparelho/leitor de tela real. Dúvidas devolvidas: (1) rótulo
+  "Taxa histórica" ou "Ranking por taxa"?; (2) com índice velho no cache e falha de rede, a aba diz "sem conexão
+  e sem ranking guardado" em vez de "não publicado" — manter?

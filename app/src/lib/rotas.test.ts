@@ -12,6 +12,7 @@ import {
   hashDaRota,
   hashDaSecaoConferir,
   hashDaSecaoEstatisticas,
+  hashDoRankingTaxa,
   hashDasEstatisticas,
   hashDoHistorico,
   hashDoJogo,
@@ -175,6 +176,17 @@ describe('forma de exibição e dezena na URL da Força', () => {
 });
 
 describe('seções das Estatísticas (7.4)', () => {
+  it('Taxa histórica: hash da seção e leitura de volta', () => {
+    expect(hashDoRankingTaxa('quina')).toBe('#/estatisticas?loteria=quina&secao=ranking');
+    expect(hashDoRankingTaxa('quina', 100)).toBe(
+      '#/estatisticas?loteria=quina&secao=ranking&janela=100',
+    );
+    expect(hashDaSecaoEstatisticas('ranking', 'megasena', 10)).toBe(
+      '#/estatisticas?loteria=megasena&secao=ranking&janela=10',
+    );
+    expect(secaoEstatisticasDoHash(hashDoRankingTaxa('quina'))).toBe('ranking');
+  });
+
   it('secaoEstatisticasDoHash: URLs antigas, ausente ou inválida caem em Frequência e atraso', () => {
     expect(secaoEstatisticasDoHash('')).toBe('frequencia');
     expect(secaoEstatisticasDoHash('#/estatisticas')).toBe('frequencia');

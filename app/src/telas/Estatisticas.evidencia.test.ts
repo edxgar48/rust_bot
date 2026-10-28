@@ -157,12 +157,12 @@ describe('Estatísticas: seletor de seção e URL', () => {
     expect(gruposNaTela(alvo)).toHaveLength(0);
   });
 
-  it('o seletor tem as duas seções, em radiogroup nomeado e com ✓ em texto', async () => {
+  it('o seletor tem as três seções, em radiogroup nomeado e com ✓ em texto', async () => {
     const alvo = montar(criarFonte(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     const g = alvo.querySelector(`[role="radiogroup"][aria-label="${GRUPO_SECAO}"]`)!;
     expect(
       Array.from(g.querySelectorAll('[role="radio"]')).map((r) => texto(r).replace('✓ ', '')),
-    ).toEqual(['Frequência e atraso', 'Por evidência']);
+    ).toEqual(['Frequência e atraso', 'Por evidência', 'Taxa histórica']);
     expect(g.querySelectorAll('[role="radio"][aria-checked="true"]')).toHaveLength(1);
     expect(g.querySelectorAll('[role="radio"][tabindex="0"]')).toHaveLength(1);
   });

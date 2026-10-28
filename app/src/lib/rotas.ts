@@ -123,8 +123,8 @@ export function hashDasEstatisticas(slug: Slug, janela: JanelaEstatistica): stri
   return `${hashDaRota('estatisticas')}?loteria=${slug}&janela=${janela}`;
 }
 
-/** Seções da aba Estatísticas: frequência e atraso (padrão; URLs antigas) e por evidência. */
-export const SECOES_ESTATISTICAS = ['frequencia', 'evidencia'] as const;
+/** Seções da aba Estatísticas: frequência e atraso (padrão; URLs antigas), por evidência e taxa histórica. */
+export const SECOES_ESTATISTICAS = ['frequencia', 'evidencia', 'ranking'] as const;
 export type SecaoEstatisticas = (typeof SECOES_ESTATISTICAS)[number];
 export const SECAO_ESTATISTICAS_PADRAO: SecaoEstatisticas = 'frequencia';
 
@@ -152,13 +152,23 @@ export function hashDaEvidencia(
   return url;
 }
 
+/**
+ * Hash das Estatísticas na seção Taxa histórica: "#/estatisticas?loteria=quina&secao=ranking".
+ * Como a evidência, ignora a janela mas a carrega na URL para ela sobreviver à ida e volta.
+ */
+export function hashDoRankingTaxa(slug: Slug, janela: JanelaEstatistica | null = null): string {
+  let url = `${hashDaRota('estatisticas')}?loteria=${slug}&secao=ranking`;
+  if (janela !== null) url += `&janela=${janela}`;
+  return url;
+}
+
 /** Hash de uma seção das Estatísticas (a janela só vale para Frequência e atraso, mas é carregada). */
 export function hashDaSecaoEstatisticas(
   secao: SecaoEstatisticas,
   slug: Slug,
   janela: JanelaEstatistica,
 ): string {
-  return secao === 'evidencia'
-    ? hashDaEvidencia(slug, null, janela)
-    : hashDasEstatisticas(slug, janela);
+  if (secao === 'evidencia') return hashDaEvidencia(slug, null, janela);
+  if (secao === 'ranking') return hashDoRankingTaxa(slug, janela);
+  return hashDasEstatisticas(slug, janela);
 }

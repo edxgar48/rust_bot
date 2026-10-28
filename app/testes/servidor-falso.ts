@@ -86,6 +86,32 @@ export class ServidorFalso {
     this.gravarIndice(indice);
   }
 
+  /**
+   * Publica o ranking_taxa.json (fixture real) das loterias dadas: o arquivo passa a ser servido
+   * e o índice ganha a chave opcional `ranking_taxa`. Sem esta chamada, o índice não a tem.
+   *
+   * ATENÇÃO, divergência conhecida: as fixtures ranking_taxa.json são de OUTRO snapshot que
+   * tabela_geral/ultimo das fixtures base (concursos 3815/3076/7153 contra 3804/3070/7142 em
+   * Lotofácil/Mega-Sena/Quina). O app não cruza os arquivos, então isso não afeta os testes
+   * atuais; um teste que comparasse "No índice" com a Força exigiria fixtures do mesmo snapshot.
+   */
+  async publicarRankingTaxa(
+    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina'],
+  ): Promise<void> {
+    const indice = this.indice();
+    for (const slug of slugs) {
+      const caminho = `${slug}/ranking_taxa.json`;
+      const bytes = lerFixture(caminho);
+      this.arquivos.set(caminho, bytes);
+      indice.loterias[slug].arquivos.ranking_taxa = {
+        caminho,
+        sha256: await sha256Hex(bytes),
+        bytes: bytes.byteLength,
+      };
+    }
+    this.gravarIndice(indice);
+  }
+
   /** Modifica o JSON de um arquivo (parse, função, stringify) e atualiza o índice. */
   async alterarJson(caminho: string, fn: (json: any) => void): Promise<void> {
     const json = JSON.parse(new TextDecoder().decode(this.arquivos.get(caminho)));

@@ -17,6 +17,7 @@
   import { textos } from '../lib/textos';
   import EstatisticasEvidencia from './EstatisticasEvidencia.svelte';
   import EstatisticasFrequencia from './EstatisticasFrequencia.svelte';
+  import EstatisticasRankingTaxa from './EstatisticasRankingTaxa.svelte';
 
   interface Props {
     /** O que a tela precisa da sessão de dados (injetável nos testes). */
@@ -36,6 +37,7 @@
   const opcoes: readonly OpcaoSegmentada<SecaoEstatisticas>[] = [
     { valor: 'frequencia', rotulo: t.secaoFrequencia },
     { valor: 'evidencia', rotulo: t.secaoEvidencia },
+    { valor: 'ranking', rotulo: t.secaoRanking },
   ];
 
   function aoMudarHash(): void {
@@ -60,6 +62,8 @@
 
 {#if secao === 'evidencia'}
   <EstatisticasEvidencia {fonte} />
+{:else if secao === 'ranking'}
+  <EstatisticasRankingTaxa {fonte} />
 {:else}
   <EstatisticasFrequencia {fonte} />
 {/if}

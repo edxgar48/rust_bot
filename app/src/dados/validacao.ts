@@ -11,16 +11,18 @@ import {
   NORMALIZACOES,
   PARAMETROS_LOTERIA,
   SLUGS,
-  type ChaveArquivo,
+  type ChaveObrigatoria,
   type ConcursoHistorico,
   type DescritorArquivo,
   type DezenaDaTabela,
+  type DezenaDoRanking,
   type DirecaoEvidencia,
   type GrauEvidencia,
   type HistoricoV1,
   type IndiceV1,
   type LoteriaNoIndice,
   type Normalizacao,
+  type RankingTaxaV1,
   type Slug,
   type TabelaGeralV1,
   type UltimoV1,
@@ -190,9 +192,15 @@ export function validarIndice(valor: unknown): IndiceV1 {
     const onde = `${nome}.loterias.${s}`;
     const l = objeto(item, onde);
     const arq = objeto(l.arquivos, `${onde}.arquivos`);
-    const arquivos = {} as Record<ChaveArquivo, DescritorArquivo>;
+    const arquivos = {} as Record<ChaveObrigatoria, DescritorArquivo> & {
+      ranking_taxa?: DescritorArquivo;
+    };
     for (const chave of CHAVES_ARQUIVO) {
       arquivos[chave] = descritor(arq[chave], `${onde}.arquivos.${chave}`);
+    }
+    // Opcional: a chave some quando o ranking não foi publicado (null também é tolerado).
+    if (arq.ranking_taxa !== undefined && arq.ranking_taxa !== null) {
+      arquivos.ranking_taxa = descritor(arq.ranking_taxa, `${onde}.arquivos.ranking_taxa`);
     }
     loterias[s] = {
       ultimoConcurso: inteiro(l.ultimo_concurso, `${onde}.ultimo_concurso`, 1),
@@ -351,6 +359,102 @@ export function validarTabelaGeral(valor: unknown, esperada?: Slug): TabelaGeral
     featureVersion: inteiro(o.feature_version, `${nome}.feature_version`, 1),
     concurso,
     ultimoSorteado,
+    dezenas,
+  };
+}
+
+/** Decimal do contrato: finito e com no máximo 9 casas (tolerância a erro de ponto flutuante). */
+function decimal9(v: unknown, onde: string): number {
+  const n = numero(v, onde);
+  if (Math.abs(n * 1e9 - Math.round(n * 1e9)) > 1e-3) {
+    falha(onde, `esperado um decimal com no máximo 9 casas, veio ${n}.`);
+  }
+  return n;
+}
+
+/** Posições 1..N sem repetição (a lista inteira é uma permutação). */
+function exigirPermutacao(valores: readonly number[], onde: string): void {
+  const vistos = new Set(valores);
+  if (vistos.size !== valores.length || valores.some((v) => v < 1 || v > valores.length)) {
+    falha(onde, `as posições devem ser 1 a ${valores.length}, sem repetição.`);
+  }
+}
+
+export function validarRankingTaxa(valor: unknown, esperada?: Slug): RankingTaxaV1 {
+  const nome = 'ranking_taxa.json';
+  const o = objeto(valor, nome);
+  const loteria = cabecalhoLoteria(o, nome, esperada);
+  const total = PARAMETROS_LOTERIA[loteria].totalDezenas;
+  const normalizacao: Normalizacao = enumerado(
+    o.normalizacao,
+    NORMALIZACOES,
+    `${nome}.normalizacao`,
+  );
+  const concurso = inteiro(o.concurso, `${nome}.concurso`, 1);
+  const ultimoSorteado = inteiro(o.ultimo_sorteado, `${nome}.ultimo_sorteado`, 1);
+  if (concurso !== ultimoSorteado + 1) {
+    falha(
+      `${nome}.concurso`,
+      `deve ser ultimo_sorteado + 1 (${ultimoSorteado + 1}), veio ${concurso}.`,
+    );
+  }
+  const taxaAcaso = decimal9(o.taxa_acaso, `${nome}.taxa_acaso`);
+  if (taxaAcaso <= 0 || taxaAcaso >= 1) {
+    falha(`${nome}.taxa_acaso`, `esperado um número entre 0 e 1, veio ${taxaAcaso}.`);
+  }
+  const itens = lista(o.dezenas, `${nome}.dezenas`);
+  if (itens.length !== total) {
+    falha(`${nome}.dezenas`, `${loteria} tem ${total} dezenas, vieram ${itens.length}.`);
+  }
+  const dezenas: DezenaDoRanking[] = [];
+  for (const [i, item] of itens.entries()) {
+    const onde = `${nome}.dezenas[${i}]`;
+    const e = objeto(item, onde);
+    const dezena = inteiro(e.dezena, `${onde}.dezena`);
+    if (dezena !== i + 1) {
+      falha(
+        `${onde}.dezena`,
+        `esperada a dezena ${i + 1} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
+      );
+    }
+    const notaA = decimal9(e.nota_a, `${onde}.nota_a`);
+    const diferencaAcaso = decimal9(e.diferenca_acaso, `${onde}.diferenca_acaso`);
+    if (Math.abs(notaA - taxaAcaso - diferencaAcaso) > 2e-9) {
+      falha(`${onde}.diferenca_acaso`, 'deve ser nota_a menos taxa_acaso.');
+    }
+    dezenas.push({
+      dezena,
+      posicaoIndice: inteiro(e.posicao_indice, `${onde}.posicao_indice`, 1),
+      notaA,
+      diferencaAcaso,
+      notaB: decimal9(e.nota_b, `${onde}.nota_b`),
+      posicaoA: inteiro(e.posicao_a, `${onde}.posicao_a`, 1),
+      posicaoB: inteiro(e.posicao_b, `${onde}.posicao_b`, 1),
+    });
+  }
+  exigirPermutacao(
+    dezenas.map((d) => d.posicaoIndice),
+    `${nome}.dezenas[].posicao_indice`,
+  );
+  exigirPermutacao(
+    dezenas.map((d) => d.posicaoA),
+    `${nome}.dezenas[].posicao_a`,
+  );
+  exigirPermutacao(
+    dezenas.map((d) => d.posicaoB),
+    `${nome}.dezenas[].posicao_b`,
+  );
+  return {
+    schemaVersion: 1,
+    loteria,
+    perfil: texto(o.perfil, `${nome}.perfil`),
+    hashToml: sha256(o.hash_toml, `${nome}.hash_toml`),
+    janela: inteiro(o.janela, `${nome}.janela`, 0),
+    normalizacao,
+    featureVersion: inteiro(o.feature_version, `${nome}.feature_version`, 1),
+    concurso,
+    ultimoSorteado,
+    taxaAcaso,
     dezenas,
   };
 }

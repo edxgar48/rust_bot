@@ -243,6 +243,14 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   mostra `fraseEvidencia(grau, direcao)` abaixo do h3 (texto próprio para "Sem evidência calculada") e o topo diz
   que a ordem dos grupos segue o grau, não a chance de sair; `&janela=` é carregada (e ignorada) na URL da seção.
   Dívida: carregamento/estado/detalhe de dezena duplicam `Forca.svelte`; extrair um núcleo comum depois.
+- 7.7 Seção "Taxa histórica" da Estatísticas (`telas/EstatisticasRankingTaxa.svelte`, `telas/ranking-taxa.ts`,
+  `#/estatisticas?loteria=quina&secao=ranking`): o `ranking_taxa.json` como veio (Posição A, Nota A, diferença
+  para o acaso, posição no índice, Posição B e Nota B rotulada "experimental"), ordenado pela Posição A, notas
+  com 4 casas; sem grau de evidência nem faixa de componente. A chave `ranking_taxa` de `arquivos` é opcional
+  (`validacao.ts`; sem ela a seção explica que não foi publicado) e o arquivo só é baixado ao abrir a seção, com o
+  mesmo sha256/bytes/cache dos demais. No celular cada dezena é um bloco (papéis ARIA de tabela), sem rolagem
+  horizontal; a partir de 40rem vira tabela de 7 colunas. Testes: `testes/ranking-taxa.test.ts`,
+  `telas/Estatisticas.ranking.test.ts`, `lib/rotas.test.ts`, `lib/textos-varredura.test.ts`.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em
