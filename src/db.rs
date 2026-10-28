@@ -920,6 +920,44 @@ pub fn ler_ranking_taxa(conn: &Connection, perfil: &str) -> Result<Vec<LinhaRank
     Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// Maior concurso de `ranking_taxa` para o perfil (o snapshot do próximo
+/// concurso, quando o ranking está em dia); `None` se o perfil não tem linhas.
+/// Exige que a tabela exista (ver [`tabela_existe`]). Só lê.
+pub fn ultimo_concurso_ranking_taxa(conn: &Connection, perfil: &str) -> Result<Option<u32>> {
+    Ok(conn.query_row(
+        "SELECT MAX(concurso) FROM ranking_taxa WHERE perfil = ?1",
+        params![perfil],
+        |row| row.get(0),
+    )?)
+}
+
+/// Lê as linhas de `ranking_taxa` de um só concurso e perfil, ordenadas por
+/// dezena. Exige que a tabela exista. Só lê.
+pub fn ler_ranking_taxa_do_concurso(
+    conn: &Connection,
+    perfil: &str,
+    concurso: u32,
+) -> Result<Vec<LinhaRankingTaxa>> {
+    let mut stmt = conn.prepare(
+        "SELECT concurso, dezena, posicao_indice, taxa_posicao, nota_b,
+                posicao_ranking_a, posicao_ranking_b
+         FROM ranking_taxa WHERE perfil = ?1 AND concurso = ?2
+         ORDER BY dezena",
+    )?;
+    let linhas = stmt.query_map(params![perfil, concurso], |row| {
+        Ok(LinhaRankingTaxa {
+            concurso: row.get(0)?,
+            dezena: row.get(1)?,
+            posicao_indice: row.get(2)?,
+            taxa_posicao: row.get(3)?,
+            nota_b: row.get(4)?,
+            posicao_ranking_a: row.get(5)?,
+            posicao_ranking_b: row.get(6)?,
+        })
+    })?;
+    Ok(linhas.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 /// Lê as linhas de `taxa_posicao` do perfil, ordenadas por posição.
 pub fn ler_taxa_posicao(conn: &Connection, perfil: &str) -> Result<Vec<LinhaTaxaPosicao>> {
     let mut stmt = conn.prepare(

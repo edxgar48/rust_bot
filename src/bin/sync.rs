@@ -1805,10 +1805,10 @@ fn exportar(
 ) -> anyhow::Result<()> {
     let inicio = std::time::Instant::now();
     let resultado =
-        orquestracao::exportar_tudo_ou_nada(&alvos.itens, raiz_perfis, saida, agora_iso8601_utc)?;
-    let gravados = match resultado {
-        orquestracao::ResultadoExportacao::Gravado(gravados) => gravados,
-        orquestracao::ResultadoExportacao::Cancelado(mut falhas) => {
+        orquestracao::exportar_com_relatorio(&alvos.itens, raiz_perfis, saida, agora_iso8601_utc)?;
+    let relatorio = match resultado {
+        orquestracao::ResultadoComRelatorio::Gravado(relatorio) => relatorio,
+        orquestracao::ResultadoComRelatorio::Cancelado(mut falhas) => {
             if !alvos.multiplas {
                 return Err(falhas.remove(0).erro.into());
             }
@@ -1822,7 +1822,7 @@ fn exportar(
             );
         }
     };
-    for g in &gravados {
+    for g in &relatorio.gravados {
         println!(
             "{} ({} bytes, SHA-256 {})",
             absoluto(&g.caminho).display(),
@@ -1830,9 +1830,21 @@ fn exportar(
             g.impressao.sha256
         );
     }
+    // O ranking por taxa é opcional: omitido não é erro, mas avisa por quê.
+    for r in &relatorio.rankings {
+        if let orquestracao::SituacaoRanking::Omitido(motivo) = &r.situacao {
+            println!("Aviso: {}: ranking_taxa.json omitido: {motivo}.", r.slug);
+        }
+    }
+    for removido in &relatorio.removidos {
+        println!(
+            "Aviso: ranking_taxa.json antigo removido: {}.",
+            absoluto(removido).display()
+        );
+    }
     println!(
         "Exportação concluída: {} arquivo(s) em {}. Tempo: {:.2} s.",
-        gravados.len(),
+        relatorio.gravados.len(),
         absoluto(&exportacao::disco::pasta_versao(saida)).display(),
         inicio.elapsed().as_secs_f64()
     );

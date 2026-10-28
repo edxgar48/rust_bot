@@ -148,6 +148,7 @@ mod tests {
                 Impressao::de(b"tabela"),
                 Impressao::de(b"historico"),
             ],
+            ranking_taxa: None,
         }
     }
 

@@ -11,7 +11,8 @@ use rust_spider::config::{self, LoteriaConfig};
 use rust_spider::db;
 use rust_spider::error::SpiderError;
 use rust_spider::orquestracao::{
-    executar_ciclo, EtapaCiclo, Evento, EventoCiclo, PastasCiclo, RelatorioCiclo,
+    executar_ciclo, listar_pendentes, noites_do_ciclo, registrar_noite, EtapaCiclo, Evento,
+    EventoCiclo, PastasAlertas, PastasCiclo, RelatorioCiclo,
 };
 use rust_spider::publicacao::{Desfecho, Destino, DestinoGit, Preparo};
 use rust_spider::{Result, Resultado};
@@ -1105,4 +1106,199 @@ fn eventos_do_ciclo_dizem_o_nivel_no_log() {
         .nivel(),
         Nivel::Info
     );
+}
+
+// ---------------------------------------------------------------------------
+// Ranking por taxa no ciclo (tarefa 2.5)
+// ---------------------------------------------------------------------------
+
+fn arquivo_ranking(a: &Amb, slug: &str) -> PathBuf {
+    a.saida().join(format!("v1/{slug}/ranking_taxa.json"))
+}
+
+fn index_tem_ranking(a: &Amb) -> bool {
+    fs::read_to_string(a.saida().join("v1/index.json"))
+        .unwrap()
+        .contains("ranking_taxa")
+}
+
+/// Tabelas do ranking como texto, para comparar dois estados do banco.
+fn despejo_ranking(a: &Amb, slug: &str) -> String {
+    let conn = db::abrir(&a.db(slug)).unwrap();
+    let mut saida = String::new();
+    for tabela in ["ranking_taxa", "taxa_posicao", "taxa_faixa"] {
+        let mut stmt = conn
+            .prepare(&format!("SELECT * FROM {tabela} ORDER BY 1, 2, 3"))
+            .unwrap();
+        let colunas = stmt.column_count();
+        let mut linhas = stmt.query([]).unwrap();
+        while let Some(l) = linhas.next().unwrap() {
+            for i in 0..colunas {
+                let v: rusqlite::types::Value = l.get(i).unwrap();
+                saida.push_str(&format!("{v:?}|"));
+            }
+            saida.push('\n');
+        }
+    }
+    saida
+}
+
+#[tokio::test]
+async fn ciclo_com_ranking_ok_publica_o_ranking_taxa() {
+    let a = Amb::novo(false);
+    a.semear("quina", N, &[]);
+    let mut destino = DestinoFalso::default();
+
+    let (r, eventos) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+
+    assert!(r.sucesso(), "{r:?}");
+    assert!(r.loterias[0].exportada);
+    assert_eq!(r.loterias[0].ranking, Default::default());
+    assert!(arquivo_ranking(&a, "quina").exists());
+    assert!(index_tem_ranking(&a));
+    assert!(eventos.iter().any(
+        |e| matches!(e, Evento::Ciclo(EventoCiclo::RankingEmDia { ultimo, .. }) if *ultimo == N + 1)
+    ));
+    assert!(!eventos.iter().any(|e| matches!(
+        e,
+        Evento::Ciclo(EventoCiclo::RankingFalhou { .. } | EventoCiclo::RankingOmitido { .. })
+    )));
+}
+
+#[tokio::test]
+async fn ranking_rodado_de_novo_e_idempotente() {
+    let a = Amb::novo(false);
+    a.semear("lotofacil", N, &[]);
+    let mut destino = DestinoFalso::default();
+
+    let (r1, _) = a
+        .rodar(&["lotofacil"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r1.sucesso(), "{r1:?}");
+    let tabelas = despejo_ranking(&a, "lotofacil");
+    let arquivo = fs::read(arquivo_ranking(&a, "lotofacil")).unwrap();
+    assert!(!tabelas.is_empty());
+
+    let (r2, _) = a
+        .rodar(&["lotofacil"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r2.sucesso(), "{r2:?}");
+    assert!(!r2.loterias[0].concurso_novo);
+    assert_eq!(despejo_ranking(&a, "lotofacil"), tabelas);
+    assert_eq!(fs::read(arquivo_ranking(&a, "lotofacil")).unwrap(), arquivo);
+}
+
+/// Falha simulada do ranking: um gatilho no banco aborta o INSERT em
+/// `ranking_taxa` (a transação do ranking desfaz tudo) depois de um ciclo bom.
+#[tokio::test]
+async fn falha_do_ranking_nao_derruba_o_ciclo_gera_alerta_e_omite_o_arquivo() {
+    let a = Amb::novo(false);
+    a.semear("quina", N, &[]);
+    let mut destino = DestinoFalso::default();
+
+    let (r1, _) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N), sem_planilha)
+        .await;
+    assert!(r1.sucesso(), "{r1:?}");
+    assert!(arquivo_ranking(&a, "quina").exists());
+    {
+        let conn = db::abrir(&a.db("quina")).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER falha_simulada BEFORE INSERT ON ranking_taxa              BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;",
+        )
+        .unwrap();
+    }
+
+    // Saiu o concurso 13: features e índice avançam, o ranking falha.
+    let (r2, eventos) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+
+    // O resto segue: loteria ok, exportada, publicada; código de saída 0.
+    assert!(r2.sucesso(), "{r2:?}");
+    assert!(r2.loterias[0].exportada);
+    let ranking = &r2.loterias[0].ranking;
+    assert!(
+        ranking.falha.as_deref().unwrap().contains("falha simulada"),
+        "{ranking:?}"
+    );
+    assert!(ranking
+        .omitido
+        .as_deref()
+        .unwrap()
+        .contains("ranking vai até o concurso 13, mas o snapshot é do 14"));
+    assert!(r2.loterias[0].to_string().contains("sem ranking_taxa.json"));
+    // Sem arquivo (o antigo foi removido) e sem a chave no index.
+    assert!(!arquivo_ranking(&a, "quina").exists());
+    assert!(!index_tem_ranking(&a));
+    assert!(a.saida().join("v1/quina/ultimo.json").exists());
+    // Log: falha, omissão e remoção, todas como aviso.
+    for e in [
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::RankingFalhou { .. })),
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::RankingOmitido { .. })),
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::RankingAntigoRemovido { .. })),
+    ] {
+        let achado = eventos.iter().find(|x| e(x)).expect("evento do ranking");
+        assert_eq!(achado.nivel(), rust_spider::log_arquivo::Nivel::Aviso);
+    }
+
+    // Alerta: conta como falha da noite (etapa `ranking`) e vira rascunho na
+    // segunda noite seguida, pela regra de sempre.
+    let agora = RELOGIO_INICIAL as i64;
+    let noites = noites_do_ciclo(&[(cfg_de("quina"), a.db("quina"))], &r2, agora, &mut |_| {});
+    let falha = noites[0].falha.as_ref().expect("falha da noite");
+    assert_eq!(falha.etapa, "ranking");
+    assert!(falha.erro.contains("falha simulada"));
+    let (alertas, logs) = (a.raiz.join("alertas"), a.raiz.join("logs"));
+    let pastas = PastasAlertas {
+        alertas: &alertas,
+        logs: &logs,
+    };
+    for (noite, esperados) in [(0, 0), (1, 1)] {
+        let inicio = agora + noite * 86_400;
+        let gerados = registrar_noite(
+            &pastas,
+            &noites,
+            inicio,
+            &mut || Ok(inicio as u64),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(gerados.len(), esperados, "noite {noite}");
+    }
+    let eml = fs::read_to_string(&listar_pendentes(&alertas).unwrap()[0].caminho).unwrap();
+    assert!(eml.contains("Etapa em que falhou: ranking"), "{eml}");
+
+    // Consertado o problema, o ranking volta e o arquivo reaparece.
+    {
+        let conn = db::abrir(&a.db("quina")).unwrap();
+        conn.execute_batch("DROP TRIGGER falha_simulada;").unwrap();
+    }
+    let (r3, _) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r3.sucesso() && r3.loterias[0].ranking == Default::default());
+    assert!(arquivo_ranking(&a, "quina").exists());
+    assert!(index_tem_ranking(&a));
+}
+
+#[test]
+fn eventos_do_ranking_no_ciclo_sao_avisos_na_saida_de_erro() {
+    use rust_spider::log_arquivo::Nivel;
+    for e in [
+        EventoCiclo::RankingFalhou {
+            slug: "quina",
+            mensagem: "x".into(),
+        },
+        EventoCiclo::RankingOmitido {
+            slug: "quina",
+            motivo: "x".into(),
+        },
+    ] {
+        let e = Evento::Ciclo(e);
+        assert_eq!(e.nivel(), Nivel::Aviso);
+        assert_eq!(e.destino(), rust_spider::orquestracao::Destino::Erro);
+    }
 }

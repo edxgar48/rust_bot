@@ -11,10 +11,16 @@ segunda seção). Decisões e motivos: `docs/PLANEJAMENTO.md`, Fase 2.
 
 ## JSON público do app (`sync exportar`)
 
-Quatro arquivos JSON por execução (um `index.json` e, por loteria, três
-arquivos de dados), gerados só a partir dos bancos: `sync exportar` não
-calcula nada, lê o último snapshot do motor (`features_dezena` e `indice`) e
-recusa gravar se features ou índice não estiverem em dia.
+Um `index.json` e, por loteria, **três arquivos de dados obrigatórios** e
+**um opcional** (`ranking_taxa.json`), gerados só a partir dos bancos: `sync
+exportar` não calcula o que publica: lê o último snapshot do motor
+(`features_dezena` e `indice`) e as tabelas derivadas, e recusa gravar se
+features ou índice não estiverem em dia. Pode recalcular na memória apenas para
+conferir se o que está gravado está em dia (como faz com o índice e com o
+ranking); o que vai nos arquivos é sempre o gravado. O
+arquivo opcional vem da tabela derivada `ranking_taxa` (`sync ranking`); se
+ela não existir ou não estiver em dia, o `sync exportar` publica o resto sem
+ele (ver "`ranking_taxa.json`").
 
 ```bash
 cargo run --bin sync -- exportar <loteria|todas> [--saida publico] [--db caminho] [--perfis perfis]
@@ -48,9 +54,10 @@ v1/
 ├── lotofacil/
 │   ├── ultimo.json             # último concurso sorteado
 │   ├── tabela_geral.json       # snapshot do próximo concurso: componentes, índice e posição por dezena
-│   └── historico.json          # todos os concursos, compacto
-├── megasena/   (mesmos três arquivos)
-└── quina/      (mesmos três arquivos)
+│   ├── historico.json          # todos os concursos, compacto
+│   └── ranking_taxa.json       # OPCIONAL: ranking por taxa histórica (notas A e B) do próximo concurso
+├── megasena/   (mesmos arquivos)
+└── quina/      (mesmos arquivos)
 ```
 
 Slugs: `lotofacil`, `megasena`, `quina` (os de `LoteriaConfig::slug`). O
@@ -107,15 +114,16 @@ Campos de `loterias.<slug>` (quando não é `null`), na ordem:
 |---|---|---|---|---|
 | `ultimo_concurso` | inteiro | não | Número do último concurso sorteado; igual ao `concurso` de `ultimo.json`. | `LoteriaNoIndice::ultimo_concurso` (lido do `ultimo.json` no disco) |
 | `data` | texto | não | Data desse concurso, `AAAA-MM-DD`; igual à `data` de `ultimo.json`. | `LoteriaNoIndice::data` |
-| `arquivos` | objeto | não | Três chaves, nesta ordem: `ultimo`, `tabela_geral`, `historico`. | `Arquivo::chave` |
+| `arquivos` | objeto | não | Três chaves obrigatórias, nesta ordem: `ultimo`, `tabela_geral`, `historico`; e uma opcional, `ranking_taxa`, por último. | `Arquivo::chave` |
 
 Chaves de `arquivos`, nesta ordem:
 
 | Campo | Tipo | `null`? | Significado |
 |---|---|---|---|
-| `ultimo` | objeto | não | Descritor de `ultimo.json`. |
-| `tabela_geral` | objeto | não | Descritor de `tabela_geral.json`. |
-| `historico` | objeto | não | Descritor de `historico.json`. |
+| `ultimo` | objeto | não | Descritor de `ultimo.json`. Obrigatória. |
+| `tabela_geral` | objeto | não | Descritor de `tabela_geral.json`. Obrigatória. |
+| `historico` | objeto | não | Descritor de `historico.json`. Obrigatória. |
+| `ranking_taxa` | objeto | **ausente** | Descritor de `ranking_taxa.json`. **Opcional: a chave some do objeto** quando o arquivo não foi publicado (nunca vem `null`). O app trata "sem a chave" como "sem ranking por taxa" e esconde essa parte da tela. |
 
 Cada descritor tem os campos:
 
@@ -222,6 +230,75 @@ A evidência da dezena (A) usa o histórico inteiro e a priori principal (5 %)
 do índice de força (não usa o `total`). A evidência do próprio índice (B)
 **não** está nesta versão (ver "Compatibilidade").
 
+### `ranking_taxa.json` (opcional)
+
+Ranking das dezenas **por taxa histórica** para o **próximo** concurso, do
+mesmo perfil ativo e do mesmo snapshot de `tabela_geral.json`. Só o retrato
+do próximo concurso: uma linha por dezena. É **descrição do passado**: os
+sorteios são independentes e o esperado de qualquer ranking feito com essas
+taxas é **não superar o acaso**. Não é previsão e não diz que dezena vai sair.
+Origem: `exportacao::ranking_taxa_json`.
+
+O que o app não recebe (de propósito): as taxas por posição e por faixa de
+componente, o grau de evidência desses números e a faixa de cada componente.
+
+**Nota A (principal)**: a taxa histórica com que a posição do índice da dezena
+saiu, suavizada em direção ao acaso (K/N). **Nota B (experimental)**: soma, sobre
+a posição e as 9 faixas de componente, de `ln(taxa / (K/N))`. Os componentes são
+correlacionados, então B conta a mesma informação mais de uma vez: **nunca a
+apresente como a nota principal**, e rotule-a como experimental. Definições
+completas: `docs/PLANEJAMENTO.md`, Fase 1f.
+
+**Quando o arquivo existe.** O `sync exportar` só o publica se a tabela
+`ranking_taxa` (gravada por `sync ranking`) estiver **em dia**: o perfil ativo
+tem as N dezenas do mesmo concurso do snapshot de `tabela_geral.json`
+(`ultimo + 1`), com a `posicao_indice` igual à posição do índice, e nenhuma
+linha de concurso diferente; além disso, as notas e posições gravadas têm de ser
+exatamente as que o `sync ranking` calcularia hoje com os resultados, as
+features e o índice atuais (um resultado antigo corrigido sem refazer o ranking
+o deixa fora de dia, mesmo com as posições do snapshot iguais). Ausente ou
+atrasado (por exemplo, saiu um concurso novo e o `sync ranking` não rodou), o `sync exportar` **não é interrompido**:
+publica `ultimo.json`, `tabela_geral.json` e `historico.json`, **não grava**
+`ranking_taxa.json` (um arquivo antigo da pasta é removido, para o publicado
+nunca ter um ranking de outro concurso) e **omite a chave `ranking_taxa`** de
+`arquivos` no `index.json`. O app confere a chave, nunca o caminho.
+
+Cabeçalho, na ordem (os campos de `schema_version` a `ultimo_sorteado` são os
+mesmos de `tabela_geral.json`; um ranking e uma tabela do mesmo concurso e
+perfil trazem valores iguais nesses campos):
+
+| Campo | Tipo | `null`? | Significado |
+|---|---|---|---|
+| `schema_version` | inteiro | não | `1`. |
+| `loteria` | texto | não | Slug. |
+| `perfil` | texto | não | Perfil de pesos do índice (`padrao_v1`). |
+| `hash_toml` | texto | não | SHA-256 do `.toml` do perfil (o mesmo de `tabela_geral.json`). |
+| `janela` | inteiro | não | Janela dos componentes do perfil (`0` = histórico total). |
+| `normalizacao` | texto | não | `zscore` ou `minmax`. |
+| `feature_version` | inteiro | não | Versão da definição dos componentes. |
+| `concurso` | inteiro | não | **Próximo concurso** (ainda não sorteado) = `ultimo_sorteado + 1`. |
+| `ultimo_sorteado` | inteiro | não | Último concurso já sorteado; é o `concurso` de `ultimo.json`. |
+| `taxa_acaso` | número | não | K/N: a chance de qualquer dezena sair se tudo fosse acaso (Lotofácil 15/25 = `0.600000000`, Mega-Sena 6/60 = `0.100000000`, Quina 5/80 = `0.062500000`). Casas fixas como as notas. |
+| `dezenas` | lista de objetos | não | Uma entrada por dezena da loteria (25, 60 ou 80), **em ordem crescente de dezena** (diferente de `tabela_geral.json`, que vem em ordem de posição do índice). |
+
+Entrada de cada dezena, na ordem das chaves:
+
+| Campo | Tipo | `null`? | Significado |
+|---|---|---|---|
+| `dezena` | inteiro | não | Número da dezena. |
+| `posicao_indice` | inteiro | não | Posição no índice de força, `1` a N; igual à `posicao` dessa dezena em `tabela_geral.json`. |
+| `nota_a` | número | não | Nota A (principal): taxa histórica da posição do índice em que a dezena está. **9 casas decimais fixas**. Compare com `taxa_acaso`. |
+| `diferenca_acaso` | número | não | `nota_a − taxa_acaso`, 9 casas fixas (sem `-0`). Positivo: a posição saiu historicamente mais que o acaso; negativo: menos. Diferenças pequenas são o normal, e a maior parte delas é ruído. |
+| `nota_b` | número | não | Nota B (**experimental**): soma de `ln(taxa / (K/N))` sobre a posição e as 9 faixas; 9 casas fixas. Sem unidade de probabilidade, só compara dezenas do mesmo arquivo. |
+| `posicao_a` | inteiro | não | Lugar da dezena na ordem pela nota A (maior primeiro), `1` a N, sem repetição. Empate de nota (arredondada a 9 casas): menor dezena à frente. |
+| `posicao_b` | inteiro | não | O mesmo, pela nota B. |
+
+Como ler: se `diferenca_acaso` fica perto de zero para todas as dezenas, o
+retrato do passado diz que a posição do índice quase não separa as dezenas do
+acaso. O ranking por A ou por B pode reordenar as dezenas em relação ao índice
+(`posicao_a`, `posicao_b` e `posicao_indice` podem diferir), mas isso é uma
+descrição do histórico, não uma recomendação.
+
 ### Valores enumerados
 
 Identificadores do contrato: ASCII, minúsculos, sem acento nem espaço. Não são
@@ -293,7 +370,9 @@ O app não precisa recalcular nada com isso: serve para mostrar de onde vem o
   índice (passo 4 de "Como o app deve usar o `index.json`"); conferir os hashes
   do índice contra o disco antes de publicar está previsto para a 2.4.
 - **Tudo ou nada**: `exportar todas` não grava nada se uma loteria falhar;
-  `exportar <loteria>` regrava só os arquivos dela.
+  `exportar <loteria>` regrava só os arquivos dela. Um `ranking_taxa`
+  ausente ou atrasado **não é falha**: a loteria é exportada sem o arquivo
+  opcional (o relatório do comando diz o motivo) e não cancela as demais.
 
 ### Compatibilidade dentro de `v1`
 
@@ -312,6 +391,11 @@ O app não precisa recalcular nada com isso: serve para mostrar de onde vem o
   fora por ora porque custa de 1 a 4 s por loteria; se entrar, será como campo
   opcional, com local e formato a decidir; o app deve ignorar campos
   desconhecidos e não assumir que o cabeçalho tem só as chaves de hoje.
+- **Arquivo opcional (`ranking_taxa.json`)**: foi acrescentado dentro de `v1`
+  como chave opcional de `arquivos` (`schema_version` continua `1`; os três
+  arquivos obrigatórios não mudam um byte). A chave **falta** quando o arquivo
+  não foi publicado; o app não pode exigir nem supor que ela exista. Um
+  `index.json` sem a chave tem exatamente o formato de antes de o arquivo existir.
 - Todo campo novo é documentado aqui, com tipo, significado e exemplo, no
   mesmo commit que o introduz no código.
 
@@ -486,6 +570,69 @@ Lendo a dezena 56: é a 5ª mais forte, subiu 2 posições, não
 saiu nos últimos 50 concursos (`frequencia` 0, então os cinco componentes de
 espaço são `null`), mas faz 65 concursos que não sai (`espaco_final` 65,
 maior que a janela).
+
+`quina/ranking_taxa.json` (arquivo opcional). Gerado em 2026-10-27 pelo
+`sync exportar quina`, numa cópia do banco da Quina até o concurso 7152, depois
+do `sync ranking`: cabeçalho e 3 das 80 dezenas (1, 2 e 3). **Corte**: as
+dezenas 4 a 80 vêm depois da última entrada abaixo, no mesmo formato, antes do
+`]` e do `}` finais (trecho, não JSON completo). Repare que `taxa_acaso` é
+5/80 e que todas as `diferenca_acaso` ficam perto de zero:
+
+```json
+{
+  "schema_version": 1,
+  "loteria": "quina",
+  "perfil": "padrao_v1",
+  "hash_toml": "5bea2957a4aa375ffaf102aab3ca21d39252213f1a133b4f3538589df6d2c873",
+  "janela": 50,
+  "normalizacao": "zscore",
+  "feature_version": 1,
+  "concurso": 7153,
+  "ultimo_sorteado": 7152,
+  "taxa_acaso": 0.062500000,
+  "dezenas": [
+    {
+      "dezena": 1,
+      "posicao_indice": 36,
+      "nota_a": 0.056570601,
+      "diferenca_acaso": -0.005929399,
+      "nota_b": -0.073464587,
+      "posicao_a": 79,
+      "posicao_b": 72
+    },
+    {
+      "dezena": 2,
+      "posicao_indice": 40,
+      "nota_a": 0.065533646,
+      "diferenca_acaso": 0.003033646,
+      "nota_b": 0.038586543,
+      "posicao_a": 14,
+      "posicao_b": 20
+    },
+    {
+      "dezena": 3,
+      "posicao_indice": 30,
+      "nota_a": 0.062913679,
+      "diferenca_acaso": 0.000413679,
+      "nota_b": -0.053649634,
+      "posicao_a": 34,
+      "posicao_b": 65
+    }
+  ]
+}
+```
+
+No `index.json` desse mesmo `sync exportar`, a Quina traz a quarta chave em
+`arquivos` (depois de `historico`); sem o ranking em dia, essa chave simplesmente
+não existe:
+
+```json
+        "ranking_taxa": {
+          "caminho": "quina/ranking_taxa.json",
+          "sha256": "265a621702ff113c5875eb4a855c7951b488d33237ae6edf47473b0f4a4b620a",
+          "bytes": 16526
+        }
+```
 
 `quina/historico.json` (começo do arquivo e, em seguida, o fim; o arquivo
 real tem 7137 linhas em `concursos`):

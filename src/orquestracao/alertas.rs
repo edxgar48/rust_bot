@@ -271,6 +271,17 @@ fn falha_do_erro(
     }
 }
 
+/// Falha do passo do ranking (tarefa 2.5): não reprova a loteria nem muda o
+/// código de saída, mas conta como noite de falha. Só o erro do passo conta;
+/// ranking omitido sem erro (ex.: atrasado por outro motivo) é aviso no log.
+fn falha_do_ranking(resumo: &super::ResumoLoteria) -> Option<FalhaNoite> {
+    resumo.ranking.falha.as_ref().map(|erro| FalhaNoite {
+        etapa: "ranking".to_string(),
+        erro: erro.clone(),
+        mudanca_de_pagina: false,
+    })
+}
+
 /// Último concurso: o que o ciclo viu ou, se ele nem chegou lá, o do banco
 /// (aberto só para leitura, sem criar nada).
 fn ultimo_do_banco(slug: &str, db_caminho: &Path, visto: Option<u32>) -> Option<u32> {
@@ -340,7 +351,7 @@ pub fn noites_do_ciclo(
                 f.erro.eh_mudanca_de_pagina(),
             )),
             (None, Err(e)) if resumo.exportada => Some(falha_do_erro("publicar", e, false)),
-            _ => verificar_atraso(cfg, db_caminho, agora, obs),
+            _ => falha_do_ranking(resumo).or_else(|| verificar_atraso(cfg, db_caminho, agora, obs)),
         };
         let ultimo = ultimo_do_banco(cfg.slug, db_caminho, resumo.ultimo_concurso);
         noites.push(NoiteAlvo::loteria(cfg, ultimo, falha));
@@ -378,8 +389,15 @@ pub fn noites_do_aguardar(
                 r.mudanca_de_pagina_em_todas_as_rodadas(),
             )),
             (None, Some(e)) => Some(falha_do_erro("publicar", e, false)),
-            (None, None) if r.concurso_ausente.is_some() => None,
-            (None, None) => verificar_atraso(cfg, db_caminho, agora, obs),
+            // Falha do ranking conta mesmo sem concurso novo; o concurso ausente
+            // só dispensa a checagem de atraso do calendário.
+            (None, None) => falha_do_ranking(&r.resumo).or_else(|| {
+                if r.concurso_ausente.is_some() {
+                    None
+                } else {
+                    verificar_atraso(cfg, db_caminho, agora, obs)
+                }
+            }),
         };
         let ultimo = ultimo_do_banco(slug, db_caminho, r.resumo.ultimo_concurso);
         noites.push(NoiteAlvo::loteria(cfg, ultimo, falha));
@@ -894,6 +912,12 @@ fn passos(falha: &FalhaNoite, motivo: &str) -> Vec<&'static str> {
         passos.push(
             "Parece mudanca no site da Caixa: abra a pagina da loteria no navegador, compare \
              com os seletores de src/config.rs e rode `sync atualizar <loteria> --visivel`.",
+        );
+    }
+    if falha.etapa == "ranking" {
+        passos.push(
+            "Falha no ranking: o ciclo seguiu e publicou sem o ranking_taxa.json. Rode \
+             `sync ranking <loteria>` a mao para ver o erro (precisa de features e indice em dia).",
         );
     }
     if falha.etapa == "publicar" {

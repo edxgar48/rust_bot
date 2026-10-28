@@ -19,10 +19,12 @@
 
 use super::gravacao::{atualizar_reaproveitando_backup, hoje_de};
 use super::{
-    carregar_existentes, descrever_faixa, exportar_tudo_ou_nada, faixas_faltando,
-    processar_e_salvar, sincronizar_features, sincronizar_indice, DesfechoAtualizacao, Evento,
-    PastasAtualizar, ResultadoExportacao,
+    carregar_existentes, descrever_faixa, exportar_com_relatorio, faixas_faltando,
+    processar_e_salvar, sincronizar_features, sincronizar_indice, sincronizar_ranking_com,
+    DesfechoAtualizacao, Evento, PastasAtualizar, RelatorioRanking, ResultadoComRelatorio,
+    SituacaoRanking,
 };
+use crate::avaliacao::SEMENTE_ESPERADO;
 use crate::backup;
 use crate::config::LoteriaConfig;
 use crate::db;
@@ -106,6 +108,27 @@ pub enum EventoCiclo {
         concursos: usize,
         ultimo: u32,
     },
+    /// Ranking por taxa regenerado (`sync ranking`, sem o relatório/CSV).
+    RankingEmDia {
+        perfil: String,
+        linhas: usize,
+        ultimo: u32,
+    },
+    /// O passo do ranking deu erro: o ciclo segue sem o `ranking_taxa.json`
+    /// (a falha vira alerta pela regra das noites seguidas).
+    RankingFalhou {
+        slug: &'static str,
+        mensagem: String,
+    },
+    /// O `ranking_taxa.json` ficou fora da exportação (não é erro).
+    RankingOmitido {
+        slug: &'static str,
+        motivo: String,
+    },
+    /// Um `ranking_taxa.json` antigo foi apagado da saída por causa da omissão.
+    RankingAntigoRemovido {
+        caminho: PathBuf,
+    },
     /// Arquivos da loteria gravados na saída.
     Exportada {
         slug: &'static str,
@@ -175,6 +198,9 @@ impl EventoCiclo {
             EventoCiclo::BackfillPersiste { .. }
             | EventoCiclo::LoteriaFalhou { .. }
             | EventoCiclo::PublicacaoFalhou { .. }
+            | EventoCiclo::RankingFalhou { .. }
+            | EventoCiclo::RankingOmitido { .. }
+            | EventoCiclo::RankingAntigoRemovido { .. }
             | EventoCiclo::FalhaTransitoria { .. }
             | EventoCiclo::ConcursoNaoSaiu { .. } => super::Destino::Erro,
             _ => super::Destino::Padrao,
@@ -191,6 +217,9 @@ impl EventoCiclo {
             EventoCiclo::BackfillIniciado { .. }
             | EventoCiclo::BackfillDispensado { .. }
             | EventoCiclo::BackfillPersiste { .. }
+            | EventoCiclo::RankingFalhou { .. }
+            | EventoCiclo::RankingOmitido { .. }
+            | EventoCiclo::RankingAntigoRemovido { .. }
             | EventoCiclo::FalhaTransitoria { .. }
             | EventoCiclo::ConcursoNaoSaiu { .. } => Nivel::Aviso,
             EventoCiclo::JanelaEncerrada { pendentes, .. } if !pendentes.is_empty() => Nivel::Aviso,
@@ -247,6 +276,27 @@ impl fmt::Display for EventoCiclo {
             } => write!(
                 f,
                 "Índice do perfil {perfil}: {concursos} concurso(s) indexado(s); em dia até o {ultimo}."
+            ),
+            EventoCiclo::RankingEmDia {
+                perfil,
+                linhas,
+                ultimo,
+            } => write!(
+                f,
+                "Ranking do perfil {perfil}: {linhas} linha(s) em ranking_taxa; em dia até o {ultimo}."
+            ),
+            EventoCiclo::RankingFalhou { slug, mensagem } => write!(
+                f,
+                "Aviso: o ranking de {slug} falhou ({mensagem}); o ciclo segue e o \
+                 ranking_taxa.json fica fora desta exportação (rode `sync ranking {slug}`)."
+            ),
+            EventoCiclo::RankingOmitido { slug, motivo } => {
+                write!(f, "Aviso: {slug}: ranking_taxa.json omitido: {motivo}.")
+            }
+            EventoCiclo::RankingAntigoRemovido { caminho } => write!(
+                f,
+                "Aviso: ranking_taxa.json antigo removido: {}.",
+                caminho.display()
             ),
             EventoCiclo::Exportada { slug, arquivos } => {
                 write!(f, "Exportação de {slug}: {arquivos} arquivo(s) gravado(s).")
@@ -336,6 +386,18 @@ pub struct FalhaCiclo {
     pub erro: SpiderError,
 }
 
+/// O que aconteceu com o ranking por taxa no ciclo de uma loteria. Nunca
+/// reprova a loteria (decisão de 2026-10-27, tarefa 2.5): o resto é publicado
+/// sem o `ranking_taxa.json`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RankingDoCiclo {
+    /// O passo do `sync ranking` deu erro (mensagem com a cadeia de causas);
+    /// é isto que conta como falha da noite para os alertas.
+    pub falha: Option<String>,
+    /// Motivo de o `ranking_taxa.json` não ter entrado na exportação.
+    pub omitido: Option<String>,
+}
+
 /// Como terminou o ciclo de uma loteria.
 #[derive(Debug)]
 pub struct ResumoLoteria {
@@ -348,6 +410,7 @@ pub struct ResumoLoteria {
     pub backfill: bool,
     /// Os arquivos da loteria foram gravados na saída.
     pub exportada: bool,
+    pub ranking: RankingDoCiclo,
     pub falha: Option<FalhaCiclo>,
 }
 
@@ -371,7 +434,16 @@ impl fmt::Display for ResumoLoteria {
                     "sem concurso novo"
                 };
                 let backfill = if self.backfill { ", com backfill" } else { "" };
-                write!(f, "{}: ok (último {ultimo}, {novo}{backfill})", self.slug)
+                let ranking = if self.ranking.omitido.is_some() {
+                    ", sem ranking_taxa.json"
+                } else {
+                    ""
+                };
+                write!(
+                    f,
+                    "{}: ok (último {ultimo}, {novo}{backfill}{ranking})",
+                    self.slug
+                )
             }
         }
     }
@@ -495,6 +567,7 @@ pub(super) struct Progresso {
     pub(super) concurso_novo: bool,
     pub(super) backfill: bool,
     pub(super) exportada: bool,
+    pub(super) ranking: RankingDoCiclo,
 }
 
 impl Progresso {
@@ -505,6 +578,7 @@ impl Progresso {
             concurso_novo: self.concurso_novo,
             backfill: self.backfill,
             exportada: self.exportada,
+            ranking: self.ranking.clone(),
             falha,
         }
     }
@@ -716,9 +790,9 @@ where
     }
 
     // 5. índice do perfil ativo.
+    let carregado =
+        perfil::carregar(pastas.perfis, cfg, cfg.perfil_ativo).map_err(em(EtapaCiclo::Indice))?;
     {
-        let carregado = perfil::carregar(pastas.perfis, cfg, cfg.perfil_ativo)
-            .map_err(em(EtapaCiclo::Indice))?;
         let criado_em = tempo::iso8601_utc(agora().map_err(em(EtapaCiclo::Indice))?);
         let mut conn = db::abrir(db_caminho).map_err(em(EtapaCiclo::Indice))?;
         let resumo = sincronizar_indice(&mut conn, cfg, &carregado, &criado_em)
@@ -730,27 +804,77 @@ where
         }));
     }
 
+    // 5b. ranking por taxa (tarefa 2.5). Falha NÃO derruba a loteria: vira
+    // aviso no log e alerta (pela contagem de noites), e o exportar abaixo
+    // omite o `ranking_taxa.json` sozinho (ranking ausente ou atrasado).
+    // Chama só a função de biblioteca que grava as tabelas: o relatório e o
+    // CSV são da CLI `sync ranking`. O ciclo não toma a trava `ranking`; a
+    // trava do próprio ciclo já exclui os comandos que gravam.
+    progresso.ranking = RankingDoCiclo::default();
+    match ranking_do_ciclo(cfg, db_caminho, &carregado) {
+        Ok(r) => obs(Evento::Ciclo(EventoCiclo::RankingEmDia {
+            perfil: r.perfil,
+            linhas: r.linhas_gravadas,
+            ultimo: r.ultimo_concurso,
+        })),
+        Err(e) => {
+            let mensagem = cadeia_do_erro(&e);
+            obs(Evento::Ciclo(EventoCiclo::RankingFalhou {
+                slug: cfg.slug,
+                mensagem: mensagem.clone(),
+            }));
+            progresso.ranking.falha = Some(mensagem);
+        }
+    }
+
     // 6. exportar só esta loteria; o `index.json` reflete o que há no disco.
     let alvo = [(cfg, db_caminho.to_path_buf())];
-    let resultado = exportar_tudo_ou_nada(&alvo, pastas.perfis, pastas.saida, || {
+    let resultado = exportar_com_relatorio(&alvo, pastas.perfis, pastas.saida, || {
         Ok(tempo::iso8601_utc(agora()?))
     })
     .map_err(em(EtapaCiclo::Exportar))?;
     match resultado {
-        ResultadoExportacao::Gravado(gravados) => {
+        ResultadoComRelatorio::Gravado(relatorio) => {
             progresso.exportada = true;
+            for r in &relatorio.rankings {
+                if let SituacaoRanking::Omitido(motivo) = &r.situacao {
+                    let motivo = motivo.to_string();
+                    obs(Evento::Ciclo(EventoCiclo::RankingOmitido {
+                        slug: r.slug,
+                        motivo: motivo.clone(),
+                    }));
+                    progresso.ranking.omitido = Some(motivo);
+                }
+            }
+            for caminho in relatorio.removidos {
+                obs(Evento::Ciclo(EventoCiclo::RankingAntigoRemovido {
+                    caminho,
+                }));
+            }
             obs(Evento::Ciclo(EventoCiclo::Exportada {
                 slug: cfg.slug,
-                arquivos: gravados.len(),
+                arquivos: relatorio.gravados.len(),
             }));
             Ok(())
         }
-        ResultadoExportacao::Cancelado(mut falhas) => Err(FalhaCiclo {
+        ResultadoComRelatorio::Cancelado(mut falhas) => Err(FalhaCiclo {
             etapa: EtapaCiclo::Exportar,
             // `Cancelado` nunca vem vazio: só existe quando alguma loteria falhou.
             erro: falhas.remove(0).erro,
         }),
     }
+}
+
+/// Grava as tabelas do ranking (a mesma função do `sync ranking`). O esperado
+/// sob o acaso só entra no relatório impresso e não é gravado; por isso o
+/// ciclo pede o mínimo de réplicas (2) em vez de simular 10 mil à toa.
+fn ranking_do_ciclo(
+    cfg: &LoteriaConfig,
+    db_caminho: &Path,
+    carregado: &perfil::PerfilCarregado,
+) -> Result<RelatorioRanking> {
+    let mut conn = db::abrir(db_caminho)?;
+    sincronizar_ranking_com(&mut conn, cfg, carregado, 2, SEMENTE_ESPERADO)
 }
 
 /// Baixa a planilha completa pelo caminho do `baixar` (com backup antes) e

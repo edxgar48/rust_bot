@@ -45,6 +45,26 @@ fn invalida(caminho: &Path, motivo: &str) -> SpiderError {
     SpiderError::ExportacaoInvalida(format!("`{}`: {motivo}", caminho.display()))
 }
 
+/// O que [`gravar_com_relatorio`] fez no disco.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gravacao {
+    /// Arquivos renomeados para o lugar definitivo, com o `index.json` por
+    /// último.
+    pub gravados: Vec<ArquivoGravado>,
+    /// `ranking_taxa.json` antigos apagados porque o ranking foi omitido.
+    pub removidos: Vec<PathBuf>,
+}
+
+/// Os arquivos de um lote que vão ao disco: os três obrigatórios e, se o
+/// ranking está em dia, o `ranking_taxa.json`.
+fn arquivos_do_lote(lote: &ArquivosLoteria) -> Vec<Arquivo> {
+    let mut arquivos = Arquivo::TODOS.to_vec();
+    if lote.ranking_taxa.is_some() {
+        arquivos.push(Arquivo::RankingTaxa);
+    }
+    arquivos
+}
+
 /// Grava os `lotes` (um por loteria) em `<saida>/v1/<loteria>/` e refaz o
 /// `index.json` com `slugs` (as loterias do config, na ordem do config).
 /// Loteria que não está em `lotes` mantém os arquivos que já tinha.
@@ -54,6 +74,23 @@ pub fn gravar(
     slugs: &[&str],
     gerado_em: &str,
 ) -> Result<Vec<ArquivoGravado>> {
+    Ok(gravar_com_relatorio(saida, lotes, slugs, gerado_em)?.gravados)
+}
+
+/// [`gravar`], devolvendo também os arquivos antigos removidos.
+///
+/// O `ranking_taxa.json` é opcional: lote com `ranking_taxa` `None` não o
+/// grava e **apaga o que houver na pasta da loteria** (um ranking de outro
+/// concurso nunca fica publicado ao lado dos arquivos novos). A remoção vem
+/// depois de todas as renomeações e antes do `index.json`, que descreve o que
+/// está no disco; a limitação de atomicidade entre vários arquivos é a mesma
+/// de sempre (o próximo `exportar` corrige).
+pub fn gravar_com_relatorio(
+    saida: &Path,
+    lotes: &[ArquivosLoteria],
+    slugs: &[&str],
+    gerado_em: &str,
+) -> Result<Gravacao> {
     let raiz = pasta_versao(saida);
 
     // Saída das loterias preservadas: se estiver inconsistente, recusa antes
@@ -65,22 +102,24 @@ pub fn gravar(
     }
 
     // 1) Temporários de todos os arquivos.
-    let mut pares: Vec<(PathBuf, PathBuf)> = Vec::new(); // (temporário, definitivo)
+    // (temporário, definitivo, bytes do arquivo)
+    let mut pares: Vec<(PathBuf, PathBuf, &[u8])> = Vec::new();
     let escrito = (|| -> Result<()> {
         for lote in lotes {
             let pasta = raiz.join(&lote.slug);
             fs::create_dir_all(&pasta).map_err(|e| io(&pasta, e))?;
-            for arquivo in Arquivo::TODOS {
+            for arquivo in arquivos_do_lote(lote) {
                 let definitivo = pasta.join(arquivo.nome());
                 let temporario = pasta.join(format!("{}.tmp", arquivo.nome()));
-                escrever_e_sincronizar(&temporario, lote.bytes(arquivo))?;
-                pares.push((temporario, definitivo));
+                let bytes = lote.bytes(arquivo);
+                escrever_e_sincronizar(&temporario, bytes)?;
+                pares.push((temporario, definitivo, bytes));
             }
         }
         Ok(())
     })();
     if let Err(e) = escrito {
-        for (temporario, _) in &pares {
+        for (temporario, _, _) in &pares {
             let _ = fs::remove_file(temporario);
         }
         return Err(e);
@@ -88,21 +127,29 @@ pub fn gravar(
 
     // 2) Renomeia (substitui o arquivo antigo de uma vez).
     let mut gravados = Vec::new();
-    for ((temporario, definitivo), (lote, arquivo)) in pares.iter().zip(
-        lotes
-            .iter()
-            .flat_map(|l| Arquivo::TODOS.into_iter().map(move |a| (l, a))),
-    ) {
+    for (temporario, definitivo, bytes) in &pares {
         if let Err(e) = fs::rename(temporario, definitivo) {
-            for (resto, _) in &pares {
+            for (resto, _, _) in &pares {
                 let _ = fs::remove_file(resto);
             }
             return Err(io(definitivo, e));
         }
         gravados.push(ArquivoGravado {
             caminho: definitivo.clone(),
-            impressao: Impressao::de(lote.bytes(arquivo)),
+            impressao: Impressao::de(bytes),
         });
+    }
+
+    // 2b) Ranking omitido: apaga o arquivo antigo, se houver, para o índice
+    // (e o que se publica) não ter arquivo órfão nem de outro concurso.
+    let mut removidos = Vec::new();
+    for lote in lotes.iter().filter(|l| l.ranking_taxa.is_none()) {
+        let antigo = raiz.join(&lote.slug).join(Arquivo::RankingTaxa.nome());
+        match fs::remove_file(&antigo) {
+            Ok(()) => removidos.push(antigo),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io(&antigo, e)),
+        }
     }
 
     // 3) O índice, por último, com o que está no disco.
@@ -122,7 +169,10 @@ pub fn gravar(
         caminho: definitivo,
         impressao: Impressao::de(&bytes),
     });
-    Ok(gravados)
+    Ok(Gravacao {
+        gravados,
+        removidos,
+    })
 }
 
 fn escrever_e_sincronizar(caminho: &Path, bytes: &[u8]) -> Result<()> {
@@ -132,8 +182,9 @@ fn escrever_e_sincronizar(caminho: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// O que o disco tem de uma loteria em `raiz` (`<saida>/v1`): `None` se não
-/// há nenhum dos três arquivos; erro se faltar algum, se o `ultimo.json` não
-/// for o esperado ou se for de outro `schema_version`.
+/// há nenhum dos três arquivos obrigatórios; erro se faltar algum, se o
+/// `ultimo.json` não for o esperado ou se for de outro `schema_version`. O
+/// `ranking_taxa.json` é opcional: entra no resultado se estiver no disco.
 pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
     let pasta = raiz.join(slug);
     let mut lidos: Vec<Option<Vec<u8>>> = Vec::with_capacity(3);
@@ -182,6 +233,13 @@ pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
         .ok_or_else(|| invalida(&caminho_ultimo, "campo `data` ausente ou inválido"))?
         .to_string();
 
+    let caminho_ranking = pasta.join(Arquivo::RankingTaxa.nome());
+    let ranking_taxa = match fs::read(&caminho_ranking) {
+        Ok(bytes) => Some(Impressao::de(&bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io(&caminho_ranking, e)),
+    };
+
     Ok(Some(LoteriaNoIndice {
         ultimo_concurso,
         data,
@@ -190,5 +248,6 @@ pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
             Impressao::de(tabela),
             Impressao::de(historico),
         ],
+        ranking_taxa,
     }))
 }

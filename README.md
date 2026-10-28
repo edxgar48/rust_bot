@@ -165,6 +165,8 @@ cargo run --release --bin sync -- ranking quina --avaliar
 # `todas` é tudo ou nada; com um slug só os arquivos dele são regravados e o index.json é refeito.
 # JSON sem acento: evidencia_grau muito_fraca|fraca|moderada|forte|muito_forte, evidencia_direcao
 # vies|acaso, normalizacao zscore|minmax (identificadores do contrato, não os rótulos do CSV).
+# ranking_taxa.json é opcional: só sai se `sync ranking` estiver em dia com o snapshot; senão é omitido
+# (sem a chave no index.json, com aviso), sem derrubar a exportação.
 cargo run --bin sync -- exportar todas
 cargo run --bin sync -- exportar quina --saida outra/pasta
 
@@ -200,6 +202,12 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    (caminho do `baixar`, com backup antes). Se o buraco persistir, só aviso e o validar reprova a loteria
 #    (feche com `sync buracos` + `sync inserir`). Após um salto o atualizar já baixou a planilha: não baixa
 #    de novo;
+#  - ranking (2.5): depois do índice e antes do exportar o ciclo regrava as tabelas do `sync ranking` (sem
+#    relatório nem CSV; sem tomar a trava `ranking`, já que o ciclo tem a sua). Falha do ranking NÃO
+#    reprova a loteria nem muda o exit code: o log traz "o ranking de X falhou", o exportar omite o
+#    `ranking_taxa.json` (apaga o antigo, sem a chave no index.json; o log diz o motivo) e a falha conta
+#    como noite de falha (etapa `ranking`) para o rascunho de alerta (2 noites seguidas). Para ver o erro:
+#    `sync ranking <loteria>`;
 #  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim). A trava (3.4), o log em
 #    arquivo (3.5), os alertas (3.6) e o agendamento (3.7) existem: ver "Trava", "Log", "Agendamento" e
 #    "Alertas e operação". No fim, o ciclo conta a noite de cada loteria e grava o rascunho de e-mail de

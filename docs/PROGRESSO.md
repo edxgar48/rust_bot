@@ -64,7 +64,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1f.2 Notas A (principal) e B (experimental), ordenação, graus da 1d, esperado sob o acaso
 - [x] 1f.3 Tabelas derivadas e `sync ranking <loteria>` (texto e CSV)
 - [x] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
-- [ ] 2.x `ranking_taxa.json` no `sync exportar` e em `docs/contrato-v1.md` (numerar ao entrar na Fase 2)
+- [x] 2.x → numerada 2.5 (ver Fase 2)
 
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
@@ -72,6 +72,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 2.2 Geração determinística + hash SHA-256 + `schema_version` (entregue junto com a 2.1)
 - [x] 2.3 `docs/contrato-v1.md`
 - [x] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
+- [x] 2.5 `ranking_taxa.json` no `sync exportar`, no `sync ciclo` e em `docs/contrato-v1.md` (chave opcional de `arquivos`)
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
@@ -2338,3 +2339,51 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   arquivo, com `arquivos.ranking_taxa` ausente/`null`?; (4) o `sync ciclo` passa a rodar `sync ranking`
   antes do exportar (mexe na Fase 3)?; (5) chave nova `ranking_taxa` em `arquivos` do `index.json` como
   campo opcional, mudando o texto "Três chaves" do contrato?
+- 2026-10-27 — 2.5 `[x]` (`engenheiro-publicacao` + `engenheiro-operacao`; respostas do usuário no plano,
+  Fase 1f, item Contrato, commit 6920f97). Exportar: `ranking_taxa.json` por loteria (cabeçalho igual ao da
+  `tabela_geral.json` + `taxa_acaso`; por dezena em ordem crescente: `dezena`, `posicao_indice`, `nota_a`,
+  `diferenca_acaso`, `nota_b`, `posicao_a`, `posicao_b`, 9 casas fixas); só lê `ranking_taxa` (único cálculo:
+  A − K/N). "Em dia" = tabela existe, perfil ativo com linhas, maior concurso = snapshot (último + 1), N dezenas,
+  `posicao_indice` = posição do índice atual (hash do perfil conferido por `ler_indice_conferido`, mesma
+  transação); senão omitido com motivo (`SemTabela`, `SemLinhas`, `Atrasado`, `Incompleto`, `DivergeDoIndice`),
+  aviso na CLI, chave ausente do `index.json`, arquivo antigo órfão removido (exigido pelo `publicar`, que
+  reprova arquivo fora do índice). API nova: `exportar_com_relatorio`/`RelatorioExportacao`/`SituacaoRanking`
+  (`exportar_tudo_ou_nada` e `disco::gravar` ficam como wrappers, hoje só usados em testes). Ciclo: passo 5b roda
+  `sincronizar_ranking_com` (biblioteca, sem relatório texto/CSV, 2 réplicas do esperado sob o acaso, que só é
+  impresso) entre índice e exportar; falha → aviso no log, `ResumoLoteria.ranking`, falha da noite etapa
+  `ranking` (regra das 2 noites, rascunho `.eml` na 2ª), exit 0; omissão sem falha → só aviso. Contrato:
+  três chaves obrigatórias e uma opcional, B experimental, aviso de não-previsão, `schema_version` 1. Arquivos:
+  `docs/contrato-v1.md`, `README.md`, `src/db.rs`, `src/exportacao/{mod,disco}.rs`, `src/orquestracao.rs`,
+  `src/orquestracao/{exportar,ciclo,alertas}.rs`, `src/publicacao/{indice,mod}.rs`, `src/bin/sync.rs`,
+  `tests/{publicar,ciclo,alertas}.rs`, novo `tests/exportar_ranking.rs`. auditor-contrato (cópias dos bancos
+  reais): duas exportações só diferem em `gerado_em`; 12 descritores conferem; sem ranking e atrasado → chave e
+  arquivo ausentes, resto idêntico; app lê só `CHAVES_ARQUIVO` e tolera a 4ª chave. Gate: fmt, clippy, cargo
+  test 1321, pytest 175, validar todas, app lint/check/1104 testes/build — aprovado. Revisão: aprovado com
+  ressalvas, só BAIXA, não corrigidas: (1) "em dia" compara só o retrato do snapshot — correção de resultado
+  antigo seguida de features/índice manuais sem `sync ranking` pode publicar nota A velha no `exportar` manual
+  (o ciclo refaz toda noite); (2) as 2 réplicas no ciclo são literal e sem teste que compare as tabelas com as
+  do `sync ranking` normal; (3) no `ciclo --aguardar`, noite com concurso ausente não conta falha do ranking
+  (`alertas.rs:392`); (4) invariante `ranking_taxa`/`ranking_omitido` só em comentário e `bytes(RankingTaxa)`
+  devolve fatia vazia; (5) wrappers só usados em testes. A interrupção da primeira execução (limite de sessão)
+  foi retomada a partir do working tree.
+- 2026-10-27 — 2.5, correções autorizadas pelo usuário (ressalvas 1 e 3; 2, 4 e 5 ficam como estão; `.eml` da
+  falha do ranking continua só na 2ª noite). (1) `ler_ranking_para_exportar` (`src/orquestracao/exportar.rs`),
+  depois das checagens antigas, recalcula em memória o ranking do snapshot com as mesmas funções do `sync ranking`
+  (`montar_observacoes`/`linha_do_ranking` viraram `pub(super)` em `src/orquestracao/ranking_taxa.rs`; série
+  filtrada pelo concurso do snapshot antes de `ranquear`) e compara campo a campo, em igualdade exata, com o
+  gravado. Motivos novos: `GeradoDeOutroEstado { dezena }` e `RecalculoFalhou(causa)`; tamanho diferente →
+  `Incompleto`; nenhum vira erro (só erro de banco derruba). Sem esquema novo (não havia impressão gravada pelo
+  `sync ranking`; gravá-la mudaria o esquema). Custo do exportar em cópias (release): 0,26 s / 0,38 s / 1,05 s;
+  nos bancos reais o ranking continua publicado. Teste `resultado_antigo_corrigido_sem_refazer_o_ranking_
+  omite_ate_o_sync_ranking` (correção que mantém as posições do snapshot e muda as notas) + testes de unidade de
+  `comparar_com_recalculo`. `docs/contrato-v1.md`: "não calcula nada" → "não calcula o que publica; pode
+  recalcular em memória só para conferir". (3) `noites_do_aguardar` (`src/orquestracao/alertas.rs` ~385-401):
+  noite com concurso ausente avalia a falha do ranking antes de dispensar o atraso; precedência mantida (erro
+  do ciclo, publicar, ranking, calendário); 2 testes em `tests/alertas.rs`. Gate: fmt, clippy, cargo test 1327,
+  pytest 175, validar todas, app lint/check/1104/build — aprovado. Revisão: aprovado com ressalvas; BAIXAs
+  (Err do recálculo derrubava a exportação, `zip` sem conferir tamanho, ranquear a série inteira) corrigidas na
+  mesma rodada. MÉDIA pendente de aprovação do usuário: `docs/PLANEJAMENTO.md` linhas ~524 ("Exportar não
+  calcula: só lê `ranking_taxa`") e ~585 ("só lê o banco, não calcula nada") ainda descrevem o exportar sem a
+  conferência por recálculo (que já existia para o índice); texto proposto: "não calcula o que publica; pode
+  recalcular só para conferir se a tabela está em dia, como já faz com o índice". O ciclo calcula o ranking duas
+  vezes por loteria (passo 5b e conferência do exportar), custo aceito.

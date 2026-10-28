@@ -1446,6 +1446,9 @@ pub struct DadosExportacao {
     pub feature_version: u32,
     /// Histórico inteiro, em ordem crescente de concurso.
     pub resultados: Vec<Resultado>,
+    /// Ranking por taxa do próximo concurso, lido de `ranking_taxa` (opcional
+    /// no contrato: ausente ou atrasado vira `Omitido`, não erro).
+    pub ranking: RankingParaExportar,
 }
 
 /// `sync exportar`: lê e confere (como o `sync tabela` e o `sync avaliar`)
@@ -1460,9 +1463,13 @@ pub fn dados_para_exportar(
     conferir_loteria_do_perfil(cfg, &carregado.perfil)?;
     let tx = db::iniciar_leitura(conn)?;
     let conferido = ler_indice_conferido(&tx, cfg, carregado)?;
-    drop(tx);
     let tabela = montar_tabela(cfg, carregado, &conferido, None)?;
+    // Na mesma transação de leitura: o ranking é conferido contra o mesmo
+    // índice que deu `tabela`. Só lê; ausente ou atrasado não é erro.
+    let ranking = ler_ranking_para_exportar(&tx, cfg, &tabela, &conferido)?;
+    drop(tx);
     Ok(DadosExportacao {
+        ranking,
         tabela,
         hash_toml: carregado.hash_toml.clone(),
         normalizacao: carregado.perfil.normalizacao,

@@ -12,6 +12,7 @@
 //! v1/<loteria>/ultimo.json
 //! v1/<loteria>/tabela_geral.json
 //! v1/<loteria>/historico.json
+//! v1/<loteria>/ranking_taxa.json   (opcional)
 //! ```
 //!
 //! Os campos e a ordem em que aparecem são o contrato `v1`: depois dele só
@@ -25,7 +26,9 @@ use crate::avaliacao::{Direcao, Grau};
 use crate::dataset::sha256_hex;
 use crate::error::{Result, SpiderError};
 use crate::motor::Normalizacao;
-use crate::orquestracao::{DadosExportacao, LinhaTabela};
+use crate::orquestracao::{
+    DadosExportacao, LinhaTabela, MotivoRankingOmitido, RankingParaExportar, RankingProximo,
+};
 use json::Valor;
 
 /// Versão do esquema dos arquivos, presente em todos eles. Constante única:
@@ -78,16 +81,21 @@ pub const fn normalizacao_no_contrato(normalizacao: Normalizacao) -> &'static st
     }
 }
 
-/// Um dos três arquivos de cada loteria.
+/// Um dos arquivos de cada loteria: os três obrigatórios ([`Arquivo::TODOS`])
+/// e o opcional [`Arquivo::RankingTaxa`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arquivo {
     Ultimo,
     TabelaGeral,
     Historico,
+    /// Opcional: só existe quando `ranking_taxa` está em dia. Fica **fora** de
+    /// [`Arquivo::TODOS`], e a chave some do `index.json` quando falta.
+    RankingTaxa,
 }
 
 impl Arquivo {
-    /// Na ordem em que aparecem no `index.json`.
+    /// Os três arquivos obrigatórios, na ordem em que aparecem no
+    /// `index.json` (o opcional, `RankingTaxa`, vem depois deles).
     pub const TODOS: [Arquivo; 3] = [Arquivo::Ultimo, Arquivo::TabelaGeral, Arquivo::Historico];
 
     /// Chave do arquivo no `index.json`.
@@ -96,6 +104,7 @@ impl Arquivo {
             Arquivo::Ultimo => "ultimo",
             Arquivo::TabelaGeral => "tabela_geral",
             Arquivo::Historico => "historico",
+            Arquivo::RankingTaxa => "ranking_taxa",
         }
     }
 
@@ -105,6 +114,7 @@ impl Arquivo {
             Arquivo::Ultimo => "ultimo.json",
             Arquivo::TabelaGeral => "tabela_geral.json",
             Arquivo::Historico => "historico.json",
+            Arquivo::RankingTaxa => "ranking_taxa.json",
         }
     }
 
@@ -114,32 +124,47 @@ impl Arquivo {
     }
 }
 
-/// Os três arquivos de uma loteria, já em bytes.
+/// Os arquivos de uma loteria, já em bytes: os três obrigatórios e, se o
+/// ranking estava em dia, o `ranking_taxa.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArquivosLoteria {
     pub slug: String,
     pub ultimo: Vec<u8>,
     pub tabela_geral: Vec<u8>,
     pub historico: Vec<u8>,
+    /// `Some` só com o ranking em dia; `None` = não gravar o arquivo (e apagar
+    /// um antigo) e deixar a chave fora do `index.json`.
+    pub ranking_taxa: Option<Vec<u8>>,
+    /// Por que `ranking_taxa` é `None` (sempre `Some` quando é `None`).
+    pub ranking_omitido: Option<MotivoRankingOmitido>,
 }
 
 impl ArquivosLoteria {
+    /// Bytes de um arquivo; o `RankingTaxa` omitido dá uma fatia vazia (quem
+    /// grava confere [`ArquivosLoteria::ranking_taxa`] antes).
     pub fn bytes(&self, arquivo: Arquivo) -> &[u8] {
         match arquivo {
             Arquivo::Ultimo => &self.ultimo,
             Arquivo::TabelaGeral => &self.tabela_geral,
             Arquivo::Historico => &self.historico,
+            Arquivo::RankingTaxa => self.ranking_taxa.as_deref().unwrap_or_default(),
         }
     }
 }
 
-/// Gera os três arquivos de uma loteria.
+/// Gera os arquivos de uma loteria (o `ranking_taxa.json` só se estiver em dia).
 pub fn gerar_loteria(dados: &DadosExportacao) -> Result<ArquivosLoteria> {
+    let (ranking_taxa, ranking_omitido) = match &dados.ranking {
+        RankingParaExportar::EmDia(r) => (Some(ranking_taxa_json(dados, r)?.into_bytes()), None),
+        RankingParaExportar::Omitido(m) => (None, Some(m.clone())),
+    };
     Ok(ArquivosLoteria {
         slug: dados.tabela.loteria.clone(),
         ultimo: ultimo_json(dados)?.into_bytes(),
         tabela_geral: tabela_geral_json(dados)?.into_bytes(),
         historico: historico_json(dados)?.into_bytes(),
+        ranking_taxa,
+        ranking_omitido,
     })
 }
 
@@ -264,6 +289,60 @@ fn entrada_da_dezena(l: &LinhaTabela) -> Result<Valor> {
     ]))
 }
 
+/// Casas decimais fixas das notas e da diferença para o acaso no
+/// `ranking_taxa.json` (as mesmas 9 do `total`).
+pub const CASAS_NOTA: usize = 9;
+
+/// `ranking_taxa.json`: o ranking por taxa do próximo concurso, uma entrada por
+/// dezena em ordem crescente de dezena. Não calcula nada: `diferenca_acaso` é
+/// a subtração trivial `nota_a − K/N` sobre valores já gravados.
+pub fn ranking_taxa_json(dados: &DadosExportacao, ranking: &RankingProximo) -> Result<String> {
+    let t = &dados.tabela;
+    let acaso = f64::from(ranking.qtd_sorteadas) / f64::from(ranking.qtd_dezenas);
+    let mut linhas = ranking.linhas.iter().collect::<Vec<_>>();
+    linhas.sort_by_key(|l| l.dezena);
+    let dezenas = linhas
+        .into_iter()
+        .map(|l| {
+            if l.concurso != t.concurso {
+                return Err(SpiderError::ExportacaoInvalida(format!(
+                    "o ranking traz o concurso {} para a dezena {}, mas o snapshot é do {}",
+                    l.concurso, l.dezena, t.concurso
+                )));
+            }
+            Ok(Valor::objeto(vec![
+                ("dezena", Valor::inteiro(l.dezena)),
+                ("posicao_indice", Valor::inteiro(l.posicao_indice)),
+                ("nota_a", Valor::fixo(l.taxa_posicao, CASAS_NOTA)?),
+                (
+                    "diferenca_acaso",
+                    Valor::fixo(l.taxa_posicao - acaso, CASAS_NOTA)?,
+                ),
+                ("nota_b", Valor::fixo(l.nota_b, CASAS_NOTA)?),
+                ("posicao_a", Valor::inteiro(l.posicao_ranking_a)),
+                ("posicao_b", Valor::inteiro(l.posicao_ranking_b)),
+            ]))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Valor::objeto(vec![
+        ("schema_version", Valor::inteiro(SCHEMA_VERSION)),
+        ("loteria", Valor::texto(&t.loteria)),
+        ("perfil", Valor::texto(&t.perfil)),
+        ("hash_toml", Valor::texto(&dados.hash_toml)),
+        ("janela", Valor::inteiro(t.janela)),
+        (
+            "normalizacao",
+            Valor::texto(normalizacao_no_contrato(dados.normalizacao)),
+        ),
+        ("feature_version", Valor::inteiro(dados.feature_version)),
+        ("concurso", Valor::inteiro(t.concurso)),
+        ("ultimo_sorteado", Valor::inteiro(t.ultimo_sorteado)),
+        ("taxa_acaso", Valor::fixo(acaso, CASAS_NOTA)?),
+        ("dezenas", Valor::Lista(dezenas)),
+    ])
+    .para_arquivo())
+}
+
 /// SHA-256 (hex minúsculo) e tamanho em bytes de um arquivo exportado.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Impressao {
@@ -288,6 +367,9 @@ pub struct LoteriaNoIndice {
     pub data: String,
     /// Na ordem de [`Arquivo::TODOS`].
     pub arquivos: [Impressao; 3],
+    /// O `ranking_taxa.json`, se está no disco; `None` = a chave fica fora do
+    /// `index.json`.
+    pub ranking_taxa: Option<Impressao>,
 }
 
 /// `index.json`: uma entrada por loteria, na ordem dada (a do config);
@@ -297,9 +379,11 @@ pub fn index_json(gerado_em: &str, loterias: &[(&str, Option<LoteriaNoIndice>)])
         .iter()
         .map(|(slug, entrada)| {
             let valor = entrada.as_ref().map_or(Valor::Nulo, |e| {
+                let opcional = e.ranking_taxa.as_ref().map(|i| (&Arquivo::RankingTaxa, i));
                 let arquivos = Arquivo::TODOS
                     .iter()
                     .zip(&e.arquivos)
+                    .chain(opcional)
                     .map(|(a, i)| {
                         (
                             a.chave(),
@@ -382,6 +466,7 @@ mod tests {
             hash_toml: "abc".into(),
             normalizacao: Normalizacao::Zscore,
             feature_version: 1,
+            ranking: RankingParaExportar::Omitido(MotivoRankingOmitido::SemTabela),
             resultados: vec![
                 resultado(1, "2020-01-02", &[5, 3, 9, 1, 7]),
                 resultado(2, "2020-01-04", &[8, 2, 4, 6, 10]),
@@ -453,6 +538,7 @@ mod tests {
                 Impressao::de(b"bb"),
                 Impressao::de(b"ccc"),
             ],
+            ranking_taxa: None,
         };
         let j = index_json(
             "2026-10-12T10:00:00Z",

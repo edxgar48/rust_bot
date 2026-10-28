@@ -10,9 +10,9 @@ use rust_spider::error::SpiderError;
 use rust_spider::orquestracao::{
     executar_ciclo, executar_ciclo_aguardando, listar_pendentes, noites_do_aguardar,
     noites_do_ciclo, registrar_falha_geral, registrar_noite, EstadoAlertas, Evento, EventoAlerta,
-    NoiteAlvo, PastasAlertas, PastasCiclo, PublicacaoLoteria, RelatorioAguardar, RelatorioCiclo,
-    ResumoLoteria, ALVO_GERAL, ARQUIVO_DESTINATARIO, ARQUIVO_ESTADO_ALERTAS, NOITES_DO_LEMBRETE,
-    NOITES_PARA_ALERTA, PASTA_ENVIADOS,
+    NoiteAlvo, PastasAlertas, PastasCiclo, PublicacaoLoteria, RankingDoCiclo, RelatorioAguardar,
+    RelatorioCiclo, ResumoAguardar, ResumoLoteria, ALVO_GERAL, ARQUIVO_DESTINATARIO,
+    ARQUIVO_ESTADO_ALERTAS, NOITES_DO_LEMBRETE, NOITES_PARA_ALERTA, PASTA_ENVIADOS,
 };
 use rust_spider::publicacao::{Desfecho, Destino, Preparo};
 use rust_spider::trava::Trava;
@@ -567,6 +567,7 @@ fn ciclo_ok(publicacao: Result<Desfecho>, exportada: bool) -> RelatorioCiclo {
             concurso_novo: false,
             backfill: false,
             exportada,
+            ranking: Default::default(),
             falha: None,
         }],
         publicacao,
@@ -652,6 +653,67 @@ fn concurso_que_so_nao_saiu_ate_a_janela_fechar_nao_conta() {
         &mut |_| {},
     );
     assert!(noites[0].falha.is_none(), "Aguardando não é Atrasado");
+}
+
+/// Relatório de uma noite do `--aguardar` em que o concurso novo não saiu até
+/// o fim da janela; `falha_ranking` é o erro do passo do ranking, se houver.
+fn aguardar_ausente(falha_ranking: Option<&str>) -> RelatorioAguardar {
+    RelatorioAguardar {
+        loterias: vec![ResumoAguardar {
+            resumo: ResumoLoteria {
+                slug: "quina",
+                ultimo_concurso: Some(1),
+                concurso_novo: false,
+                backfill: false,
+                exportada: false,
+                ranking: RankingDoCiclo {
+                    falha: falha_ranking.map(str::to_string),
+                    omitido: None,
+                },
+                falha: None,
+            },
+            tentativas: 3,
+            concurso_ausente: Some("2026-10-13".into()),
+            erros_de_forma: 0,
+        }],
+        publicacoes: Vec::new(),
+        rodadas: 3,
+        janela_ate: 0,
+    }
+}
+
+#[test]
+fn aguardar_com_concurso_ausente_conta_a_falha_do_ranking_e_alerta_na_segunda_noite() {
+    let c = Cena::nova(&["quina"]);
+    c.semear("quina", 1, "2026-10-12");
+    let agora = brasilia("2026-10-14", 1, 0) as i64;
+    let relatorio = aguardar_ausente(Some("tabela ranking_taxa corrompida"));
+    let noites = noites_do_aguardar(&c.alvos, &relatorio, agora, &mut |_| {});
+    let falha = noites[0].falha.as_ref().expect("falha do ranking conta");
+    assert_eq!(falha.etapa, "ranking");
+    assert!(!falha.mudanca_de_pagina);
+
+    let r1 = registrar_direto(&c, "2026-10-13", &noites);
+    assert!(r1.gerados.is_empty());
+    let r2 = registrar_direto(&c, "2026-10-14", &noites);
+    assert_eq!(r2.gerados.len(), 1);
+    let eml = ler(&r2.gerados[0]);
+    assert!(eml.contains("Etapa em que falhou: ranking"), "{eml}");
+}
+
+#[test]
+fn aguardar_com_concurso_ausente_sem_falha_do_ranking_continua_sem_falha() {
+    let c = Cena::nova(&["quina"]);
+    // Último concurso bem antigo: o calendário diria Atrasado, mas o concurso
+    // ausente dispensa essa checagem (comportamento anterior).
+    c.semear("quina", 1, "2026-10-05");
+    let agora = brasilia("2026-10-14", 1, 0) as i64;
+    let mut eventos = Vec::new();
+    let noites = noites_do_aguardar(&c.alvos, &aguardar_ausente(None), agora, &mut |e| {
+        eventos.push(e)
+    });
+    assert!(noites[0].falha.is_none());
+    assert!(eventos.is_empty());
 }
 
 // ---------------------------------------------------------------------------

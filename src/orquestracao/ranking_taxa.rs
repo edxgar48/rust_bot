@@ -183,7 +183,7 @@ pub fn sincronizar_ranking_com(
 /// perfil: a entrada de [`avaliacao::calcular_taxas`]. Índice e features têm
 /// de ter exatamente as mesmas chaves, na mesma ordem
 /// ([`SpiderError::IndiceIncoerente`] se não).
-fn montar_observacoes(
+pub(super) fn montar_observacoes(
     cfg: &LoteriaConfig,
     perfil: &str,
     indice: &[IndiceDezena],
@@ -205,7 +205,7 @@ fn montar_observacoes(
         .collect())
 }
 
-fn linha_do_ranking(l: &LinhaRanking) -> db::LinhaRankingTaxa {
+pub(super) fn linha_do_ranking(l: &LinhaRanking) -> db::LinhaRankingTaxa {
     db::LinhaRankingTaxa {
         concurso: l.concurso,
         dezena: l.dezena,
