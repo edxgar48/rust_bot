@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+      - 'scripts/verificar-segredos.mjs'
       - '.github/workflows/app-pages.yml'
   workflow_dispatch:
 
@@ -33,11 +34,17 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Segredos no repositório
+        working-directory: .
+        run: node scripts/verificar-segredos.mjs
       - run: npm ci
       - run: npm run lint
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - name: Segredos no bundle publicado
+        working-directory: .
+        run: node scripts/verificar-segredos.mjs --pasta app/dist
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

@@ -9,7 +9,8 @@
     "build:catalogo": "vite build --mode catalogo --outDir dist-catalogo",
     "preview:catalogo": "vite preview --outDir dist-catalogo",
     "preview": "vite preview",
-    "lint": "eslint . && prettier --check .",
+    "verificar:env": "node scripts/verificar-env.mjs",
+    "lint": "eslint . && prettier --check . && node scripts/verificar-env.mjs",
     "formatar": "prettier --write .",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"
