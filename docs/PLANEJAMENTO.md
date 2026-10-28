@@ -521,7 +521,9 @@ independentes e o resultado esperado da avaliação é "não supera o acaso".
     dezena, posição no índice, nota A, diferença para o acaso (A − K/N), nota
     B e as duas posições no ranking (por A e por B). Sem `taxa_posicao`, sem
     `taxa_faixa`, sem grau de evidência e sem a faixa de cada componente.
-  - **Exportar não calcula**: só lê `ranking_taxa`.
+  - **Exportar não calcula o que publica**: lê `ranking_taxa`; pode
+    recalcular só para conferir se a tabela está em dia, como já faz com o
+    índice (em igualdade exata; se não bater, omite o arquivo).
   - **Ranking ausente ou atrasado**: o `sync exportar` publica o resto sem o
     `ranking_taxa.json`; a chave fica ausente de `arquivos` no `index.json`.
   - **`sync ciclo`** passa a rodar `sync ranking` antes do exportar; falha do
@@ -582,7 +584,8 @@ Tarefas:
   determinística (mesmos dados → mesmos bytes).
 - **Regras do `sync exportar`** (decisões de 2026-10-12; os campos são o
   contrato `v1`: depois só se acrescenta campo opcional):
-  - **pré-condições**: só lê o banco, não calcula nada; recusa e não grava
+  - **pré-condições**: só lê o banco, não calcula o que publica (pode
+    recalcular só para conferir se a tabela está em dia); recusa e não grava
     nada se features ou índice do perfil não estiverem em dia (como o
     `sync tabela` e o `sync avaliar`);
   - **perfil**: sempre o perfil ativo da loteria (`perfil_ativo` do
