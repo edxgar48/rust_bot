@@ -23,6 +23,7 @@ import {
   textos,
   textosComponentes,
 } from '../lib/textos';
+import type { G1DaDezena } from './forca';
 
 export interface ItemComponente {
   readonly chave: ChaveComponente;
@@ -55,6 +56,14 @@ export interface VariacaoDetalhe {
   readonly texto: string;
 }
 
+export interface G1Detalhe {
+  /** "5º lugar". */
+  readonly valor: string;
+  readonly numero: number;
+  /** Variação da dezena no G-1 (mesmo sentido da variação de posição: positivo = subiu); `sem` = sem concurso anterior. */
+  readonly variacao: VariacaoDetalhe;
+}
+
 export interface DetalheDezena {
   readonly dezena: number;
   readonly posicao: number;
@@ -63,6 +72,8 @@ export interface DetalheDezena {
   /** Índice com 3 casas. */
   readonly indice: string;
   readonly variacao: VariacaoDetalhe;
+  /** G-1 da dezena; `null` = sem ranking_posicoes.json (o bloco some). */
+  readonly g1: G1Detalhe | null;
   /** `null` = sem evidência calculada. */
   readonly evidencia: EvidenciaDetalhe | null;
   readonly janela: string;
@@ -125,8 +136,21 @@ export function descreverComponente(chave: ChaveComponente, valor: number | null
   };
 }
 
+export function descreverG1(g1: G1DaDezena | null): G1Detalhe | null {
+  if (g1 === null) return null;
+  return {
+    numero: g1.g1,
+    valor: textos.detalhe.g1.valor(g1.g1),
+    variacao: descreverVariacao(g1.variacao),
+  };
+}
+
 /** Detalhe da dezena, ou `null` se a tabela não a tem. */
-export function montarDetalheDaDezena(tabela: TabelaGeralV1, dezena: number): DetalheDezena | null {
+export function montarDetalheDaDezena(
+  tabela: TabelaGeralV1,
+  dezena: number,
+  g1: ReadonlyMap<number, G1DaDezena> | null = null,
+): DetalheDezena | null {
   const d = tabela.dezenas.find((x) => x.dezena === dezena);
   if (d === undefined) return null;
   return {
@@ -135,6 +159,7 @@ export function montarDetalheDaDezena(tabela: TabelaGeralV1, dezena: number): De
     titulo: textos.detalhe.titulo(d.dezena, d.posicao),
     indice: formatarIndice(d.total),
     variacao: descreverVariacao(d.variacaoPosicao),
+    g1: descreverG1(g1?.get(d.dezena) ?? null),
     evidencia: descreverEvidencia(d.evidenciaGrau, d.evidenciaDirecao),
     janela: textos.detalhe.janela(tabela.janela),
     componentes: CHAVES_COMPONENTES.map((chave) => descreverComponente(chave, d[chave])),

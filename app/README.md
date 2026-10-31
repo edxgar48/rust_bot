@@ -251,6 +251,11 @@ concursos, janela)` com janelas 10/50/100/`'total'` (últimos N; com menos concu
   mesmo sha256/bytes/cache dos demais. No celular cada dezena é um bloco (papéis ARIA de tabela), sem rolagem
   horizontal; a partir de 40rem vira tabela de 7 colunas. Testes: `testes/ranking-taxa.test.ts`,
   `telas/Estatisticas.ranking.test.ts`, `lib/rotas.test.ts`, `lib/textos-varredura.test.ts`.
+- 7.8 G-1 na Força (`telas/forca.ts`, `componentes/LinhaRanking.svelte`, `telas/Forca.svelte`): com a chave opcional
+  `ranking_posicoes` no índice, a Lista ganha o selo "G-1 N" e a chave "Ordenar por: Força | G-1" (preferência em
+  `forca.ordem` e `&ordem=g1`); o detalhe da dezena mostra o G-1 e a variação da dezena. Baixado junto da Força, com
+  o mesmo sha256/bytes/cache. Sem o arquivo (ou de outro concurso que a tabela) a tela fica como antes, sem erro.
+  Testes: `testes/ranking-posicoes.test.ts`, `telas/visao-g1.test.ts`, `telas/Forca.g1.test.ts`.
 - Download sob demanda (`src/dados/sob-demanda.ts`): a abertura baixa só `index.json` +
   `ultimo.json` das 3 loterias. `tabela_geral` e `historico` vêm (1) quando a tela abre, por
   `sessao.garantir({ arquivos, loterias })` (devolve o cache se estiver sem rede), e (2) em

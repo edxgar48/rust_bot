@@ -112,6 +112,52 @@ export class ServidorFalso {
     this.gravarIndice(indice);
   }
 
+  /**
+   * Publica o ranking_posicoes.json das loterias dadas e a chave opcional `ranking_posicoes` do índice.
+   *
+   * Por padrão (`alinhado`) o arquivo é reescrito para o MESMO snapshot da tabela_geral base (as
+   * fixtures reais de G-1 são de outro concurso): concurso/ultimo_sorteado e `posicao_indice` vêm da
+   * tabela base, e cada dezena herda o `g_1` real da posição que passa a ocupar (é assim que o
+   * back-end monta o arquivo). Os `variacao_g_1` aqui são ILUSTRATIVOS (a definição é por dezena e
+   * os valores reais das fixtures são de outra definição): `(dezena % 5) - 2`, e `null` na dezena 1.
+   * Com `alinhado: false` serve a fixture real como veio (outro snapshot da tabela base).
+   */
+  async publicarRankingPosicoes(
+    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina'],
+    { alinhado = true }: { alinhado?: boolean } = {},
+  ): Promise<void> {
+    const indice = this.indice();
+    for (const slug of slugs) {
+      const caminho = `${slug}/ranking_posicoes.json`;
+      let bytes = lerFixture(caminho);
+      if (alinhado) {
+        const real = JSON.parse(lerFixtureTexto(caminho));
+        const tabela = JSON.parse(lerFixtureTexto(`${slug}/tabela_geral.json`));
+        const g1DaPosicao = new Map<number, number>(
+          real.dezenas.map((d: any) => [d.posicao_indice, d.g_1]),
+        );
+        real.concurso = tabela.concurso;
+        real.ultimo_sorteado = tabela.ultimo_sorteado;
+        real.dezenas = [...tabela.dezenas]
+          .sort((a: any, b: any) => a.dezena - b.dezena)
+          .map((d: any) => ({
+            dezena: d.dezena,
+            posicao_indice: d.posicao,
+            g_1: g1DaPosicao.get(d.posicao),
+            variacao_g_1: d.dezena === 1 ? null : (d.dezena % 5) - 2,
+          }));
+        bytes = codificar(JSON.stringify(real, null, 2) + '\n');
+      }
+      this.arquivos.set(caminho, bytes);
+      indice.loterias[slug].arquivos.ranking_posicoes = {
+        caminho,
+        sha256: await sha256Hex(bytes),
+        bytes: bytes.byteLength,
+      };
+    }
+    this.gravarIndice(indice);
+  }
+
   /** Modifica o JSON de um arquivo (parse, função, stringify) e atualiza o índice. */
   async alterarJson(caminho: string, fn: (json: any) => void): Promise<void> {
     const json = JSON.parse(new TextDecoder().decode(this.arquivos.get(caminho)));

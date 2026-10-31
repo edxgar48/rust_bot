@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "loteria": "lotofacil",
+  "perfil": "padrao_v1",
+  "hash_toml": "02106f8563c2ee47364ecc6b0ec49803a53d127d8ecfdba41bdd1f725b2a5b94",
+  "janela": 50,
+  "normalizacao": "zscore",
+  "feature_version": 1,
+  "concurso": 3819,
+  "ultimo_sorteado": 3818,
+  "perfil_posicoes": "posicoes_v1",
+  "hash_toml_posicoes": "e4b37974d5c50e6f15e5350d86996d50d0ccc69e301e708f21f8d41a5dfa5347",
+  "janela_posicoes": 50,
+  "normalizacao_posicoes": "zscore",
+  "dezenas": [
+    {
+      "dezena": 1,
+      "posicao_indice": 16,
+      "g_1": 1,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 2,
+      "posicao_indice": 25,
+      "g_1": 20,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 3,
+      "posicao_indice": 7,
+      "g_1": 23,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 4,
+      "posicao_indice": 19,
+      "g_1": 25,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 5,
+      "posicao_indice": 15,
+      "g_1": 9,
+      "variacao_g_1": -3
+    },
+    {
+      "dezena": 6,
+      "posicao_indice": 12,
+      "g_1": 12,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 7,
+      "posicao_indice": 1,
+      "g_1": 4,
+      "variacao_g_1": -1
+    },
+    {
+      "dezena": 8,
+      "posicao_indice": 5,
+      "g_1": 5,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 9,
+      "posicao_indice": 13,
+      "g_1": 6,
+      "variacao_g_1": 4
+    },
+    {
+      "dezena": 10,
+      "posicao_indice": 20,
+      "g_1": 8,
+      "variacao_g_1": 1
+    },
+    {
+      "dezena": 11,
+      "posicao_indice": 17,
+      "g_1": 10,
+      "variacao_g_1": 5
+    },
+    {
+      "dezena": 12,
+      "posicao_indice": 10,
+      "g_1": 3,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 13,
+      "posicao_indice": 14,
+      "g_1": 22,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 14,
+      "posicao_indice": 24,
+      "g_1": 15,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 15,
+      "posicao_indice": 6,
+      "g_1": 19,
+      "variacao_g_1": -7
+    },
+    {
+      "dezena": 16,
+      "posicao_indice": 4,
+      "g_1": 13,
+      "variacao_g_1": 4
+    },
+    {
+      "dezena": 17,
+      "posicao_indice": 11,
+      "g_1": 21,
+      "variacao_g_1": -8
+    },
+    {
+      "dezena": 18,
+      "posicao_indice": 21,
+      "g_1": 18,
+      "variacao_g_1": 1
+    },
+    {
+      "dezena": 19,
+      "posicao_indice": 2,
+      "g_1": 24,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 20,
+      "posicao_indice": 22,
+      "g_1": 7,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 21,
+      "posicao_indice": 18,
+      "g_1": 2,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 22,
+      "posicao_indice": 23,
+      "g_1": 16,
+      "variacao_g_1": -5
+    },
+    {
+      "dezena": 23,
+      "posicao_indice": 9,
+      "g_1": 11,
+      "variacao_g_1": -7
+    },
+    {
+      "dezena": 24,
+      "posicao_indice": 8,
+      "g_1": 14,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 25,
+      "posicao_indice": 3,
+      "g_1": 17,
+      "variacao_g_1": 4
+    }
+  ]
+}

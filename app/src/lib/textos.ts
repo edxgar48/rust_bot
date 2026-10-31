@@ -85,6 +85,26 @@ export const textos = {
       jogo: 'Jogo',
       indice: 'Índice',
       evidencia: 'Evidência (grau · direção)',
+      // Cabeçalho da primeira coluna quando a lista está ordenada pelo G-1.
+      g1: 'G-1',
+    },
+    // G-1 (7.8): um dado extra da lista, do ranking_posicoes.json. Descreve o passado.
+    ordem: {
+      rotuloGrupo: 'Ordenar por',
+      forca: 'Força',
+      g1: 'G-1',
+      anunciadaForca: 'Lista ordenada pela posição na tabela de força.',
+      anunciadaG1: 'Lista ordenada pelo G-1.',
+    },
+    g1: {
+      // Selo da linha ordenada por força: o G-1 da dezena.
+      selo: (g1: number) => `G-1 ${g1}º`,
+      seloFalado: (g1: number) => `G-1: ${g1}º lugar`,
+      // Selo da linha ordenada por G-1: a posição na tabela de força.
+      seloForca: (posicao: number) => `Força ${posicao}º`,
+      seloForcaFalado: (posicao: number) => `Tabela de força: ${posicao}º lugar`,
+      // Primeira coluna da linha ordenada por G-1.
+      posicaoFalada: (g1: number) => `G-1: ${g1}º lugar`,
     },
     // Montar um jogo a partir da tabela (7.5): só uma conveniência para marcar dezenas.
     rascunho: {
@@ -470,6 +490,14 @@ export const textos = {
       'A evidência mede o quanto os dados convencem, não o tamanho do desvio, e nunca prevê o sorteio.',
     semDados: 'sem dados na janela',
     nuncaSaiu: '-',
+    // G-1 da dezena (7.8), quando o ranking_posicoes.json existe.
+    g1: {
+      titulo: 'G-1',
+      lugar: 'Lugar no índice das posições',
+      valor: (g1: number) => `${g1}º lugar`,
+      variacao: 'Variação da dezena no G-1',
+      nota: 'O G-1 é o lugar, no índice das posições, da posição que esta dezena ocupa na tabela de força. Descreve o passado e não prevê o sorteio.',
+    },
   },
   // Avisos permanentes das telas. Ficam juntos para a revisão de linguagem (5.4)
   // e para o teste de termos proibidos; cada tela escolhe o seu, sem texto próprio.
@@ -477,8 +505,13 @@ export const textos = {
     naoPreveInicio:
       'Cada sorteio é independente: nenhuma dezena tem mais chance de sair por causa do histórico. Este app não prevê resultados.',
     naoPreveForca: 'O índice resume o passado de cada dezena. Ele não prevê o sorteio.',
+    // Mesma tela quando o G-1 está na lista (7.8): o aviso passa a citá-lo.
+    naoPreveForcaG1:
+      'O índice e o G-1 resumem o passado de cada dezena e não preveem o sorteio. Cada sorteio é independente.',
     naoPreveDetalhe:
       'O índice descreve o passado desta dezena e não prevê o sorteio. Cada sorteio é independente.',
+    naoPreveDetalheG1:
+      'O índice e o G-1 descrevem o passado desta dezena e não preveem o sorteio. Cada sorteio é independente.',
     naoPreveHistorico:
       'O histórico mostra o que já foi sorteado. Ele não prevê o sorteio: cada concurso é independente dos anteriores.',
     naoPreveEstatisticas:
@@ -688,6 +721,13 @@ export const textos = {
         'Para cada dezena, o app junta nove medidas do histórico (veja abaixo), coloca todas na mesma escala e combina com pesos definidos num perfil. A dezena de maior índice fica em 1º lugar na tabela de força.',
         'A tabela é só uma forma de ordenar o passado. Ela não diz nada sobre o próximo sorteio.',
         'Nos testes feitos pelo projeto, o índice não superou o acaso no critério principal de avaliação.',
+      ],
+    },
+    g1: {
+      titulo: 'O que é o G-1',
+      paragrafos: [
+        'O G-1 aparece na lista da tabela de força, quando disponível, como um dado a mais. A posição de cada dezena na tabela de força é marcada nos concursos passados, e essas posições ganham um índice próprio; o G-1 é o lugar de cada posição nesse índice, e cada dezena mostra o G-1 da posição que ocupa agora.',
+        'É uma descrição do passado: os sorteios são independentes, e a avaliação feita pelo projeto não encontrou vantagem sobre o acaso.',
       ],
     },
     componentes: {

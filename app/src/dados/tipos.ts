@@ -6,10 +6,10 @@ export const SLUGS = ['lotofacil', 'megasena', 'quina'] as const;
 export type Slug = (typeof SLUGS)[number];
 
 // Os três arquivos obrigatórios (o padrão de sincronização e de leitura do cache) e o
-// opcional `ranking_taxa`, que só é baixado quando a aba que o usa pede.
+// opcionais `ranking_taxa` e `ranking_posicoes`, que só são baixados quando a tela que os usa pede.
 export const CHAVES_ARQUIVO = ['ultimo', 'tabela_geral', 'historico'] as const;
 export type ChaveObrigatoria = (typeof CHAVES_ARQUIVO)[number];
-export type ChaveArquivo = ChaveObrigatoria | 'ranking_taxa';
+export type ChaveArquivo = ChaveObrigatoria | 'ranking_taxa' | 'ranking_posicoes';
 
 export interface ParametrosLoteria {
   /** Quantidade de dezenas do volante (25, 60 ou 80). */
@@ -53,6 +53,8 @@ export interface LoteriaNoIndice {
   readonly arquivos: Readonly<Record<ChaveObrigatoria, DescritorArquivo>> & {
     /** Opcional no contrato: a chave some do índice quando o ranking não foi publicado. */
     readonly ranking_taxa?: DescritorArquivo;
+    /** Opcional no contrato: some do índice quando o G-1 não foi publicado (ou está atrasado). */
+    readonly ranking_posicoes?: DescritorArquivo;
   };
 }
 
@@ -164,9 +166,40 @@ export interface RankingTaxaV1 {
   readonly dezenas: readonly DezenaDoRanking[];
 }
 
+// ranking_posicoes.json (opcional): o G-1 por dezena, em ordem crescente de dezena.
+export interface DezenaDoG1 {
+  readonly dezena: number;
+  /** Igual à `posicao` da dezena em tabela_geral.json. */
+  readonly posicaoIndice: number;
+  /** G-1: lugar (1 = o melhor) da posição da dezena no índice das posições. Não é probabilidade. */
+  readonly g1: number;
+  /** Da DEZENA: `g_1` dela no concurso anterior menos o atual (positivo = subiu); `null` = sem concurso anterior. */
+  readonly variacaoG1: number | null;
+}
+
+export interface RankingPosicoesV1 {
+  readonly schemaVersion: 1;
+  readonly loteria: Slug;
+  readonly perfil: string;
+  readonly hashToml: string;
+  readonly janela: number;
+  readonly normalizacao: Normalizacao;
+  readonly featureVersion: number;
+  /** Próximo concurso (ainda não sorteado). */
+  readonly concurso: number;
+  readonly ultimoSorteado: number;
+  readonly perfilPosicoes: string;
+  readonly hashTomlPosicoes: string;
+  readonly janelaPosicoes: number;
+  readonly normalizacaoPosicoes: Normalizacao;
+  /** Em ordem crescente de dezena, como no arquivo. */
+  readonly dezenas: readonly DezenaDoG1[];
+}
+
 export interface DadosPorChave {
   readonly ultimo: UltimoV1;
   readonly tabela_geral: TabelaGeralV1;
   readonly historico: HistoricoV1;
   readonly ranking_taxa: RankingTaxaV1;
+  readonly ranking_posicoes: RankingPosicoesV1;
 }

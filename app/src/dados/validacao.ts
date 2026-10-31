@@ -22,6 +22,8 @@ import {
   type IndiceV1,
   type LoteriaNoIndice,
   type Normalizacao,
+  type DezenaDoG1,
+  type RankingPosicoesV1,
   type RankingTaxaV1,
   type Slug,
   type TabelaGeralV1,
@@ -194,6 +196,7 @@ export function validarIndice(valor: unknown): IndiceV1 {
     const arq = objeto(l.arquivos, `${onde}.arquivos`);
     const arquivos = {} as Record<ChaveObrigatoria, DescritorArquivo> & {
       ranking_taxa?: DescritorArquivo;
+      ranking_posicoes?: DescritorArquivo;
     };
     for (const chave of CHAVES_ARQUIVO) {
       arquivos[chave] = descritor(arq[chave], `${onde}.arquivos.${chave}`);
@@ -201,6 +204,12 @@ export function validarIndice(valor: unknown): IndiceV1 {
     // Opcional: a chave some quando o ranking não foi publicado (null também é tolerado).
     if (arq.ranking_taxa !== undefined && arq.ranking_taxa !== null) {
       arquivos.ranking_taxa = descritor(arq.ranking_taxa, `${onde}.arquivos.ranking_taxa`);
+    }
+    if (arq.ranking_posicoes !== undefined && arq.ranking_posicoes !== null) {
+      arquivos.ranking_posicoes = descritor(
+        arq.ranking_posicoes,
+        `${onde}.arquivos.ranking_posicoes`,
+      );
     }
     loterias[s] = {
       ultimoConcurso: inteiro(l.ultimo_concurso, `${onde}.ultimo_concurso`, 1),
@@ -455,6 +464,81 @@ export function validarRankingTaxa(valor: unknown, esperada?: Slug): RankingTaxa
     concurso,
     ultimoSorteado,
     taxaAcaso,
+    dezenas,
+  };
+}
+
+export function validarRankingPosicoes(valor: unknown, esperada?: Slug): RankingPosicoesV1 {
+  const nome = 'ranking_posicoes.json';
+  const o = objeto(valor, nome);
+  const loteria = cabecalhoLoteria(o, nome, esperada);
+  const total = PARAMETROS_LOTERIA[loteria].totalDezenas;
+  const normalizacao: Normalizacao = enumerado(
+    o.normalizacao,
+    NORMALIZACOES,
+    `${nome}.normalizacao`,
+  );
+  const normalizacaoPosicoes: Normalizacao = enumerado(
+    o.normalizacao_posicoes,
+    NORMALIZACOES,
+    `${nome}.normalizacao_posicoes`,
+  );
+  const concurso = inteiro(o.concurso, `${nome}.concurso`, 1);
+  const ultimoSorteado = inteiro(o.ultimo_sorteado, `${nome}.ultimo_sorteado`, 1);
+  if (concurso !== ultimoSorteado + 1) {
+    falha(
+      `${nome}.concurso`,
+      `deve ser ultimo_sorteado + 1 (${ultimoSorteado + 1}), veio ${concurso}.`,
+    );
+  }
+  const itens = lista(o.dezenas, `${nome}.dezenas`);
+  if (itens.length !== total) {
+    falha(`${nome}.dezenas`, `${loteria} tem ${total} dezenas, vieram ${itens.length}.`);
+  }
+  const dezenas: DezenaDoG1[] = [];
+  for (const [i, item] of itens.entries()) {
+    const onde = `${nome}.dezenas[${i}]`;
+    const e = objeto(item, onde);
+    const dezena = inteiro(e.dezena, `${onde}.dezena`);
+    if (dezena !== i + 1) {
+      falha(
+        `${onde}.dezena`,
+        `esperada a dezena ${i + 1} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
+      );
+    }
+    dezenas.push({
+      dezena,
+      posicaoIndice: inteiro(e.posicao_indice, `${onde}.posicao_indice`, 1),
+      g1: inteiro(e.g_1, `${onde}.g_1`, 1),
+      // Ausente ou null = sem concurso anterior (nunca zero).
+      variacaoG1:
+        e.variacao_g_1 === undefined || e.variacao_g_1 === null
+          ? null
+          : inteiro(e.variacao_g_1, `${onde}.variacao_g_1`),
+    });
+  }
+  exigirPermutacao(
+    dezenas.map((d) => d.posicaoIndice),
+    `${nome}.dezenas[].posicao_indice`,
+  );
+  exigirPermutacao(
+    dezenas.map((d) => d.g1),
+    `${nome}.dezenas[].g_1`,
+  );
+  return {
+    schemaVersion: 1,
+    loteria,
+    perfil: texto(o.perfil, `${nome}.perfil`),
+    hashToml: sha256(o.hash_toml, `${nome}.hash_toml`),
+    janela: inteiro(o.janela, `${nome}.janela`, 0),
+    normalizacao,
+    featureVersion: inteiro(o.feature_version, `${nome}.feature_version`, 1),
+    concurso,
+    ultimoSorteado,
+    perfilPosicoes: texto(o.perfil_posicoes, `${nome}.perfil_posicoes`),
+    hashTomlPosicoes: sha256(o.hash_toml_posicoes, `${nome}.hash_toml_posicoes`),
+    janelaPosicoes: inteiro(o.janela_posicoes, `${nome}.janela_posicoes`, 0),
+    normalizacaoPosicoes,
     dezenas,
   };
 }

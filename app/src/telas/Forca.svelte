@@ -13,26 +13,31 @@
   import {
     gravarExibicaoGuardada,
     gravarLoteriaGuardada,
+    gravarOrdemGuardada,
     lerExibicaoGuardada,
     lerLoteriaGuardada,
+    lerOrdemGuardada,
   } from '../lib/loteria-guardada';
   import {
     EXIBICAO_PADRAO,
     LOTERIA_PADRAO,
+    ORDEM_PADRAO,
     dezenaDoHash,
     exibicaoDoHash,
     hashDaForca,
     hashDoJogo,
     loteriaDoHash,
+    ordemDoHash,
     rotaDoHash,
     type ExibicaoForca,
+    type OrdemForca,
   } from '../lib/rotas';
   import { doisDigitos } from '../lib/numeros';
   import { textos } from '../lib/textos';
   import DetalheDezena from './DetalheDezena.svelte';
   import { montarDetalheDaDezena } from './detalhe-dezena';
   import type { EstadoTela, SituacaoTela } from './estado-tela';
-  import { montarVisaoForca } from './forca';
+  import { montarVisaoForca, ordenarLinhas } from './forca';
   import { alternarNoRascunho, dezenasDoRascunho, pedirAbertura } from './rascunho-jogo';
 
   interface Props {
@@ -53,6 +58,11 @@
   let visaoEscolhida = $state<ExibicaoForca>(
     exibicaoDoHash(location.hash) ?? lerExibicaoGuardada() ?? EXIBICAO_PADRAO,
   );
+  // Ordem da lista (7.8): mesma precedência. Só vale com o G-1 na tela; sem ele a lista é por força.
+  let ordemEscolhida = $state<OrdemForca>(
+    ordemDoHash(location.hash) ?? lerOrdemGuardada() ?? ORDEM_PADRAO,
+  );
+  let anuncioOrdem = $state('');
   // Dezena com o detalhe aberto (&dezena=20 na URL, para o botão voltar fechar).
   let dezenaAberta = $state<number | null>(dezenaDoHash(location.hash));
   let raiz: HTMLElement | undefined = $state();
@@ -68,10 +78,22 @@
     { valor: 'volante', rotulo: textos.forca.visaoVolante },
   ];
 
+  const opcoesOrdem: readonly OpcaoSegmentada<OrdemForca>[] = [
+    { valor: 'forca', rotulo: textos.forca.ordem.forca },
+    { valor: 'g1', rotulo: textos.forca.ordem.g1 },
+  ];
+
   const visao = $derived(montarVisaoForca(loteria, situacao));
+  const comG1 = $derived(visao.tipo === 'conteudo' && visao.g1 !== null);
+  // A chave só aparece na Lista e com o arquivo; sem ele a lista é sempre por força.
+  const mostrarOrdem = $derived(comG1 && visaoEscolhida === 'lista');
+  const ordem = $derived<OrdemForca>(comG1 ? ordemEscolhida : 'forca');
+  const linhasOrdenadas = $derived(
+    visao.tipo === 'conteudo' ? ordenarLinhas(visao.linhas, ordem) : [],
+  );
   const detalhe = $derived(
     visao.tipo === 'conteudo' && dezenaAberta !== null
-      ? montarDetalheDaDezena(visao.tabela, dezenaAberta)
+      ? montarDetalheDaDezena(visao.tabela, dezenaAberta, visao.g1)
       : null,
   );
 
@@ -102,7 +124,7 @@
   }
 
   const urlAtual = (dezena: number | null = null): string =>
-    hashDaForca(loteria, { visao: visaoEscolhida, dezena });
+    hashDaForca(loteria, { visao: visaoEscolhida, ordem: ordemEscolhida, dezena });
 
   const iconesDoEstado: Record<EstadoTela, NomeIcone> = {
     sincronizando: 'atualizar',
@@ -114,7 +136,11 @@
   /** Mostra o cache na hora e só depois sincroniza; respostas de uma loteria antiga são descartadas. */
   async function carregar(slug: Slug): Promise<void> {
     const minha = ++sequencia;
-    const opcoes: OpcoesSincronizacao = { arquivos: ['tabela_geral', 'ultimo'], loterias: [slug] };
+    // O G-1 (ranking_posicoes) vem junto: se o índice não o lista, simplesmente não é baixado.
+    const opcoes: OpcoesSincronizacao = {
+      arquivos: ['tabela_geral', 'ultimo', 'ranking_posicoes'],
+      loterias: [slug],
+    };
     situacao = null;
     const cache = await fonte.lerCache(opcoes);
     if (minha !== sequencia) return;
@@ -140,6 +166,17 @@
     visaoEscolhida = nova;
     gravarExibicaoGuardada(nova);
     history.replaceState(history.state, '', urlAtual());
+  }
+
+  async function trocarOrdem(nova: OrdemForca): Promise<void> {
+    ordemEscolhida = nova;
+    gravarOrdemGuardada(nova);
+    history.replaceState(history.state, '', urlAtual());
+    // Limpa e regrava depois do tick: o leitor de tela reanuncia mesmo que o texto se repita.
+    anuncioOrdem = '';
+    await tick();
+    anuncioOrdem =
+      nova === 'g1' ? textos.forca.ordem.anunciadaG1 : textos.forca.ordem.anunciadaForca;
   }
 
   // Abrir o detalhe cria uma entrada no histórico: o botão voltar fecha.
@@ -192,6 +229,8 @@
     }
     const exibicao = exibicaoDoHash(location.hash);
     if (exibicao !== null) visaoEscolhida = exibicao;
+    const daOrdem = ordemDoHash(location.hash);
+    if (daOrdem !== null) ordemEscolhida = daOrdem;
     dezenaAberta = dezenaDoHash(location.hash);
   }
 
@@ -230,6 +269,21 @@
     />
   </div>
 
+  {#if mostrarOrdem}
+    <div class="controle controle-ordem">
+      <span class="rotulo-controle" aria-hidden="true">{textos.forca.ordem.rotuloGrupo}</span>
+      <div class="segmentos-ordem">
+        <Segmentado
+          opcoes={opcoesOrdem}
+          valor={ordemEscolhida}
+          rotuloGrupo={textos.forca.ordem.rotuloGrupo}
+          aoMudar={(nova) => void trocarOrdem(nova)}
+        />
+      </div>
+    </div>
+    <p class="so-leitor" role="status">{anuncioOrdem}</p>
+  {/if}
+
   {#if visao.tipo === 'carregando'}
     <div class="carregando" aria-busy="true">
       <p class="discreto" role="status">{textos.forca.carregando}</p>
@@ -260,7 +314,7 @@
     {:else}
       <div class="tabela">
         <div class="cabecalho" aria-hidden="true">
-          <span>{textos.forca.colunas.posicao}</span>
+          <span>{ordem === 'g1' ? textos.forca.colunas.g1 : textos.forca.colunas.posicao}</span>
           <span>{textos.forca.colunas.dezena}</span>
           <span>{textos.forca.colunas.variacao}</span>
           <span class="centro">{textos.forca.colunas.jogo}</span>
@@ -280,9 +334,23 @@
           {/if}
         </div>
         <ul class="lista" aria-label={textos.forca.lista(visao.nomeLoteria, visao.linhas.length)}>
-          {#each visao.linhas as linha (linha.dezena)}
+          {#each linhasOrdenadas as linha (linha.dezena)}
             <LinhaRanking
-              posicao={linha.posicao}
+              posicao={ordem === 'g1' && linha.g1 != null ? linha.g1 : linha.posicao}
+              posicaoFalada={ordem === 'g1' && linha.g1 != null
+                ? textos.forca.g1.posicaoFalada(linha.g1)
+                : undefined}
+              selo={linha.g1 == null
+                ? undefined
+                : ordem === 'g1'
+                  ? textos.forca.g1.seloForca(linha.posicao)
+                  : textos.forca.g1.selo(linha.g1)}
+              seloFalado={linha.g1 == null
+                ? undefined
+                : ordem === 'g1'
+                  ? textos.forca.g1.seloForcaFalado(linha.posicao)
+                  : textos.forca.g1.seloFalado(linha.g1)}
+              bordaNoSelo={ordem === 'g1'}
               numero={linha.dezena}
               variacao={linha.variacao}
               indice={linha.indice}
@@ -306,7 +374,7 @@
       {textos.forca.legendaPosicoesSorteadas(visao.tabela.ultimoSorteado)}
     </p>
   {/if}
-  <Aviso>{textos.avisos.naoPreveForca}</Aviso>
+  <Aviso>{comG1 ? textos.avisos.naoPreveForcaG1 : textos.avisos.naoPreveForca}</Aviso>
 </div>
 
 {#if detalhe}
@@ -338,6 +406,22 @@
   }
   .controle-estreito {
     max-width: 20rem;
+  }
+  /* "Ordenar por" + chave segmentada, na mesma linha; no celular cabe nos 360 px. */
+  .controle-ordem {
+    display: flex;
+    align-items: center;
+    gap: var(--esp-3);
+    max-width: 22rem;
+  }
+  .rotulo-controle {
+    flex: none;
+    color: var(--cor-texto-var);
+    font: var(--fonte-rotulo-g);
+  }
+  .segmentos-ordem {
+    flex: 1 1 0;
+    min-width: 0;
   }
   .estado {
     display: flex;

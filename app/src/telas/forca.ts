@@ -4,10 +4,12 @@
 import type {
   DirecaoEvidencia,
   GrauEvidencia,
+  RankingPosicoesV1,
   Slug,
   TabelaGeralV1,
   UltimoV1,
 } from '../dados/tipos';
+import type { OrdemForca } from '../lib/rotas';
 import { textos } from '../lib/textos';
 import { estadoEData, type EstadoTela, type SituacaoTela } from './estado-tela';
 
@@ -20,6 +22,16 @@ export interface LinhaForca {
   readonly indice: number;
   readonly grau: GrauEvidencia | null;
   readonly direcao: DirecaoEvidencia | null;
+  /** G-1 da dezena (ranking_posicoes.json); `null` = sem G-1 (arquivo ausente ou de outro snapshot). */
+  readonly g1?: number | null;
+  /** Variação da dezena no G-1; `null`/ausente = sem G-1 ou sem concurso anterior. */
+  readonly variacaoG1?: number | null;
+}
+
+/** G-1 de uma dezena, como veio do arquivo. */
+export interface G1DaDezena {
+  readonly g1: number;
+  readonly variacao: number | null;
 }
 
 export type VisaoForca =
@@ -44,10 +56,41 @@ export type VisaoForca =
       readonly posicoesSorteadas: ReadonlySet<number>;
       /** Tabela validada, de onde sai o detalhe da dezena. */
       readonly tabela: TabelaGeralV1;
+      /** G-1 por dezena; `null` = sem G-1 (some o selo, a chave de ordem e o bloco do detalhe). */
+      readonly g1: ReadonlyMap<number, G1DaDezena> | null;
     };
 
+/**
+ * Junção por dezena entre tabela_geral.json e ranking_posicoes.json. Só vale se os dois são do MESMO
+ * snapshot (mesmo próximo concurso e mesma posição de cada dezena); do contrário devolve `null` e a
+ * tela segue sem G-1, em vez de misturar dois concursos (por exemplo, a tabela atualizou e o G-1
+ * guardado é o do concurso anterior).
+ */
+export function juntarG1(
+  tabela: TabelaGeralV1,
+  ranking: RankingPosicoesV1 | null,
+): ReadonlyMap<number, G1DaDezena> | null {
+  if (ranking === null) return null;
+  if (ranking.loteria !== tabela.loteria) return null;
+  if (ranking.concurso !== tabela.concurso || ranking.ultimoSorteado !== tabela.ultimoSorteado) {
+    return null;
+  }
+  if (ranking.dezenas.length !== tabela.dezenas.length) return null;
+  const porDezena = new Map(ranking.dezenas.map((d) => [d.dezena, d]));
+  const juncao = new Map<number, G1DaDezena>();
+  for (const d of tabela.dezenas) {
+    const g = porDezena.get(d.dezena);
+    if (g === undefined || g.posicaoIndice !== d.posicao) return null;
+    juncao.set(d.dezena, { g1: g.g1, variacao: g.variacaoG1 });
+  }
+  return juncao;
+}
+
 /** Linhas em ordem de posição (1 = mais forte); não confia na ordem do arquivo. */
-export function linhasDaTabela(tabela: TabelaGeralV1): LinhaForca[] {
+export function linhasDaTabela(
+  tabela: TabelaGeralV1,
+  g1: ReadonlyMap<number, G1DaDezena> | null = null,
+): LinhaForca[] {
   return tabela.dezenas
     .map((d) => ({
       posicao: d.posicao,
@@ -56,8 +99,31 @@ export function linhasDaTabela(tabela: TabelaGeralV1): LinhaForca[] {
       indice: d.total,
       grau: d.evidenciaGrau,
       direcao: d.evidenciaDirecao,
+      // Sem G-1 a linha fica exatamente como antes (sem os campos).
+      ...(g1 === null
+        ? {}
+        : { g1: g1.get(d.dezena)?.g1 ?? null, variacaoG1: g1.get(d.dezena)?.variacao ?? null }),
     }))
     .sort((a, b) => a.posicao - b.posicao || a.dezena - b.dezena);
+}
+
+/**
+ * Reordena a lista. Por força: posição da tabela (1 = mais forte). Por G-1: lugar no índice das
+ * posições (1 = o melhor); empate ou G-1 ausente desempata pela posição de força. Não altera a entrada.
+ */
+export function ordenarLinhas(linhas: readonly LinhaForca[], ordem: OrdemForca): LinhaForca[] {
+  const copia = [...linhas];
+  if (ordem === 'g1') {
+    copia.sort(
+      (a, b) =>
+        (a.g1 ?? Number.POSITIVE_INFINITY) - (b.g1 ?? Number.POSITIVE_INFINITY) ||
+        a.posicao - b.posicao ||
+        a.dezena - b.dezena,
+    );
+  } else {
+    copia.sort((a, b) => a.posicao - b.posicao || a.dezena - b.dezena);
+  }
+  return copia;
 }
 
 /** Dezena -> posição no ranking, como o volante a recebe. */
@@ -107,6 +173,7 @@ export function montarVisaoForca(
   }
 
   const { estado, texto } = estadoEData(situacao, situacao.cache, agora);
+  const g1 = juntarG1(tabela, entrada?.dados.ranking_posicoes ?? null);
   return {
     tipo: 'conteudo',
     nomeLoteria: textos.loterias[slug],
@@ -115,9 +182,10 @@ export function montarVisaoForca(
     estado,
     texto,
     erro: estado === 'recusado',
-    linhas: linhasDaTabela(tabela),
+    linhas: linhasDaTabela(tabela, g1),
     posicoes: posicoesDaTabela(tabela),
     posicoesSorteadas: posicoesSorteadasNoAnterior(tabela, entrada?.dados.ultimo ?? null),
     tabela,
+    g1,
   };
 }

@@ -25,6 +25,26 @@
     </div>
   </section>
 
+  {#if detalhe.g1}
+    <section class="g1" aria-labelledby="det-g1">
+      <h3 id="det-g1">{textos.detalhe.g1.titulo}</h3>
+      <div class="destaques">
+        <div class="indice">
+          <p class="rotulo">{textos.detalhe.g1.lugar}</p>
+          <p class="numero">{detalhe.g1.valor}</p>
+        </div>
+        <div class="variacao" data-sentido={detalhe.g1.variacao.sentido}>
+          <p class="rotulo">{textos.detalhe.g1.variacao}</p>
+          <p class="numero">
+            <span aria-hidden="true">{detalhe.g1.variacao.sinal}</span>
+            <span class="texto">{detalhe.g1.variacao.texto}</span>
+          </p>
+        </div>
+      </div>
+      <p class="nota">{textos.detalhe.g1.nota}</p>
+    </section>
+  {/if}
+
   <section class="evidencia" aria-labelledby="det-evidencia">
     <h3 id="det-evidencia">{textos.detalhe.evidencia}</h3>
     {#if detalhe.evidencia}
@@ -61,7 +81,7 @@
     </dl>
   </section>
 
-  <Aviso>{textos.avisos.naoPreveDetalhe}</Aviso>
+  <Aviso>{detalhe.g1 ? textos.avisos.naoPreveDetalheG1 : textos.avisos.naoPreveDetalhe}</Aviso>
 </div>
 
 <style>
@@ -108,11 +128,13 @@
   .variacao[data-sentido='caiu'] .numero {
     color: var(--cor-erro);
   }
-  .evidencia {
+  .evidencia,
+  .g1 {
     display: grid;
     gap: var(--esp-2);
   }
-  .evidencia h3 {
+  .evidencia h3,
+  .g1 h3 {
     margin-bottom: 0;
   }
   .grau {

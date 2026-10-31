@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "loteria": "megasena",
+  "perfil": "padrao_v1",
+  "hash_toml": "95a208125b2da6bd034564770f628a74185023864e19ec415be7ad0183ddbeb5",
+  "janela": 50,
+  "normalizacao": "zscore",
+  "feature_version": 1,
+  "concurso": 3080,
+  "ultimo_sorteado": 3079,
+  "perfil_posicoes": "posicoes_v1",
+  "hash_toml_posicoes": "530bc6bfa35d1a855c3a27db16b7ed482578a2709c730bf1d6665559b46cba00",
+  "janela_posicoes": 50,
+  "normalizacao_posicoes": "zscore",
+  "dezenas": [
+    {
+      "dezena": 1,
+      "posicao_indice": 41,
+      "g_1": 16,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 2,
+      "posicao_indice": 42,
+      "g_1": 7,
+      "variacao_g_1": -4
+    },
+    {
+      "dezena": 3,
+      "posicao_indice": 19,
+      "g_1": 27,
+      "variacao_g_1": -13
+    },
+    {
+      "dezena": 4,
+      "posicao_indice": 25,
+      "g_1": 10,
+      "variacao_g_1": -2
+    },
+    {
+      "dezena": 5,
+      "posicao_indice": 1,
+      "g_1": 5,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 6,
+      "posicao_indice": 32,
+      "g_1": 9,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 7,
+      "posicao_indice": 44,
+      "g_1": 3,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 8,
+      "posicao_indice": 35,
+      "g_1": 25,
+      "variacao_g_1": 5
+    },
+    {
+      "dezena": 9,
+      "posicao_indice": 48,
+      "g_1": 38,
+      "variacao_g_1": 10
+    },
+    {
+      "dezena": 10,
+      "posicao_indice": 20,
+      "g_1": 50,
+      "variacao_g_1": -41
+    },
+    {
+      "dezena": 11,
+      "posicao_indice": 2,
+      "g_1": 28,
+      "variacao_g_1": 4
+    },
+    {
+      "dezena": 12,
+      "posicao_indice": 58,
+      "g_1": 26,
+      "variacao_g_1": 13
+    },
+    {
+      "dezena": 13,
+      "posicao_indice": 52,
+      "g_1": 17,
+      "variacao_g_1": 4
+    },
+    {
+      "dezena": 14,
+      "posicao_indice": 54,
+      "g_1": 30,
+      "variacao_g_1": -6
+    },
+    {
+      "dezena": 15,
+      "posicao_indice": 21,
+      "g_1": 54,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 16,
+      "posicao_indice": 5,
+      "g_1": 41,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 17,
+      "posicao_indice": 23,
+      "g_1": 33,
+      "variacao_g_1": 10
+    },
+    {
+      "dezena": 18,
+      "posicao_indice": 55,
+      "g_1": 12,
+      "variacao_g_1": 8
+    },
+    {
+      "dezena": 19,
+      "posicao_indice": 59,
+      "g_1": 45,
+      "variacao_g_1": 5
+    },
+    {
+      "dezena": 20,
+      "posicao_indice": 30,
+      "g_1": 57,
+      "variacao_g_1": 1
+    },
+    {
+      "dezena": 21,
+      "posicao_indice": 7,
+      "g_1": 51,
+      "variacao_g_1": -16
+    },
+    {
+      "dezena": 22,
+      "posicao_indice": 50,
+      "g_1": 19,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 23,
+      "posicao_indice": 29,
+      "g_1": 47,
+      "variacao_g_1": -24
+    },
+    {
+      "dezena": 24,
+      "posicao_indice": 13,
+      "g_1": 6,
+      "variacao_g_1": -2
+    },
+    {
+      "dezena": 25,
+      "posicao_indice": 28,
+      "g_1": 55,
+      "variacao_g_1": -22
+    },
+    {
+      "dezena": 26,
+      "posicao_indice": 14,
+      "g_1": 37,
+      "variacao_g_1": 1
+    },
+    {
+      "dezena": 27,
+      "posicao_indice": 22,
+      "g_1": 4,
+      "variacao_g_1": 13
+    },
+    {
+      "dezena": 28,
+      "posicao_indice": 53,
+      "g_1": 42,
+      "variacao_g_1": 9
+    },
+    {
+      "dezena": 29,
+      "posicao_indice": 49,
+      "g_1": 58,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 30,
+      "posicao_indice": 31,
+      "g_1": 18,
+      "variacao_g_1": 7
+    },
+    {
+      "dezena": 31,
+      "posicao_indice": 57,
+      "g_1": 31,
+      "variacao_g_1": -18
+    },
+    {
+      "dezena": 32,
+      "posicao_indice": 11,
+      "g_1": 48,
+      "variacao_g_1": -14
+    },
+    {
+      "dezena": 33,
+      "posicao_indice": 24,
+      "g_1": 46,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 34,
+      "posicao_indice": 60,
+      "g_1": 15,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 35,
+      "posicao_indice": 39,
+      "g_1": 60,
+      "variacao_g_1": -3
+    },
+    {
+      "dezena": 36,
+      "posicao_indice": 33,
+      "g_1": 34,
+      "variacao_g_1": 8
+    },
+    {
+      "dezena": 37,
+      "posicao_indice": 15,
+      "g_1": 32,
+      "variacao_g_1": 8
+    },
+    {
+      "dezena": 38,
+      "posicao_indice": 45,
+      "g_1": 49,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 39,
+      "posicao_indice": 34,
+      "g_1": 2,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 40,
+      "posicao_indice": 26,
+      "g_1": 59,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 41,
+      "posicao_indice": 47,
+      "g_1": 8,
+      "variacao_g_1": -2
+    },
+    {
+      "dezena": 42,
+      "posicao_indice": 12,
+      "g_1": 53,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 43,
+      "posicao_indice": 4,
+      "g_1": 36,
+      "variacao_g_1": 13
+    },
+    {
+      "dezena": 44,
+      "posicao_indice": 40,
+      "g_1": 39,
+      "variacao_g_1": -21
+    },
+    {
+      "dezena": 45,
+      "posicao_indice": 10,
+      "g_1": 56,
+      "variacao_g_1": -1
+    },
+    {
+      "dezena": 46,
+      "posicao_indice": 9,
+      "g_1": 11,
+      "variacao_g_1": -1
+    },
+    {
+      "dezena": 47,
+      "posicao_indice": 46,
+      "g_1": 29,
+      "variacao_g_1": 7
+    },
+    {
+      "dezena": 48,
+      "posicao_indice": 3,
+      "g_1": 43,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 49,
+      "posicao_indice": 51,
+      "g_1": 44,
+      "variacao_g_1": 3
+    },
+    {
+      "dezena": 50,
+      "posicao_indice": 27,
+      "g_1": 14,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 51,
+      "posicao_indice": 56,
+      "g_1": 35,
+      "variacao_g_1": 6
+    },
+    {
+      "dezena": 52,
+      "posicao_indice": 43,
+      "g_1": 1,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 53,
+      "posicao_indice": 8,
+      "g_1": 21,
+      "variacao_g_1": 6
+    },
+    {
+      "dezena": 54,
+      "posicao_indice": 16,
+      "g_1": 40,
+      "variacao_g_1": -14
+    },
+    {
+      "dezena": 55,
+      "posicao_indice": 36,
+      "g_1": 20,
+      "variacao_g_1": 8
+    },
+    {
+      "dezena": 56,
+      "posicao_indice": 17,
+      "g_1": 13,
+      "variacao_g_1": -1
+    },
+    {
+      "dezena": 57,
+      "posicao_indice": 37,
+      "g_1": 24,
+      "variacao_g_1": 13
+    },
+    {
+      "dezena": 58,
+      "posicao_indice": 18,
+      "g_1": 22,
+      "variacao_g_1": 7
+    },
+    {
+      "dezena": 59,
+      "posicao_indice": 6,
+      "g_1": 52,
+      "variacao_g_1": 2
+    },
+    {
+      "dezena": 60,
+      "posicao_indice": 38,
+      "g_1": 23,
+      "variacao_g_1": 8
+    }
+  ]
+}

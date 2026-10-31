@@ -76,6 +76,7 @@ describe('Entenda: estrutura e acessibilidade', () => {
     expect(Array.from(alvo.querySelectorAll('section > h3')).map(texto)).toEqual([
       'Este app não prevê sorteios',
       'O que é o índice de força',
+      'O que é o G-1',
       'O que é a evidência',
       'Como ler a tabela de força',
       'De onde vêm os dados',

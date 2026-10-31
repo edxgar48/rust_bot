@@ -51,6 +51,22 @@ export function exibicaoDoHash(hash: string): ExibicaoForca | null {
   return ehExibicao(valor) ? valor : null;
 }
 
+/** Ordens da lista da Força (7.8): pela posição na tabela de força (padrão) ou pelo G-1. */
+export const ORDENS_FORCA = ['forca', 'g1'] as const;
+export type OrdemForca = (typeof ORDENS_FORCA)[number];
+export const ORDEM_PADRAO: OrdemForca = 'forca';
+
+export function ehOrdem(valor: unknown): valor is OrdemForca {
+  return ORDENS_FORCA.some((o) => o === valor);
+}
+
+/** Parâmetro `ordem` ("forca" ou "g1"); ausente ou inválido = `null`. */
+export function ordemDoHash(hash: string): OrdemForca | null {
+  const m = /[?&]ordem=([^&#]*)/.exec(hash);
+  const valor = m?.[1] ?? null;
+  return ehOrdem(valor) ? valor : null;
+}
+
 /** Parâmetro `dezena` (inteiro positivo de até 3 dígitos); ausente ou inválido = `null`. */
 export function dezenaDoHash(hash: string): number | null {
   const m = /[?&]dezena=(\d{1,3})(?:[&#]|$)/.exec(hash);
@@ -60,17 +76,20 @@ export function dezenaDoHash(hash: string): number | null {
 
 export interface OpcoesHashForca {
   readonly visao?: ExibicaoForca;
+  /** Ordem da lista; só `g1` entra na URL (a ordem por força é a padrão). */
+  readonly ordem?: OrdemForca;
   /** Dezena com o detalhe aberto. */
   readonly dezena?: number | null;
 }
 
 /**
  * Hash da Força: "#/forca?loteria=quina", com "&visao=volante" e "&dezena=20"
- * quando informados.
+ * quando informados, e "&ordem=g1" quando a lista está ordenada pelo G-1.
  */
 export function hashDaForca(slug: Slug, opcoes: OpcoesHashForca = {}): string {
   let hash = `${hashDaRota('forca')}?loteria=${slug}`;
   if (opcoes.visao !== undefined) hash += `&visao=${opcoes.visao}`;
+  if (opcoes.ordem === 'g1') hash += '&ordem=g1';
   if (opcoes.dezena !== undefined && opcoes.dezena !== null) hash += `&dezena=${opcoes.dezena}`;
   return hash;
 }

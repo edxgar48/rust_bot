@@ -30,6 +30,14 @@
     inserida?: boolean;
     /** Posição que o último concurso sorteou (a dezena que a ocupava saiu): ganha borda colorida. */
     posicaoSorteada?: boolean;
+    /** Texto falado da primeira coluna; padrão "N-º lugar" (muda quando a coluna mostra o G-1). */
+    posicaoFalada?: string;
+    /** Selo extra da linha ("G-1 5º" ou "Força 3º"), numa terceira linha; sem ele, a linha não muda. */
+    selo?: string;
+    /** Texto falado do selo (a cor e o formato nunca são a única informação). */
+    seloFalado?: string;
+    /** A posição de força é a do selo (lista ordenada pelo G-1): a borda da posição sorteada vai nele. */
+    bordaNoSelo?: boolean;
   }
 
   let {
@@ -44,9 +52,15 @@
     aoInserir,
     inserida = false,
     posicaoSorteada = false,
+    posicaoFalada,
+    selo,
+    seloFalado,
+    bordaNoSelo = false,
   }: Props = $props();
 
   const comInserir = $derived(aoEscolher !== undefined && aoInserir !== undefined);
+  const bordaNaPosicao = $derived(posicaoSorteada && !bordaNoSelo);
+  const bordaNoSeloAtiva = $derived(posicaoSorteada && bordaNoSelo && selo !== undefined);
   const dezenaTexto = $derived(doisDigitos(numero));
 
   const sentido = $derived(sentidoVariacao(variacao));
@@ -61,10 +75,10 @@
 </script>
 
 {#snippet corpo()}
-  <span class="posicao">
+  <span class="posicao" class:marcada={bordaNaPosicao}>
     <span aria-hidden="true">{posicao}º</span>
-    <span class="so-leitor">{textos.ranking.posicao(posicao)}</span>
-    {#if posicaoSorteada}
+    <span class="so-leitor">{posicaoFalada ?? textos.ranking.posicao(posicao)}</span>
+    {#if bordaNaPosicao}
       <span class="so-leitor">{textos.forca.posicaoSorteada}</span>
     {/if}
   </span>
@@ -94,6 +108,15 @@
       <span>{textoEvidencia}</span>
     {/if}
   </span>
+  {#if selo !== undefined}
+    <span class="selo" class:marcada={bordaNoSeloAtiva}>
+      <span aria-hidden="true">{selo}</span>
+      <span class="so-leitor">{seloFalado ?? selo}</span>
+      {#if bordaNoSeloAtiva}
+        <span class="so-leitor">{textos.forca.posicaoSorteada}</span>
+      {/if}
+    </span>
+  {/if}
 {/snippet}
 
 <li class:com-inserir={comInserir} data-sorteada={posicaoSorteada}>
@@ -228,13 +251,33 @@
     font-variant-numeric: tabular-nums;
   }
   /* Posição sorteada no concurso anterior: borda só em volta do número, sem mudar a largura da coluna. */
-  li[data-sorteada='true'] .posicao {
+  .posicao.marcada {
     box-sizing: border-box;
     justify-self: start;
     padding: 0 0.125rem;
     border: 2px solid var(--cor-sorteada);
     border-radius: var(--raio-s, 0.25rem);
     text-align: center;
+  }
+  /* Selo extra (G-1 ou Força), na terceira linha, sob a dezena; texto sempre dentro da largura. */
+  .selo {
+    grid-column: 2 / -1;
+    grid-row: 3;
+    justify-self: start;
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 0 var(--esp-2);
+    border: 1px solid var(--cor-contorno);
+    border-radius: var(--raio-cheio);
+    color: var(--cor-texto-var);
+    font: var(--fonte-rotulo-m);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* Posição de força sorteada, quando é o selo que a mostra: mesma borda da 7.6. */
+  .selo.marcada {
+    border: 2px solid var(--cor-sorteada);
+    border-radius: var(--raio-s, 0.25rem);
   }
   .variacao {
     font: var(--fonte-rotulo-g);

@@ -22,6 +22,7 @@ import {
 import {
   validarHistorico,
   validarIndice,
+  validarRankingPosicoes,
   validarRankingTaxa,
   validarTabelaGeral,
   validarUltimo,
@@ -97,7 +98,9 @@ function interpretar<K extends ChaveArquivo>(
         ? validarTabelaGeral(valor, slug)
         : chave === 'ranking_taxa'
           ? validarRankingTaxa(valor, slug)
-          : validarHistorico(valor, slug);
+          : chave === 'ranking_posicoes'
+            ? validarRankingPosicoes(valor, slug)
+            : validarHistorico(valor, slug);
   return dados as DadosPorChave[K];
 }
 
@@ -288,7 +291,7 @@ export function criarCliente(opcoes: OpcoesCliente) {
     const arquivos: { [K in ChaveArquivo]?: ResultadoArquivo<K> } = {};
     await Promise.all(
       chaves.map(async (chave) => {
-        // Arquivo opcional que o índice não lista (ranking_taxa): não há o que baixar.
+        // Arquivo opcional que o índice não lista (ranking_taxa, ranking_posicoes): não há o que baixar.
         const descritor = entrada.arquivos[chave];
         if (!descritor) return;
         // Atribuição por chave: o tipo do resultado acompanha a chave.

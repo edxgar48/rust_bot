@@ -92,6 +92,14 @@
     </div>
   </Cartao>
 
+  <Cartao variante="elevado" titulo={t.g1.titulo}>
+    <div class="texto">
+      {#each t.g1.paragrafos as paragrafo (paragrafo)}
+        <p>{paragrafo}</p>
+      {/each}
+    </div>
+  </Cartao>
+
   <Cartao variante="elevado" titulo={t.evidencia.titulo}>
     <div class="texto">
       {#each t.evidencia.paragrafos as paragrafo (paragrafo)}
