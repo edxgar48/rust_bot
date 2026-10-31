@@ -2501,3 +2501,4 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   Testes: `testes/ranking-posicoes.test.ts`, `telas/visao-g1.test.ts`, `telas/Forca.g1.test.ts`,
   `lib/ordem-forca.test.ts`; `Entenda.test.ts` ganhou o cartão novo. Pendente: conferência visual no aparelho
   (360 px, claro/escuro) e leitor de tela real.
+- 2026-10-31 — 7.8, ajuste (sem commit): ordenando por G-1, a coluna Variação mostra a `variacao_g_1` da dezena (cabeçalho "Variação (G-1)", falado "... no G-1") e o Índice é rotulado "Índice de Força" (cabeçalho e leitor de tela); modo Força inalterado. Com selo, o botão Inserir não desce mais sobre o texto da evidência (a 3ª linha do selo o empurrava; o desalinhamento de ~3 px sem selo já existia). Capturas 360/1280 px claro/escuro, sem rolagem horizontal.
