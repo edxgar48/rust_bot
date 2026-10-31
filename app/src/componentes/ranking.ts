@@ -39,6 +39,15 @@ export function textoFaladoDaVariacao(variacao: number | null): string {
   return textos.ranking.semVariacao;
 }
 
+/** Variação da dezena no G-1, para leitor de tela: "subiu 3 posições no G-1". */
+export function textoFaladoDaVariacaoG1(variacao: number | null): string {
+  const sentido = sentidoVariacao(variacao);
+  if (sentido === 'subiu') return textos.forca.g1.subiu(variacao ?? 0);
+  if (sentido === 'caiu') return textos.forca.g1.caiu(Math.abs(variacao ?? 0));
+  if (sentido === 'igual') return textos.forca.g1.igual;
+  return textos.forca.g1.semVariacao;
+}
+
 /** Índice de força com 3 casas, vírgula decimal e menos tipográfico. */
 export function formatarIndice(indice: number): string {
   const texto = new Intl.NumberFormat('pt-BR', {

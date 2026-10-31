@@ -316,9 +316,15 @@
         <div class="cabecalho" aria-hidden="true">
           <span>{ordem === 'g1' ? textos.forca.colunas.g1 : textos.forca.colunas.posicao}</span>
           <span>{textos.forca.colunas.dezena}</span>
-          <span>{textos.forca.colunas.variacao}</span>
+          <span
+            >{ordem === 'g1'
+              ? textos.forca.colunas.variacaoG1
+              : textos.forca.colunas.variacao}</span
+          >
           <span class="centro">{textos.forca.colunas.jogo}</span>
-          <span class="direita">{textos.forca.colunas.indice}</span>
+          <span class="direita"
+            >{ordem === 'g1' ? textos.forca.colunas.indiceForca : textos.forca.colunas.indice}</span
+          >
           <span class="evidencia">{textos.forca.colunas.evidencia}</span>
         </div>
         <div class="rascunho">
@@ -352,7 +358,8 @@
                   : textos.forca.g1.seloFalado(linha.g1)}
               bordaNoSelo={ordem === 'g1'}
               numero={linha.dezena}
-              variacao={linha.variacao}
+              variacao={ordem === 'g1' ? (linha.variacaoG1 ?? null) : linha.variacao}
+              modoG1={ordem === 'g1'}
               indice={linha.indice}
               grau={linha.grau}
               direcao={linha.direcao}
@@ -453,6 +460,10 @@
     border-bottom: 1px solid var(--cor-contorno);
     color: var(--cor-texto-var);
     font: var(--fonte-rotulo-m);
+  }
+  /* Rótulos longos quebram entre palavras e, se preciso, sobram para o lado (sem partir letras). */
+  .cabecalho span {
+    min-width: 0;
   }
   .direita {
     text-align: right;

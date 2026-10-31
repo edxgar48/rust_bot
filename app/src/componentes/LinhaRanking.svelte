@@ -10,6 +10,7 @@
     segmentosDoGrau,
     sentidoVariacao,
     textoFaladoDaVariacao,
+    textoFaladoDaVariacaoG1,
   } from './ranking';
 
   interface Props {
@@ -38,6 +39,8 @@
     seloFalado?: string;
     /** A posição de força é a do selo (lista ordenada pelo G-1): a borda da posição sorteada vai nele. */
     bordaNoSelo?: boolean;
+    /** Lista ordenada pelo G-1: `variacao` é a da dezena no G-1 e o índice é dito "de Força". */
+    modoG1?: boolean;
   }
 
   let {
@@ -56,6 +59,7 @@
     selo,
     seloFalado,
     bordaNoSelo = false,
+    modoG1 = false,
   }: Props = $props();
 
   const comInserir = $derived(aoEscolher !== undefined && aoInserir !== undefined);
@@ -65,7 +69,9 @@
 
   const sentido = $derived(sentidoVariacao(variacao));
   const setas = SETAS_VARIACAO;
-  const falado = $derived(textoFaladoDaVariacao(variacao));
+  const falado = $derived(
+    modoG1 ? textoFaladoDaVariacaoG1(variacao) : textoFaladoDaVariacao(variacao),
+  );
   const acesos = $derived(segmentosDoGrau(grau));
   const textoEvidencia = $derived(
     grau === null || direcao === null
@@ -92,7 +98,9 @@
     <span class="vaga-inserir" aria-hidden="true"></span>
   {/if}
   <span class="indice">
-    <span class="so-leitor">{textos.ranking.indice}:</span>
+    <span class="so-leitor"
+      >{modoG1 ? textos.forca.g1.indiceForcaFalado : textos.ranking.indice}:</span
+    >
     {formatarIndice(indice)}
   </span>
   <span class="evidencia">
@@ -119,7 +127,11 @@
   {/if}
 {/snippet}
 
-<li class:com-inserir={comInserir} data-sorteada={posicaoSorteada}>
+<li
+  class:com-inserir={comInserir}
+  class:com-selo={selo !== undefined}
+  data-sorteada={posicaoSorteada}
+>
   {#if aoEscolher}
     <button
       type="button"
@@ -224,6 +236,15 @@
     font-size: 0.75rem;
     white-space: nowrap;
     cursor: pointer;
+  }
+  /*
+   * Com o selo a linha ganha uma 3ª linha e o centro da altura desce; sem isto o Inserir desceria
+   * junto e cobriria o texto da evidência. Fica onde estaria sem o selo (centro das duas primeiras
+   * linhas: padding + metade de bola + evidência).
+   */
+  li.com-selo .inserir {
+    align-self: start;
+    margin-top: 1.4375rem;
   }
   /* O botão é menor, mas o alvo de toque continua com 44px de altura. */
   .inserir::after {

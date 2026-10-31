@@ -87,6 +87,9 @@ export const textos = {
       evidencia: 'Evidência (grau · direção)',
       // Cabeçalho da primeira coluna quando a lista está ordenada pelo G-1.
       g1: 'G-1',
+      // Lista ordenada pelo G-1: a variação é a da dezena no G-1; o índice segue o da Força.
+      variacaoG1: 'Variação (G‑1)',
+      indiceForca: 'Índice de Força',
     },
     // G-1 (7.8): um dado extra da lista, do ranking_posicoes.json. Descreve o passado.
     ordem: {
@@ -103,6 +106,13 @@ export const textos = {
       // Selo da linha ordenada por G-1: a posição na tabela de força.
       seloForca: (posicao: number) => `Força ${posicao}º`,
       seloForcaFalado: (posicao: number) => `Tabela de força: ${posicao}º lugar`,
+      // Variação da dezena no G-1 (lista ordenada por G-1), para leitor de tela.
+      subiu: (n: number) => `subiu ${n} ${n === 1 ? 'posição' : 'posições'} no G-1`,
+      caiu: (n: number) => `caiu ${n} ${n === 1 ? 'posição' : 'posições'} no G-1`,
+      igual: 'manteve a posição no G-1',
+      semVariacao: 'sem concurso anterior para comparar no G-1',
+      // O índice da linha é sempre o de Força (o G-1 não tem total publicado).
+      indiceForcaFalado: 'Índice de Força',
       // Primeira coluna da linha ordenada por G-1.
       posicaoFalada: (g1: number) => `G-1: ${g1}º lugar`,
     },

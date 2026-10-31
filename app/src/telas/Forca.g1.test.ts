@@ -134,6 +134,72 @@ describe('Força com G-1: selo e chave de ordem', () => {
     expect(document.activeElement).toBe(radio(alvo, 'G-1') ?? null);
   });
 
+  it('ordenando por G-1 a variação exibida é a variacao_g_1 da dezena, não a variacao_posicao', async () => {
+    const servidor = await servidorComG1();
+    const alvo = montar(servidor);
+    await esperarLinhas(alvo);
+    const lerJson = (c: string) => JSON.parse(new TextDecoder().decode(servidor.arquivos.get(c)));
+    const g1PorDezena = new Map<number, number | null>(
+      lerJson('lotofacil/ranking_posicoes.json').dezenas.map(
+        (d: { dezena: number; variacao_g_1: number | null }) => [d.dezena, d.variacao_g_1],
+      ),
+    );
+    const posPorDezena = new Map<number, number | null>(
+      lerJson('lotofacil/tabela_geral.json').dezenas.map(
+        (d: { dezena: number; variacao_posicao: number | null }) => [d.dezena, d.variacao_posicao],
+      ),
+    );
+    const sinal = (v: number | null) =>
+      v === null ? '—' : v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '0';
+    const exibida = () =>
+      linhas(alvo).map((l) => texto(l.querySelector('.variacao [aria-hidden="true"]')));
+    const falada = () => linhas(alvo).map((l) => texto(l.querySelector('.variacao .so-leitor')));
+
+    // Modo Força: variação de posição, como antes.
+    expect(exibida().map((t) => t.replace(/^[▲▼■]\s*/, ''))).toEqual(
+      dezenas(alvo).map((d) => sinal(posPorDezena.get(d) ?? null)),
+    );
+
+    radio(alvo, 'G-1')?.click();
+    flushSync();
+    await vi.waitFor(() =>
+      expect(texto(alvo.querySelector('.cabecalho'))).toContain('Variação (G‑1)'),
+    );
+    const ds = dezenas(alvo);
+    expect(exibida().map((t) => t.replace(/^[▲▼■]\s*/, ''))).toEqual(
+      ds.map((d) => sinal(g1PorDezena.get(d) ?? null)),
+    );
+    // Prova de que não é a de posição: há dezenas em que as duas diferem, e ali vale a do G-1.
+    const diferentes = ds.filter((d) => g1PorDezena.get(d) !== posPorDezena.get(d));
+    expect(diferentes.length).toBeGreaterThan(0);
+    // Texto falado: diz que é no G-1; a dezena 1 (variacao_g_1 null) é "sem concurso anterior".
+    for (const [i, d] of ds.entries()) {
+      const v = g1PorDezena.get(d) ?? null;
+      expect(falada()[i]).toBe(
+        v === null
+          ? textos.forca.g1.semVariacao
+          : v > 0
+            ? textos.forca.g1.subiu(v)
+            : v < 0
+              ? textos.forca.g1.caiu(-v)
+              : textos.forca.g1.igual,
+      );
+    }
+    for (const t of falada()) expect(t.endsWith('no G-1')).toBe(true);
+    // Índice: segue o de Força, dito como tal (cabeçalho e leitor de tela).
+    expect(texto(alvo.querySelector('.cabecalho'))).toContain('Índice de Força');
+    expect(texto(linhas(alvo)[0])).toContain('Índice de Força:');
+
+    // Voltar a Força restaura rótulos e variação de posição.
+    radio(alvo, 'Força')?.click();
+    flushSync();
+    await vi.waitFor(() =>
+      expect(texto(alvo.querySelector('.cabecalho'))).toContain('Variação Jogo Índice'),
+    );
+    expect(texto(linhas(alvo)[0])).not.toContain('no G-1');
+    expect(texto(linhas(alvo)[0])).not.toContain('Índice de Força');
+  });
+
   it('voltar para Força restaura a ordem da tabela', async () => {
     const alvo = montar(await servidorComG1());
     await esperarLinhas(alvo);
