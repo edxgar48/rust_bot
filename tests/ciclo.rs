@@ -185,6 +185,14 @@ impl Amb {
                 PERFIL_MODELO.replace("@@", slug),
             )
             .unwrap();
+            // Perfil das posições (2.6): o ciclo roda o `sync posicoes` com ele.
+            fs::write(
+                raiz.join("perfis").join(slug).join("posicoes_v1.toml"),
+                PERFIL_MODELO
+                    .replace("@@", slug)
+                    .replace("padrao_v1", "posicoes_v1"),
+            )
+            .unwrap();
         }
         if com_git {
             git(&raiz, &["init", "-q", "--bare", "rust_spider_dados.git"]);
@@ -1293,6 +1301,150 @@ fn eventos_do_ranking_no_ciclo_sao_avisos_na_saida_de_erro() {
             mensagem: "x".into(),
         },
         EventoCiclo::RankingOmitido {
+            slug: "quina",
+            motivo: "x".into(),
+        },
+    ] {
+        let e = Evento::Ciclo(e);
+        assert_eq!(e.nivel(), Nivel::Aviso);
+        assert_eq!(e.destino(), rust_spider::orquestracao::Destino::Erro);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Posições / G-1 no ciclo (tarefa 2.6)
+// ---------------------------------------------------------------------------
+
+fn arquivo_posicoes(a: &Amb, slug: &str) -> PathBuf {
+    a.saida().join(format!("v1/{slug}/ranking_posicoes.json"))
+}
+
+fn index_tem_posicoes(a: &Amb) -> bool {
+    fs::read_to_string(a.saida().join("v1/index.json"))
+        .unwrap()
+        .contains("ranking_posicoes")
+}
+
+#[tokio::test]
+async fn ciclo_com_posicoes_ok_publica_o_ranking_posicoes() {
+    let a = Amb::novo(false);
+    a.semear("quina", N, &[]);
+    let mut destino = DestinoFalso::default();
+
+    let (r, eventos) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+
+    assert!(r.sucesso(), "{r:?}");
+    assert_eq!(r.loterias[0].posicoes, Default::default());
+    assert!(arquivo_posicoes(&a, "quina").exists());
+    assert!(index_tem_posicoes(&a));
+    assert!(eventos.iter().any(|e| matches!(
+        e,
+        Evento::Ciclo(EventoCiclo::PosicoesEmDia { ultimo, .. }) if *ultimo == N + 1
+    )));
+    assert!(!eventos.iter().any(|e| matches!(
+        e,
+        Evento::Ciclo(EventoCiclo::PosicoesFalhou { .. } | EventoCiclo::PosicoesOmitido { .. })
+    )));
+    // O ranking por taxa continua como antes.
+    assert!(arquivo_ranking(&a, "quina").exists());
+}
+
+#[tokio::test]
+async fn posicoes_rodadas_de_novo_dao_o_mesmo_arquivo() {
+    let a = Amb::novo(false);
+    a.semear("lotofacil", N, &[]);
+    let mut destino = DestinoFalso::default();
+    let (r1, _) = a
+        .rodar(&["lotofacil"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r1.sucesso(), "{r1:?}");
+    let antes = fs::read(arquivo_posicoes(&a, "lotofacil")).unwrap();
+    let (r2, _) = a
+        .rodar(&["lotofacil"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r2.sucesso(), "{r2:?}");
+    assert_eq!(fs::read(arquivo_posicoes(&a, "lotofacil")).unwrap(), antes);
+}
+
+/// A falha do passo das posições (aqui: o perfil das posições sumiu) não
+/// derruba o ciclo: o resto é exportado e publicado, o arquivo antigo é
+/// removido, a chave some do index e a noite conta como falha (etapa
+/// `posicoes`), como no ranking.
+#[tokio::test]
+async fn falha_das_posicoes_nao_derruba_o_ciclo_gera_alerta_e_omite_o_arquivo() {
+    let a = Amb::novo(false);
+    a.semear("quina", N, &[]);
+    let mut destino = DestinoFalso::default();
+    let (r1, _) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N), sem_planilha)
+        .await;
+    assert!(r1.sucesso(), "{r1:?}");
+    assert!(arquivo_posicoes(&a, "quina").exists());
+    fs::remove_file(a.raiz.join("perfis/quina/posicoes_v1.toml")).unwrap();
+
+    // Saiu o concurso 13: features e índice avançam, as posições falham.
+    let (r2, eventos) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+
+    assert!(r2.sucesso(), "{r2:?}");
+    assert!(r2.loterias[0].exportada);
+    let posicoes = &r2.loterias[0].posicoes;
+    assert!(posicoes.falha.is_some(), "{posicoes:?}");
+    assert!(posicoes
+        .omitido
+        .as_deref()
+        .unwrap()
+        .contains("as posições vão até o concurso 12, mas o último sorteado é o 13"));
+    assert!(r2.loterias[0]
+        .to_string()
+        .contains("sem ranking_posicoes.json"));
+    assert!(!arquivo_posicoes(&a, "quina").exists());
+    assert!(!index_tem_posicoes(&a));
+    // O ranking por taxa e os obrigatórios seguem.
+    assert!(arquivo_ranking(&a, "quina").exists());
+    assert!(a.saida().join("v1/quina/ultimo.json").exists());
+    for e in [
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::PosicoesFalhou { .. })),
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::PosicoesOmitido { .. })),
+        |e: &Evento| matches!(e, Evento::Ciclo(EventoCiclo::PosicoesAntigoRemovido { .. })),
+    ] {
+        let achado = eventos.iter().find(|x| e(x)).expect("evento das posições");
+        assert_eq!(achado.nivel(), rust_spider::log_arquivo::Nivel::Aviso);
+    }
+
+    let agora = RELOGIO_INICIAL as i64;
+    let noites = noites_do_ciclo(&[(cfg_de("quina"), a.db("quina"))], &r2, agora, &mut |_| {});
+    let falha = noites[0].falha.as_ref().expect("falha da noite");
+    assert_eq!(falha.etapa, "posicoes");
+
+    // Consertado, o arquivo volta.
+    fs::write(
+        a.raiz.join("perfis/quina/posicoes_v1.toml"),
+        PERFIL_MODELO
+            .replace("@@", "quina")
+            .replace("padrao_v1", "posicoes_v1"),
+    )
+    .unwrap();
+    let (r3, _) = a
+        .rodar(&["quina"], &mut destino, pagina_em(N + 1), sem_planilha)
+        .await;
+    assert!(r3.sucesso() && r3.loterias[0].posicoes == Default::default());
+    assert!(arquivo_posicoes(&a, "quina").exists());
+    assert!(index_tem_posicoes(&a));
+}
+
+#[test]
+fn eventos_das_posicoes_no_ciclo_sao_avisos_na_saida_de_erro() {
+    use rust_spider::log_arquivo::Nivel;
+    for e in [
+        EventoCiclo::PosicoesFalhou {
+            slug: "quina",
+            mensagem: "x".into(),
+        },
+        EventoCiclo::PosicoesOmitido {
             slug: "quina",
             motivo: "x".into(),
         },

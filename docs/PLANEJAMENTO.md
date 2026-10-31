@@ -567,6 +567,250 @@ Tarefas:
   com auditoria do `auditor-contrato`.
 - **7.7** — tela no app (ver `PLANEJAMENTO-FRONTEND.md`).
 
+### Fase 1g — Índice de força das posições
+
+Pedido do usuário (2026-10-31). A 1f mede só *quanto* cada posição da tabela
+de força saiu (uma contagem). A 1g trata a **posição como se fosse uma dezena**:
+marca, em cada concurso passado, quais posições a tabela de força ocupava nas
+dezenas sorteadas, e roda sobre essas séries o mesmo motor de features e índice.
+O resultado é um índice de força das posições 1…N, traduzido para dezenas pela
+tabela de força do próximo concurso. Como a 1f, é descrição do passado: sorteios
+são independentes e o resultado esperado da avaliação é "não supera o acaso".
+Além disso, a posição de uma dezena já é função do histórico dela, então a série
+de posições é uma recodificação do mesmo histórico, não informação nova.
+
+Decisões de 2026-10-31:
+
+- **Armazenamento**: tabelas derivadas novas no mesmo `resultados_<loteria>.db`
+  (regra "um banco por loteria"). Nada existente muda; tudo regenerável.
+- **Motor reaproveitado**: as 9 features e as janelas 10/50/100/total sobre a
+  série de cada posição, com perfil próprio `perfis/<loteria>/posicoes_v1.toml`
+  (mesmo formato dos perfis atuais; pesos iniciais iguais aos do `padrao_v1`
+  até haver busca de pesos).
+- **Saída para o app**: ranking de dezenas via posição, em arquivo opcional e
+  aditivo do contrato, como o `ranking_taxa.json`.
+
+Definições:
+
+- **Marca** `posicao_marcas(concurso, posicao, perfil, saiu)`: para o concurso
+  *t* e o perfil de força ativo, `saiu = 1` se a dezena que ocupava a posição
+  *r* em `indice(t)` (posição medida **antes** do sorteio) foi sorteada em *t*.
+  Cada concurso marca exatamente K posições. O snapshot do próximo concurso não
+  tem marca (`saiu = NULL`).
+- **Posição como dezena**: um "resultado" sintético por concurso, com as K
+  posições marcadas no lugar das dezenas, numa `LoteriaConfig` sintética com
+  `dezena_min = 1`, `dezena_max = N` e o mesmo K. O motor roda sem alteração
+  (código só reutilizado, nada existente muda), gerando `posicao_features` e
+  `posicao_indice` (mesmos campos de `features_dezena` e `indice`, com `posicao`
+  no lugar de `dezena`).
+- **Ponto no tempo**: a marca de *t* usa `indice(t)` (só concursos até *t−1*) e o
+  resultado de *t*; as features da posição em *t* usam só as marcas até *t−1*.
+  Nenhuma etapa lê o futuro.
+- **Ranking de dezenas**: no próximo concurso, as posições são ordenadas por
+  `posicao_indice`; a dezena que ocupa a posição *r* em `indice(próximo)` herda
+  a ordem da posição *r*. Resultado: uma ordem 1…N das dezenas.
+- **Aquecimento**: os primeiros concursos têm `indice` sem features (todas as
+  dezenas empatadas, posição = número da dezena); as marcas ali são só ruído.
+  A numeração do motor exige começar no concurso 1, então a série começa lá e
+  a avaliação ignora o aquecimento (ver 1g.3).
+- **Perfil preso**: as tabelas ficam por perfil de força (`perfil` na chave),
+  porque a marca depende da posição que aquele perfil dava.
+
+Esquema (regenerável de `resultados`, `features_dezena` e `indice`; definido na
+1g.3, decisões de 2026-10-31). `perfil` é sempre o perfil de **força** que deu
+as posições. A chave começa por `perfil` (e `janela`) para apagar e ler um
+perfil sem varrer os outros — única diferença de ordem em relação às tabelas que
+já existiam:
+
+```sql
+posicao_marcas(perfil, concurso, posicao, saiu,            -- só concursos sorteados
+               PRIMARY KEY (perfil, concurso, posicao)) WITHOUT ROWID
+posicao_features(perfil, janela, concurso, posicao, <9 componentes>, saiu,
+                 feature_version,                          -- inclui o snapshot do próximo (saiu NULL)
+                 PRIMARY KEY (perfil, janela, concurso, posicao)) WITHOUT ROWID
+posicao_indice(perfil, perfil_posicoes, concurso, posicao, total, g_1,
+               variacao_g_1,                               -- g_1 anterior − g_1 atual
+               PRIMARY KEY (perfil, perfil_posicoes, concurso, posicao)) WITHOUT ROWID
+posicao_perfil(nome, versao, loteria, janela, normalizacao, hash_toml, toml,
+               criado_em, PRIMARY KEY (nome))              -- registro próprio; `perfis` não é tocada
+posicao_motor_estado(perfil, loteria, feature_version, ultimo_concurso,
+                     impressao, estado, PRIMARY KEY (perfil))
+```
+
+A marca do próximo concurso não existe (nem como linha com `saiu` nulo): só
+`posicao_features` e `posicao_indice` cobrem o snapshot do último + 1.
+
+Decisões fechadas na 1g.1 (2026-10-31):
+
+- **Coluna do ranking das posições: G-1**, grafada `g_1` no banco e no código
+  (hífen não é identificador SQL válido sem aspas e o projeto usa snake_case;
+  o rótulo "G-1" fica para relatórios e app). `g_1` = posição 1…N da posição
+  no índice das posições (1 = a de maior total).
+- **Aquecimento**: as tabelas gravam todos os concursos; o corte vale **só na
+  avaliação** (1g.4). Valor aprovado pelo usuário em 2026-10-31: ignorar os
+  concursos 1 a 100 (a maior janela finita, `JANELA_MAX`), constante
+  `avaliacao::AQUECIMENTO`.
+- **Estado de motor próprio**: tabela `posicao_motor_estado`, uma linha por
+  perfil de força (a marca depende da posição que o perfil dava), com
+  `perfil, loteria, feature_version, ultimo_concurso, impressao, estado`.
+  `impressao` = hash dos resultados **e** das posições do `indice` do perfil já
+  incorporados; mudou qualquer um, regenera tudo (regra do `sync features`).
+  `sync posicoes` retoma dela e calcula só os concursos novos.
+
+### Golden da 1g (MINI: N = 5, K = 2, 3 concursos)
+
+Entrada fixa (a posição do `indice` é dada, para o golden não depender de
+pesos; `d` = dezena):
+
+| t | sorteio | posição de d1 d2 d3 d4 d5 em `indice(t)` |
+|---|---|---|
+| 1 | {1, 2} | 1 2 3 4 5 (todas empatadas: ordem da dezena) |
+| 2 | {2, 3} | 2 1 3 4 5 |
+| 3 | {1, 5} | 3 2 1 5 4 |
+| 4 (próximo) | — | 2 4 3 5 1 |
+
+Marcas (`posicao_marcas`): posição ocupada pelas dezenas sorteadas.
+
+- t=1: d1→1, d2→2 ⇒ posições {1, 2}
+- t=2: d2→1, d3→3 ⇒ posições {1, 3}
+- t=3: d1→3, d5→4 ⇒ posições {3, 4}
+
+Resultados sintéticos entregues ao motor: `1:{1,2}`, `2:{1,3}`, `3:{3,4}`.
+
+Features das posições em t=4, janela total (a janela é o histórico inteiro):
+
+| posição | frequencia | maior_espaco (oc.) | menor_espaco (oc.) | soma_variacoes | espaco_final | repeticoes_total | repeticao_atual |
+|---|---|---|---|---|---|---|---|
+| 1 (saiu em 1, 2) | 2 | 0 (1) | 0 (1) | NULL | 1 | 1 | 0 |
+| 2 (saiu em 1) | 1 | NULL | NULL | NULL | 2 | 0 | 0 |
+| 3 (saiu em 2, 3) | 2 | 0 (1) | 0 (1) | NULL | 0 | 1 | 2 |
+| 4 (saiu em 3) | 1 | NULL | NULL | NULL | 0 | 0 | 1 |
+| 5 (nunca) | 0 | NULL | NULL | NULL | NULL | 0 | 0 |
+
+Tradução para dezenas: se a ordem das posições pelo índice for
+`g_1`: posição 3 = 1, 1 = 2, 4 = 3, 2 = 4, 5 = 5, então, por `indice(4)`
+(posição 3 = d3, 1 = d5, 4 = d2, 2 = d1, 5 = d4), a ordem das dezenas é
+d3, d5, d2, d1, d4 (a dezena herda o `g_1` da posição que ocupa). A `g_1` desse
+exemplo é entrada, não saída do motor: testa só a tradução.
+
+Ponto no tempo: as features de t=3 não podem ver a marca de t=3 (posição 3 em
+t=3 tem `frequencia` 1, não 2).
+
+Tarefas:
+- **1g.1** — Especificação fechada: responder as dúvidas acima, golden à mão
+  numa MINI (3 concursos, N = 5, K = 2) com as marcas esperadas. **Pronto
+  quando:** golden escrito neste documento e aprovado (escrito em 2026-10-31;
+  falta a aprovação do usuário).
+- **1g.2** — `src/motor/posicoes.rs` (função pura, sem banco): `indice` + resultado
+  → marcas → resultado sintético → features e índice das posições. Testes: golden
+  da 1g.1, ponto no tempo, incremental = completo, cada concurso com K marcas.
+  **Pronto quando:** testes verdes e verificador-vazamento sem achados.
+- **1g.3** — Tabelas derivadas e `sync posicoes <loteria>` (texto e CSV; uma
+  loteria por vez; registro do perfil/hash). **Pronto quando:** roda nas três
+  loterias e regenera igual. Decisões de 2026-10-31 (independência do que já
+  existe):
+  - **Só lê** `resultados`, `features_dezena`, `indice` e `perfis` (para
+    conferir, como o `sync ranking`, que o índice de força está em dia); **só
+    grava** nas cinco tabelas `posicao_*`. O perfil das posições é registrado em
+    `posicao_perfil` com a mesma imutabilidade (`PerfilAlterado`), nunca em
+    `perfis`. Código em arquivos novos (`db_posicoes.rs`, `orquestracao/posicoes.rs`,
+    `posicoes.rs`); nos existentes entram só acréscimos (`mod`, `pub use`,
+    subcomando da CLI).
+  - **Comando**: `sync posicoes <loteria> [--perfil <força>] [--perfil-posicoes
+    posicoes_v1] [--saida posicoes] [--db] [--perfis]`; não aceita `todas`; toma
+    a trava `posicoes`. Perfil `perfis/<loteria>/posicoes_v1.toml` com os pesos,
+    a janela e a normalização do `padrao_v1` até haver busca de pesos.
+  - **Incremental**: marcas, features e estado retomam de
+    `posicao_motor_estado` e calculam só os concursos novos; o índice das
+    posições é refeito inteiro a cada execução (depende só das features
+    gravadas). Recalcula tudo do zero se não houver estado, se ele for ilegível
+    ou de outra versão, se a impressão das marcas já incorporadas mudou
+    (resultado corrigido ou posição do índice de força diferente) ou se
+    `posicao_marcas` ou `posicao_features` não baterem com o estado. Com
+    concursos novos, o índice de outro perfil das posições do mesmo perfil de
+    força é apagado (ficaria velho, como no recálculo do zero) e volta quando
+    aquele perfil rodar de novo. Tudo numa transação.
+  - **Saída**: relatório em texto e CSV do índice das posições do próximo
+    concurso (`g_1`, posição, dezena que a ocupa, total, variação), em
+    `<saida>/<loteria>/posicoes_<loteria>_<força>_<posições>_<concurso>.csv`.
+    A ordem das dezenas pelo `g_1` e a avaliação ficam para a 1g.4.
+- **1g.4** — Ranking de dezenas via posição e avaliação na régua da 1c/1e
+  (walk-forward, top-k contra a hipergeométrica, bootstrap), ignorando o
+  aquecimento; comparação com a nota A da 1f; números das três loterias em
+  `PROGRESSO.md`; `docs/GUIA.md` com a leitura e o aviso de não-previsão.
+  **Pronto quando:** números publicados e conjunto trancado intacto. Decisões
+  de 2026-10-31:
+  - **Onde roda**: opção `--avaliar` do `sync posicoes` (conflita com `--saida`),
+    só lendo o banco: recalcula as marcas, o índice das posições e as taxas da
+    1f em memória, sem ler `posicao_*` nem `ranking_taxa`; não grava tabelas nem
+    CSV. Código novo em `avaliacao/avaliacao_g1.rs` (função pura),
+    `orquestracao/posicoes/avaliar_g1.rs` e `posicoes/avaliar.rs` (relatório);
+    nada existente foi alterado.
+  - **Ordem G-1**: no concurso *t*, cada dezena herda o `g_1` da posição que
+    ocupava em `indice(t)`; passa pela régua da 1f.4 (`avaliar_ranking`) como
+    "ordem B": log loss e Brier com a calibração da 1c (m = 100), top-k contra a
+    hipergeométrica, bootstrap por blocos e a linha linear da 1e.
+  - **Referência A**: a nota A da 1f é **reavaliada** pela mesma régua, nas
+    mesmas linhas e dobras, porque o corte do aquecimento muda a calibração e as
+    dobras; os números **não** são comparáveis com os do `sync ranking
+    --avaliar`, que parte do concurso 1.
+  - **Aquecimento**: os concursos 1 a 100 saem da avaliação inteira (calibração
+    inclusive); a série avaliada começa no 101 (primeiro da entrada, sem
+    avaliação) e as dobras se dividem a partir do 102,
+    daí. As tabelas `posicao_*` continuam gravando todos os concursos.
+  - **Trancado fechado**: só as dobras 2 a 5, sem `--trancado` e sem registro de
+    uso; resultados, índice e observações são cortados em
+    `ultimo_concurso_busca` antes de marcas e taxas.
+  - **Ordem das dezenas pelo G-1**: é a ordem das linhas do CSV do `sync
+    posicoes` (`g_1` crescente, com a dezena que ocupa a posição).
+- **2.6** — `ranking_posicoes.json` opcional no `sync exportar`, no `sync ciclo`
+  e em `docs/contrato-v1.md`, com auditoria do `auditor-contrato`. Decisões de
+  2026-10-31 (pedido do usuário: o G-1 aparece na tela da Força, junto das
+  dezenas, como um dado extra; ver 7.8 em `PLANEJAMENTO-FRONTEND.md`):
+  - **Arquivo novo e opcional** `ranking_posicoes.json`, por loteria
+    (`<loteria>/ranking_posicoes.json`), chave opcional `ranking_posicoes` de
+    `arquivos` no `index.json`, descrita em `docs/contrato-v1.md`. Aditivo:
+    `schema_version` inalterado; `ultimo.json`, `tabela_geral.json`,
+    `historico.json` e `ranking_taxa.json` não mudam. O contrato passa a ter três
+    chaves obrigatórias e duas opcionais.
+  - **Conteúdo**: só o retrato do próximo concurso. Cabeçalho como o de
+    `ranking_taxa.json` (`schema_version`, `loteria`, `perfil`, `hash_toml`,
+    `janela`, `normalizacao`, `feature_version`, `concurso`, `ultimo_sorteado`)
+    mais `perfil_posicoes`, `hash_toml_posicoes`, `janela_posicoes` e
+    `normalizacao_posicoes` (os do perfil das posições). Uma linha por dezena, em
+    ordem crescente de dezena: `dezena`, `posicao_indice` (a posição na tabela de
+    força, igual à de `tabela_geral.json`), `g_1` (1…N, sem repetição; é o `g_1`
+    da posição que a dezena ocupa) e `variacao_g_1` (`g_1` do concurso anterior −
+    `g_1` atual, **por dezena**, ver abaixo; `null` sem concurso anterior). Sem totais, sem features e sem
+    marcas: o app não recebe o que não usa.
+  - **`variacao_g_1` é da dezena** (decisão de 2026-10-31, antes de qualquer
+    publicação): `g_1` que a dezena tinha em `ultimo` (o `g_1` da posição que ela
+    ocupava em `indice(ultimo)`, lido de `posicao_indice` do concurso `ultimo`) −
+    `g_1` atual dela; positivo = subiu, como `variacao_posicao` de
+    `tabela_geral.json`. Não é o `variacao_g_1` da posição gravado em
+    `posicao_indice`. A conferência "em dia" cobre os dois concursos (`ultimo` e
+    `ultimo + 1`) por igualdade exata.
+  - **Independência**: qualquer erro de leitura das tabelas `posicao_*` (esquema
+    antigo, coluna ausente, valor inesperado) vira omissão do arquivo, nunca
+    impede o `exportar` nem o ciclo de publicar os obrigatórios.
+  - **Perfil das posições**: constante `posicoes_v1` (a mesma do
+    `sync posicoes`); não entra em `LoteriaConfig`.
+  - **Exportar não calcula o que publica**: lê `posicao_indice` e só publica se
+    as tabelas `posicao_*` estiverem em dia: o estado salvo vai até o último
+    sorteado, a impressão das marcas confere com a recalculada dos resultados e do
+    índice de força, `posicao_indice` do par (perfil ativo, `posicoes_v1`) cobre o
+    concurso `ultimo + 1` com as N posições, e o `g_1` gravado é exatamente o que
+    o cálculo daria com `posicao_features` (igualdade exata). Ausente ou
+    atrasado: o `sync exportar` publica o resto, **não grava** o arquivo (apaga um
+    antigo) e **omite a chave**, como no `ranking_taxa.json`.
+  - **`sync ciclo`** roda `sync posicoes` depois do índice e antes do exportar;
+    falha das posições não derruba o ciclo (registra no log e segue sem o
+    arquivo), com o mesmo tratamento de alerta do ranking se for um acréscimo
+    simples.
+  - **Linguagem**: o contrato descreve `g_1` como descrição do passado, sem
+    sugerir previsão (a avaliação da 1g.4 não encontrou vantagem sobre o acaso).
+- **7.8** — tela da Força com o G-1 (ver `PLANEJAMENTO-FRONTEND.md`).
+
 ### Fase 2 — Exportação para o app
 
 - Comando `sync exportar [loteria|todas] --saida publico/`:
@@ -693,7 +937,7 @@ novo publicado no mesmo dia, e uma falha simulada dispara o alerta.
 
 ## Ordem e dependências
 
-0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 1f → 2 → 3. O contrato da Fase 2 é o ponto de encontro
+0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 1f → 1g → 2 → 3. O contrato da Fase 2 é o ponto de encontro
 com o planejamento do front-end.
 
 ## Decisões em aberto

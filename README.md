@@ -50,6 +50,8 @@ src/
 ├── orquestracao.rs # `sync features`, `indice`, `avaliar`, `aleatoriedade`, `evidencia`, `tabela`, `exportar` e `dataset`: validação + motor/avaliação + banco
 ├── tabela.rs      # CSV de planilha da tabela geral (`sync tabela`)
 ├── ranking.rs     # CSV e relatório em texto do `sync ranking` (taxa histórica de posição e componentes)
+├── db_posicoes.rs # tabelas `posicao_*` (Fase 1g): marcas, features, índice, perfil e estado do motor das posições
+├── posicoes.rs    # CSV e relatório em texto do `sync posicoes` (índice de força das posições, G-1)
 ├── exportacao/    # JSON do contrato `v1` (`sync exportar`): serialização determinística (puro) e gravação atômica em disco
 ├── publicacao/    # `sync publicar`: confere o publico/v1/, decide se mudou e publica num `Destino` (clone git)
 ├── calendario.rs         # calendário de sorteios (3.2): dia/horário de procura, conferência, tolerância (puro)
@@ -167,8 +169,29 @@ cargo run --release --bin sync -- ranking quina --avaliar
 # vies|acaso, normalizacao zscore|minmax (identificadores do contrato, não os rótulos do CSV).
 # ranking_taxa.json é opcional: só sai se `sync ranking` estiver em dia com o snapshot; senão é omitido
 # (sem a chave no index.json, com aviso), sem derrubar a exportação.
+# ranking_posicoes.json (2.6, G-1) também é opcional: só sai se `sync posicoes` estiver em dia (estado até o
+# último sorteado, marcas e g_1 iguais ao recálculo); senão é omitido do mesmo jeito. Só lê e confere.
 cargo run --bin sync -- exportar todas
 cargo run --bin sync -- exportar quina --saida outra/pasta
+
+# índice de força das POSIÇÕES (Fase 1g, G-1): marca, em cada concurso, as posições que a tabela de força
+# ocupava nas dezenas sorteadas, trata cada posição como se fosse uma dezena e calcula sobre elas as
+# features e o índice (motor reaproveitado). Independente do que já existe: só LÊ resultados,
+# features_dezena, indice e perfis (exige `features` e `indice` em dia) e só GRAVA nas tabelas
+# posicao_marcas, posicao_features, posicao_indice, posicao_perfil e posicao_motor_estado (o perfil das
+# posições, perfis/<loteria>/posicoes_v1.toml, fica em posicao_perfil, nunca em `perfis`). Retoma do
+# estado salvo e calcula só os concursos novos; recalcula do zero se algo já incorporado mudou. Uma
+# loteria por vez. Imprime o relatório e grava o CSV do próximo concurso em posicoes/<loteria>/. É
+# descrição do passado, não previsão (a avaliação contra o acaso vem na tarefa 1g.4).
+cargo run --bin sync -- posicoes quina
+cargo run --bin sync -- posicoes quina --perfil padrao_v1 --perfil-posicoes posicoes_v1 --saida outra/pasta
+
+# avalia a ordem G-1 (as dezenas ordenadas pelo índice das posições) contra o acaso, com a nota A da 1f como
+# referência no MESMO recorte: log loss e Brier (calibração da 1c), top-k, bootstrap e a linha linear (1e), só
+# nas dobras de teste 2 a 5 da busca e SEM os 100 primeiros concursos (aquecimento). Só lê o banco: recalcula
+# tudo em memória, não grava tabelas nem CSV, não aceita --saida e deixa o conjunto trancado fechado (sem
+# --trancado). Descrição do passado, não previsão; esperado: não superar o acaso (docs/GUIA.md, seção 10).
+cargo run --bin sync -- posicoes quina --avaliar
 
 # publica o publico/v1/ já exportado no clone git do repositório de dados e faz push (origin/main).
 # Não exporta nem lê banco; não clona sozinho (se o clone faltar, o erro traz o `git clone` a rodar).
@@ -208,6 +231,10 @@ cargo run --bin sync -- publicar --repo outra/pasta --saida publico
 #    `ranking_taxa.json` (apaga o antigo, sem a chave no index.json; o log diz o motivo) e a falha conta
 #    como noite de falha (etapa `ranking`) para o rascunho de alerta (2 noites seguidas). Para ver o erro:
 #    `sync ranking <loteria>`;
+#  - posições (2.6): logo depois do ranking e antes do exportar, regrava as tabelas do `sync posicoes` (perfil
+#    `posicoes_v1`, sem relatório nem CSV). Mesmo tratamento do ranking: falha NÃO reprova a loteria nem
+#    muda o exit code; o exportar omite o `ranking_posicoes.json` (apaga o antigo, sem a chave no index.json)
+#    e a falha conta como noite de falha (etapa `posicoes`). Para ver o erro: `sync posicoes <loteria>`;
 #  - sem `--aguardar` o ciclo faz uma passada só (e um único publicar no fim). A trava (3.4), o log em
 #    arquivo (3.5), os alertas (3.6) e o agendamento (3.7) existem: ver "Trava", "Log", "Agendamento" e
 #    "Alertas e operação". No fim, o ciclo conta a noite de cada loteria e grava o rascunho de e-mail de

@@ -149,6 +149,7 @@ mod tests {
                 Impressao::de(b"historico"),
             ],
             ranking_taxa: None,
+            ranking_posicoes: None,
         }
     }
 

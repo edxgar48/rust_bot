@@ -1,0 +1,17 @@
+# perfis/lotofacil/posicoes_v1.toml
+nome = "posicoes_v1"
+versao = 1
+loteria = "lotofacil"
+janela = 50
+normalizacao = "zscore"        # ou "minmax"
+
+[pesos]
+frequencia                = 1.0
+maior_espaco              = 1.0
+maior_espaco_ocorrencias  = 0.3
+menor_espaco              = 0.5
+menor_espaco_ocorrencias  = 0.3
+soma_variacoes            = -0.8
+espaco_final              = 1.2
+repeticoes_total          = 0.7
+repeticao_atual           = 0.4

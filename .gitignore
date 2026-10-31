@@ -4,6 +4,7 @@
 /backups
 /tabelas
 /ranking
+/posicoes
 /datasets
 /ml/.venv
 __pycache__/

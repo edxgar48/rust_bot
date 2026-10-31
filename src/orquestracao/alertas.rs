@@ -282,6 +282,30 @@ fn falha_do_ranking(resumo: &super::ResumoLoteria) -> Option<FalhaNoite> {
     })
 }
 
+/// Falha do passo das posições / G-1 (tarefa 2.6), com o mesmo tratamento do
+/// ranking: não reprova a loteria, mas conta como noite de falha.
+fn falha_das_posicoes(resumo: &super::ResumoLoteria) -> Option<FalhaNoite> {
+    resumo.posicoes.falha.as_ref().map(|erro| FalhaNoite {
+        etapa: "posicoes".to_string(),
+        erro: erro.clone(),
+        mudanca_de_pagina: false,
+    })
+}
+
+/// A falha dos passos opcionais (ranking e posições) que conta para a noite
+/// quando a loteria em si não falhou. Se os dois falharam na mesma noite, uma
+/// só falha cita as duas etapas (`ranking, posicoes`) e os dois erros.
+fn falha_opcional(resumo: &super::ResumoLoteria) -> Option<FalhaNoite> {
+    match (falha_do_ranking(resumo), falha_das_posicoes(resumo)) {
+        (Some(r), Some(p)) => Some(FalhaNoite {
+            etapa: format!("{}, {}", r.etapa, p.etapa),
+            erro: format!("{}: {}; {}: {}", r.etapa, r.erro, p.etapa, p.erro),
+            mudanca_de_pagina: false,
+        }),
+        (r, p) => r.or(p),
+    }
+}
+
 /// Último concurso: o que o ciclo viu ou, se ele nem chegou lá, o do banco
 /// (aberto só para leitura, sem criar nada).
 fn ultimo_do_banco(slug: &str, db_caminho: &Path, visto: Option<u32>) -> Option<u32> {
@@ -351,7 +375,7 @@ pub fn noites_do_ciclo(
                 f.erro.eh_mudanca_de_pagina(),
             )),
             (None, Err(e)) if resumo.exportada => Some(falha_do_erro("publicar", e, false)),
-            _ => falha_do_ranking(resumo).or_else(|| verificar_atraso(cfg, db_caminho, agora, obs)),
+            _ => falha_opcional(resumo).or_else(|| verificar_atraso(cfg, db_caminho, agora, obs)),
         };
         let ultimo = ultimo_do_banco(cfg.slug, db_caminho, resumo.ultimo_concurso);
         noites.push(NoiteAlvo::loteria(cfg, ultimo, falha));
@@ -391,7 +415,7 @@ pub fn noites_do_aguardar(
             (None, Some(e)) => Some(falha_do_erro("publicar", e, false)),
             // Falha do ranking conta mesmo sem concurso novo; o concurso ausente
             // só dispensa a checagem de atraso do calendário.
-            (None, None) => falha_do_ranking(&r.resumo).or_else(|| {
+            (None, None) => falha_opcional(&r.resumo).or_else(|| {
                 if r.concurso_ausente.is_some() {
                     None
                 } else {
@@ -914,10 +938,17 @@ fn passos(falha: &FalhaNoite, motivo: &str) -> Vec<&'static str> {
              com os seletores de src/config.rs e rode `sync atualizar <loteria> --visivel`.",
         );
     }
-    if falha.etapa == "ranking" {
+    let etapa_citada = |nome: &str| falha.etapa.split(", ").any(|e| e == nome);
+    if etapa_citada("ranking") {
         passos.push(
             "Falha no ranking: o ciclo seguiu e publicou sem o ranking_taxa.json. Rode \
              `sync ranking <loteria>` a mao para ver o erro (precisa de features e indice em dia).",
+        );
+    }
+    if etapa_citada("posicoes") {
+        passos.push(
+            "Falha nas posicoes: o ciclo seguiu e publicou sem o ranking_posicoes.json. Rode \
+             `sync posicoes <loteria>` a mao para ver o erro (precisa de features e indice em dia).",
         );
     }
     if falha.etapa == "publicar" {
@@ -1098,6 +1129,24 @@ mod tests {
             erro: erro.into(),
             mudanca_de_pagina: pagina,
         }
+    }
+
+    #[test]
+    fn runbook_cita_uma_linha_por_etapa_opcional_que_falhou() {
+        let com = |etapa: &str| FalhaNoite {
+            etapa: etapa.into(),
+            erro: "x".into(),
+            mudanca_de_pagina: false,
+        };
+        let tem = |f: &FalhaNoite, trecho: &str| passos(f, "").iter().any(|p| p.contains(trecho));
+        let so_posicoes = com("posicoes");
+        assert!(tem(&so_posicoes, "Falha nas posicoes"));
+        assert!(tem(&so_posicoes, "sync posicoes <loteria>"));
+        assert!(!tem(&so_posicoes, "Falha no ranking"));
+        let so_ranking = com("ranking");
+        assert!(tem(&so_ranking, "Falha no ranking") && !tem(&so_ranking, "Falha nas posicoes"));
+        let as_duas = com("ranking, posicoes");
+        assert!(tem(&as_duas, "Falha no ranking") && tem(&as_duas, "Falha nas posicoes"));
     }
 
     fn contar(e: &mut EstadoAlvo, f: &FalhaNoite, geral: bool, noite: &str) -> Option<Emissao> {

@@ -17,9 +17,9 @@ use rust_spider::exportacao::{self, disco, ArquivosLoteria};
 use rust_spider::motor::{Normalizacao, FEATURE_VERSION};
 use rust_spider::orquestracao::{
     dados_para_exportar, exportar_com_relatorio, exportar_tudo_ou_nada, sincronizar_features,
-    sincronizar_indice, sincronizar_ranking_com, DadosExportacao, MotivoRankingOmitido,
-    RankingDaLoteria, RankingParaExportar, RankingProximo, ResultadoComRelatorio,
-    ResultadoExportacao, SituacaoRanking, TabelaConcurso,
+    sincronizar_indice, sincronizar_ranking_com, DadosExportacao, MotivoPosicoesOmitido,
+    MotivoRankingOmitido, PosicoesParaExportar, RankingDaLoteria, RankingParaExportar,
+    RankingProximo, ResultadoComRelatorio, ResultadoExportacao, SituacaoRanking, TabelaConcurso,
 };
 use rust_spider::perfil::{self, PerfilCarregado};
 use rust_spider::Resultado;
@@ -1278,8 +1278,16 @@ fn cli_com_ranking_nao_avisa_e_lista_o_ranking_taxa_json() {
         String::from_utf8_lossy(&out.stderr).into_owned(),
     );
     assert!(out.status.success(), "{stderr}");
-    assert!(!stdout.contains("omitido"), "{stdout}");
-    assert!(!stdout.contains("Aviso"), "{stdout}");
+    // O banco desta CLI não tem `sync posicoes`: as únicas linhas de aviso são
+    // as do G-1 (2.6); nenhuma é do ranking por taxa.
+    assert!(
+        !stdout.contains("omitido: o banco não tem a tabela `ranking_taxa`"),
+        "{stdout}"
+    );
+    for linha in stdout.lines().filter(|l| l.contains("Aviso")) {
+        assert!(linha.contains("ranking_posicoes.json"), "{linha}");
+    }
+    assert!(!stdout.contains("ranking_taxa.json omitido"), "{stdout}");
     assert!(stdout.contains("ranking_taxa.json"), "{stdout}");
     assert!(existe(&saida, "lotofacil/ranking_taxa.json"));
     assert_eq!(listar(&saida).len(), 5);
@@ -1315,6 +1323,7 @@ fn dados_a_mao(linhas: Vec<LinhaRankingTaxa>) -> (DadosExportacao, RankingProxim
         feature_version: 1,
         resultados: vec![],
         ranking: RankingParaExportar::Omitido(MotivoRankingOmitido::SemTabela),
+        posicoes: PosicoesParaExportar::Omitido(MotivoPosicoesOmitido::SemTabela),
     };
     (dados, ranking)
 }

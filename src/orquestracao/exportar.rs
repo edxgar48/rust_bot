@@ -13,7 +13,12 @@
 //! e, para quem exporta, em [`RelatorioExportacao`] (veja
 //! [`exportar_com_relatorio`], a API que o `sync ciclo` deve usar para saber
 //! se o ranking entrou).
+//!
+//! O `ranking_posicoes.json` (G-1, tarefa 2.6) é o segundo opcional e segue a
+//! mesma regra; a leitura e a conferência ficam em `exportar_posicoes` e o que
+//! aconteceu com ele vem em [`RelatorioExportacao::posicoes`].
 
+use super::MotivoPosicoesOmitido;
 use crate::avaliacao;
 use crate::config::{self, LoteriaConfig};
 use crate::db;
@@ -339,6 +344,23 @@ pub struct RankingDaLoteria {
     pub situacao: SituacaoRanking,
 }
 
+/// O que aconteceu com o `ranking_posicoes.json` de uma loteria exportada.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SituacaoPosicoes {
+    /// Gravado, e com a chave `ranking_posicoes` no `index.json`.
+    Publicado,
+    /// Não gravado, sem a chave no `index.json`; um arquivo antigo da pasta
+    /// foi removido. Não é erro.
+    Omitido(MotivoPosicoesOmitido),
+}
+
+/// Uma loteria exportada e a situação do `ranking_posicoes.json` dela.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PosicoesDaLoteria {
+    pub slug: &'static str,
+    pub situacao: SituacaoPosicoes,
+}
+
 /// O que [`exportar_com_relatorio`] gravou.
 #[derive(Debug)]
 pub struct RelatorioExportacao {
@@ -350,6 +372,11 @@ pub struct RelatorioExportacao {
     pub rankings: Vec<RankingDaLoteria>,
     /// `ranking_taxa.json` antigos que foram apagados por causa de omissão.
     pub removidos: Vec<PathBuf>,
+    /// Uma entrada por loteria exportada, na ordem de `alvos`: o
+    /// `ranking_posicoes.json` entrou ou foi omitido (e por quê).
+    pub posicoes: Vec<PosicoesDaLoteria>,
+    /// `ranking_posicoes.json` antigos que foram apagados por causa de omissão.
+    pub removidos_posicoes: Vec<PathBuf>,
 }
 
 /// Como terminou [`exportar_com_relatorio`].
@@ -411,6 +438,7 @@ pub fn exportar_com_relatorio(
 ) -> Result<ResultadoComRelatorio> {
     let mut lotes = Vec::new();
     let mut rankings = Vec::new();
+    let mut posicoes = Vec::new();
     let mut falhas = Vec::new();
     for (cfg, db_caminho) in alvos {
         match gerar_exportacao(cfg, db_caminho, raiz_perfis) {
@@ -420,6 +448,13 @@ pub fn exportar_com_relatorio(
                     situacao: match &lote.ranking_omitido {
                         None => SituacaoRanking::Publicado,
                         Some(m) => SituacaoRanking::Omitido(m.clone()),
+                    },
+                });
+                posicoes.push(PosicoesDaLoteria {
+                    slug: cfg.slug,
+                    situacao: match &lote.posicoes_omitido {
+                        None => SituacaoPosicoes::Publicado,
+                        Some(m) => SituacaoPosicoes::Omitido(m.clone()),
                     },
                 });
                 lotes.push(lote);
@@ -439,5 +474,7 @@ pub fn exportar_com_relatorio(
         gravados: gravacao.gravados,
         rankings,
         removidos: gravacao.removidos,
+        posicoes,
+        removidos_posicoes: gravacao.removidos_posicoes,
     }))
 }

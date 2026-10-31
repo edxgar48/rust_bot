@@ -147,6 +147,7 @@ fn gravar_saida(saida: &Path, gerado_em: &str, lotes: &[Lote], nulos: &[&str]) {
                     Impressao::de(l.historico.as_bytes()),
                 ],
                 ranking_taxa: None,
+                ranking_posicoes: None,
             }),
         ));
     }

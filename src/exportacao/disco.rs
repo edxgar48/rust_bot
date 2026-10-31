@@ -53,14 +53,20 @@ pub struct Gravacao {
     pub gravados: Vec<ArquivoGravado>,
     /// `ranking_taxa.json` antigos apagados porque o ranking foi omitido.
     pub removidos: Vec<PathBuf>,
+    /// `ranking_posicoes.json` antigos apagados porque as posições foram
+    /// omitidas.
+    pub removidos_posicoes: Vec<PathBuf>,
 }
 
-/// Os arquivos de um lote que vão ao disco: os três obrigatórios e, se o
-/// ranking está em dia, o `ranking_taxa.json`.
+/// Os arquivos de um lote que vão ao disco: os três obrigatórios e, se
+/// estiverem em dia, o `ranking_taxa.json` e o `ranking_posicoes.json`.
 fn arquivos_do_lote(lote: &ArquivosLoteria) -> Vec<Arquivo> {
     let mut arquivos = Arquivo::TODOS.to_vec();
     if lote.ranking_taxa.is_some() {
         arquivos.push(Arquivo::RankingTaxa);
+    }
+    if lote.ranking_posicoes.is_some() {
+        arquivos.push(Arquivo::RankingPosicoes);
     }
     arquivos
 }
@@ -84,7 +90,8 @@ pub fn gravar(
 /// concurso nunca fica publicado ao lado dos arquivos novos). A remoção vem
 /// depois de todas as renomeações e antes do `index.json`, que descreve o que
 /// está no disco; a limitação de atomicidade entre vários arquivos é a mesma
-/// de sempre (o próximo `exportar` corrige).
+/// de sempre (o próximo `exportar` corrige). O `ranking_posicoes.json` segue a
+/// mesma regra (tarefa 2.6), com os apagados em [`Gravacao::removidos_posicoes`].
 pub fn gravar_com_relatorio(
     saida: &Path,
     lotes: &[ArquivosLoteria],
@@ -152,6 +159,16 @@ pub fn gravar_com_relatorio(
         }
     }
 
+    let mut removidos_posicoes = Vec::new();
+    for lote in lotes.iter().filter(|l| l.ranking_posicoes.is_none()) {
+        let antigo = raiz.join(&lote.slug).join(Arquivo::RankingPosicoes.nome());
+        match fs::remove_file(&antigo) {
+            Ok(()) => removidos_posicoes.push(antigo),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io(&antigo, e)),
+        }
+    }
+
     // 3) O índice, por último, com o que está no disco.
     let mut entradas: Vec<(&str, Option<LoteriaNoIndice>)> = Vec::with_capacity(slugs.len());
     for slug in slugs {
@@ -172,6 +189,7 @@ pub fn gravar_com_relatorio(
     Ok(Gravacao {
         gravados,
         removidos,
+        removidos_posicoes,
     })
 }
 
@@ -184,7 +202,8 @@ fn escrever_e_sincronizar(caminho: &Path, bytes: &[u8]) -> Result<()> {
 /// O que o disco tem de uma loteria em `raiz` (`<saida>/v1`): `None` se não
 /// há nenhum dos três arquivos obrigatórios; erro se faltar algum, se o
 /// `ultimo.json` não for o esperado ou se for de outro `schema_version`. O
-/// `ranking_taxa.json` é opcional: entra no resultado se estiver no disco.
+/// `ranking_taxa.json` e o `ranking_posicoes.json` são opcionais: entram no
+/// resultado se estiverem no disco.
 pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
     let pasta = raiz.join(slug);
     let mut lidos: Vec<Option<Vec<u8>>> = Vec::with_capacity(3);
@@ -240,6 +259,13 @@ pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
         Err(e) => return Err(io(&caminho_ranking, e)),
     };
 
+    let caminho_posicoes = pasta.join(Arquivo::RankingPosicoes.nome());
+    let ranking_posicoes = match fs::read(&caminho_posicoes) {
+        Ok(bytes) => Some(Impressao::de(&bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io(&caminho_posicoes, e)),
+    };
+
     Ok(Some(LoteriaNoIndice {
         ultimo_concurso,
         data,
@@ -249,5 +275,6 @@ pub fn ler_loteria(raiz: &Path, slug: &str) -> Result<Option<LoteriaNoIndice>> {
             Impressao::de(historico),
         ],
         ranking_taxa,
+        ranking_posicoes,
     }))
 }

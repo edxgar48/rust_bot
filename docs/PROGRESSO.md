@@ -66,6 +66,14 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 1f.4 Avaliação de A e B na régua da 1c/1e; `docs/GUIA.md`; números das três loterias
 - [x] 2.x → numerada 2.5 (ver Fase 2)
 
+## Fase 1g — Índice de força das posições · `engenheiro-motor` / `engenheiro-avaliacao`
+
+- [x] 1g.1 Especificação fechada e golden à mão (MINI)
+- [x] 1g.2 `src/motor/posicoes.rs`: marcas → resultado sintético → features e índice das posições
+- [x] 1g.3 Tabelas derivadas e `sync posicoes <loteria>`
+- [x] 1g.4 Ranking de dezenas via posição e avaliação na régua da 1c/1e
+- [x] 2.x → numerada 2.6 (ver Fase 2) · 7.x tela no app (a numerar)
+
 ## Fase 2 — Exportação · `engenheiro-publicacao`
 
 - [x] 2.1 Comando `sync exportar` (`index.json`, `ultimo.json`, `tabela_geral.json`, `historico.json`)
@@ -73,6 +81,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 2.3 `docs/contrato-v1.md`
 - [x] 2.4 Comando `sync publicar` (destino: repositório git separado, leitura por raw.githubusercontent)
 - [x] 2.5 `ranking_taxa.json` no `sync exportar`, no `sync ciclo` e em `docs/contrato-v1.md` (chave opcional de `arquivos`)
+- [x] 2.6 `ranking_posicoes.json` (G-1) opcional no `sync exportar`, no `sync ciclo` e em `docs/contrato-v1.md` (segunda chave opcional de `arquivos`)
 
 ## Fase 3 — Automação · `engenheiro-operacao`
 
@@ -108,6 +117,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] 7.5 Botão "Inserir" na tabela da Força (dezena vai marcada para o volante de Conferir jogo via rascunho em memória de módulo; sem duplicar, limite do volante com aviso em texto, outra loteria começa novo, tocar de novo remove; atalho "Abrir em Conferir" pede a abertura e o rascunho é consumido na montagem de Conferir jogo, sem sobrescrever edição nem Meus jogos; botão não aninha botão: Inserir fica sobre a linha por subgrade; testes do store, da Força e da integração; conferência visual em 360 px (claro e escuro) pendente no aparelho; pedido do usuário, 2026-10-16)
 - [x] 7.6 Borda nas posições da Força sorteadas no concurso anterior (posição que a dezena sorteada ocupava antes do sorteio = posição atual + variação; calculada no app com `tabela_geral` + `ultimo.json`; ranking, índice e contrato inalterados; borda só em volta do número da posição; legenda no fim da tela; seletor de períodos descartado; teste de `posicoesSorteadasNoAnterior`; commit fc5bae1; conferência visual no aparelho pendente; pedido do usuário, 2026-10-24)
 - [x] 7.7 Ranking por taxa histórica (3ª seção `secao=ranking` "Taxa histórica" na tela Estatísticas; só o que o `ranking_taxa.json` traz, ordenado pela Posição A, Nota B rotulada "experimental", sem grau nem faixa; chave opcional → "não publicado"; baixado só ao abrir a seção; 1146 testes; revisão aprovada com ressalvas BAIXA, corrigidas; capturas Quina/Lotofácil 360/1280 px claro/escuro, sem rolagem horizontal; commit 0909f43; testada e aprovada visualmente pelo usuário na produção real em 2026-10-28; leitor de tela real (TalkBack/NVDA) não testado, segue pendente; 2026-10-27)
+- [x] 7.8 G-1 na tela da Força (selo "G-1 5º" por dezena na Lista e chave "Ordenar por: Força | G-1" que reordena; ao ordenar por G-1 a 1ª coluna mostra o G-1 e o selo a posição de Força; Volante inalterada; chave só na Lista e só com o `ranking_posicoes.json`; ausente ou de outro snapshot → tela como antes, sem erro; preferência no aparelho e em `&ordem=g1`; detalhe da dezena com G-1 e variação da dezena; aviso geral e Entenda citam o G-1 como descrição do passado, sem rótulo "experimental"; 2026-10-31)
 - [~] 8.1 Instalação PWA (manifesto completo, ícones PNG any/maskable, apple-touch-icon, metas iOS, cartão "Instalar app" na Início e seção na Entenda; 1077 testes; verificado em Chrome desktop: instalabilidade sem erros, Service Worker, offline com cache; PENDENTE DO USUÁRIO: instalar de verdade em Android (Chrome) e iOS (Safari) e abrir offline, exige HTTPS/8.4; conferir recorte maskable, ícone iOS, splash; 2026-10-15)
 - [ ] 8.2 Testes ponta a ponta
 - [ ] 8.3 Lighthouse
@@ -2413,3 +2423,81 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   leitura dos textos pelo usuário e conferência no aparelho/leitor de tela real. Dúvidas devolvidas: (1) rótulo
   "Taxa histórica" ou "Ranking por taxa"?; (2) com índice velho no cache e falha de rede, a aba diz "sem conexão
   e sem ranking guardado" em vez de "não publicado" — manter?
+- 2026-10-31 — 1g.1 `[x]`: golden (MINI N=5, K=2) aprovado pelo usuário; decisões: coluna `g_1`, aquecimento
+  cortado só na avaliação (1–100, proposto), estado de motor próprio por perfil (`posicao_motor_estado`).
+- 2026-10-31 — 1g.2 `[x]`. Criados `src/motor/posicoes.rs` (+ `tests.rs`); em `motor/mod.rs` só `mod` e
+  `pub use`. API: `config_posicoes`, `marcar`, `marcar_historico`, `calcular_posicoes`,
+  `dezenas_via_posicao`. 15 testes (golden, ponto no tempo pelo sorteio e pelo índice, incremental =
+  completo inclusive retomando no meio, determinismo, erros). fmt, clippy e suíte verdes.
+  `verificador-vazamento`: sem vazamento, sem achados críticos/altos/médios. Para a 1g.3: `IndiceDezena`
+  não traz `perfil`, então quem grava deve filtrar `indice` pelo perfil ativo e manter a `impressao`
+  (resultados + posições do índice) em `posicao_motor_estado`; `calcular_posicoes` não confere isso.
+  Ainda sem commit.
+- 2026-10-31 — 1g.3 `[x]` (feito direto pelo agente principal, a pedido do usuário). Criados `src/db_posicoes.rs`,
+  `src/orquestracao/posicoes.rs`, `src/posicoes.rs` (CSV e relatório), `perfis/<loteria>/posicoes_v1.toml` (pesos,
+  janela e normalização do `padrao_v1`) e `tests/posicoes.rs` (17 testes). Em arquivos existentes só acréscimos:
+  `mod`/`pub use` em `lib.rs` e `orquestracao.rs`, subcomando `Posicoes` em `sync.rs` (trava `posicoes`), README.
+  Independência: só lê `resultados`, `features_dezena`, `indice` e `perfis`; só grava em `posicao_*`; o perfil das
+  posições vai para `posicao_perfil`, nunca para `perfis` (teste compara as cinco tabelas existentes antes e depois).
+  Esquema final no PLANEJAMENTO (chave começa por `perfil`; sem marca para o próximo concurso). Incremental:
+  marcas, features e estado retomam; o índice é refeito inteiro. Conferido em CÓPIAS dos três bancos reais
+  (os `.db` do repositório não foram tocados): lotofacil 95 450 marcas / 381 900 features, 1,8 s; megasena
+  184 740 / 739 200, 2,6 s; quina 572 480 / 2 290 240, 7,4 s (release). Estado salvo, sem novidade e do zero
+  (estado apagado) dão tabelas e CSV idênticos nas três. fmt, clippy e suíte inteira verdes. Pendente: o
+  `verificador-vazamento` não rodou na 1g.3 (a lógica de tempo é a da 1g.2, já auditada; a 1g.3 só liga ao
+  banco) e o `revisor-arquitetura` ainda não passou. Ainda sem commit.
+- 2026-10-31 — 1g.3: `revisor-arquitetura` aprovou com ressalvas (nenhum crítico/alto). Corrigidos: índice velho de
+  outro perfil das posições (com concurso novo, `posicao_indice` dos outros perfis do mesmo perfil de força é
+  apagado, como no recálculo do zero); `decidir` passou a conferir também `posicao_marcas`; `/posicoes` no
+  `.gitignore`; quebra de linha literal em `sync.rs`. +2 testes (19 em `tests/posicoes.rs`). Registrado, sem
+  mudança: o SQL das posições mora em `src/db_posicoes.rs` (irmão de `db.rs`) por decisão de independência do plano.
+- 2026-10-31 — 1g.4 `[x]` (feito direto pelo agente principal, a pedido do usuário; aquecimento de 100 concursos aprovado).
+  Criados `src/avaliacao/avaliacao_g1.rs` (+ `tests.rs`, 7 testes; função pura `avaliar_g1`, constante `AQUECIMENTO`),
+  `src/orquestracao/posicoes/avaliar_g1.rs` (`avaliar_g1_do_banco`, só leitura), `src/posicoes/avaliar.rs` (relatório) e
+  `tests/posicoes_avaliar.rs` (6 testes). Em arquivos existentes só acréscimos (`mod`/`pub use`, opção `--avaliar` do
+  `sync posicoes`, README, GUIA). A ordem G-1 reaproveita `avaliar_ranking` da 1f.4 sem alterá-la (G-1 entra como "ordem B"); a
+  nota A é reavaliada no mesmo recorte (sem o aquecimento), então os números NÃO são comparáveis com os da 1f.4. Trancado
+  fechado. Resultado nas três loterias (cópias dos bancos reais; `padrao_v1` + `posicoes_v1`; dobras de teste 2 a 5):
+  Lotofácil 765–3416 (2652): log loss G-1 − acaso +2,13e-4 (p 0,96), top-15 8,9581 × 9,0000 (p 0,96), linear +6,95e-7;
+  Mega-Sena 633–2759 (2127): +3,21e-4 (p 1,00), top-6 0,5891 × 0,6000 (p 0,77), linear +8,19e-6;
+  Quina 1366–6421 (5056): +1,74e-4 (p 1,00), top-5 0,3095 × 0,3125 (p 0,66), linear +6,91e-8.
+  Nenhuma supera o acaso; a referência A também não (tabela completa em `docs/GUIA.md`, seção 10). Conjunto trancado
+  intacto (nem lido nas contas). fmt, clippy e suíte inteira verdes. Pendente: `revisor-arquitetura` na 1g.4. Ainda sem commit.
+- 2026-10-31 — 1g.4: `revisor-arquitetura` (com `verificador-vazamento` dentro) aprovou com ressalvas, sem achado
+  crítico/alto/médio de vazamento. Corrigidos: teste de integração com trancado de verdade (corte 140 de 160, sorteios
+  acima trocados, avaliação idêntica); aviso do relatório que afirmava `posicoes_v1`; "Quina também fica abaixo do acaso"
+  no GUIA; redação do primeiro concurso da série (101, sem avaliação; dobras a partir do 102); quebra de linha literal em
+  `sync.rs`. DÉBITO aceito: ~130 linhas de formatação de tabelas copiadas de `ranking/avaliar.rs` para `posicoes/avaliar.rs`
+  (para não alterar o módulo da 1f); extrair um módulo comum de texto de avaliação quando a independência da 1g deixar de
+  ser exigência.
+- 2026-10-31 — 2.6 `[x]` (`engenheiro-publicacao`). `ranking_posicoes.json` opcional (G-1): novo `src/orquestracao/exportar_posicoes.rs`
+  (`ler_posicoes_para_exportar`, `PosicoesParaExportar`, `MotivoPosicoesOmitido`; só lê `posicao_*` e confere em dia: estado até o
+  último sorteado, impressão das marcas, contagens de marcas/features, N posições no snapshot, g_1/total/variação iguais ao recálculo),
+  `exportacao::ranking_posicoes_json`, `Arquivo::RankingPosicoes`, `SituacaoPosicoes` no relatório do exportar, remoção do arquivo
+  antigo, `PosicoesDoCiclo` e eventos `Posicoes*` no `sync ciclo` (passo 5c; falha não derruba, conta como noite de falha etapa
+  `posicoes`), constante `PERFIL_POSICOES`. Contrato, README atualizados. Testes: `tests/exportar_posicoes.rs` (26) e 4 em
+  `tests/ciclo.rs`. Em testes existentes só acréscimos de campo (`ranking_posicoes: None`, `posicoes`) e uma afirmação de
+  `exportar_ranking.rs` restringida ao `ranking_taxa`. Cópias dos bancos reais: `auditor-contrato` CONFORME, determinismo idêntico,
+  arquivos existentes byte a byte iguais. fmt, clippy e suíte verdes. Sem commit.
+- 2026-10-31 — 2.6, ajustes pós-revisão: `variacao_g_1` agora é POR DEZENA (g_1 que a dezena tinha em `ultimo` − g_1 atual; a
+  conferência em dia cobre `ultimo` e `ultimo + 1`); erro de leitura de `posicao_*` vira `Omitido(ErroDeLeitura)`; alerta cita
+  ranking e posições juntos quando as duas falham; `exportar_ranking.rs` restaura a garantia da 2.5; texto neutro no contrato;
+  exemplo real regenerado em cópias dos bancos.
+- 2026-10-31 — 7.8 `[x]` (`engenheiro-app`). Dados: `RankingPosicoesV1`, `validarRankingPosicoes`, chave opcional
+  `ranking_posicoes` em `ChaveArquivo`/índice (`tipos.ts`, `validacao.ts`, `cliente.ts`), baixada junto da Força
+  (`Forca.svelte` pede `['tabela_geral','ultimo','ranking_posicoes']`; sem a chave no índice nada é pedido). Tela:
+  `telas/forca.ts` (`juntarG1`, `ordenarLinhas`), `componentes/LinhaRanking.svelte` (selo na 3ª linha da linha),
+  `Forca.svelte` (chave `Segmentado`, anúncio por `role=status`), `DetalheDezena.svelte`/`detalhe-dezena.ts`,
+  `Entenda.svelte`; `lib/rotas.ts` (`ordemDoHash`, `&ordem=g1` só para G-1), `lib/loteria-guardada.ts`
+  (`forca.ordem`); textos em `lib/textos.ts` (`naoPreveForcaG1`, `naoPreveDetalheG1`, `entenda.g1`).
+  Decisões fora do plano: (1) a junção só vale se concurso, último sorteado e posição de cada dezena batem com a
+  `tabela_geral` (G-1 guardado de outro concurso é ignorado, não misturado); (2) a borda da 7.6 continua marcando
+  a posição de FORÇA: no número da 1ª coluna ordenando por Força, no selo "Força N" ordenando por G-1;
+  (3) o aviso e o aviso do detalhe só passam a citar o G-1 quando ele está na tela (textos antigos intactos);
+  (4) `variacao_g_1` é lida como variação DA DEZENA (definição nova do contrato), com os mesmos textos de
+  subiu/caiu/manteve da variação de posição; fixtures reais de `ranking_posicoes.json` ainda têm valores da definição
+  antiga: nenhum teste depende deles (o servidor falso gera variações ilustrativas); (5) arquivo inválido faz o
+  estado da tela virar "recusado" (como os demais arquivos), mas a tabela e a lista seguem sem G-1.
+  Testes: `testes/ranking-posicoes.test.ts`, `telas/visao-g1.test.ts`, `telas/Forca.g1.test.ts`,
+  `lib/ordem-forca.test.ts`; `Entenda.test.ts` ganhou o cartão novo. Pendente: conferência visual no aparelho
+  (360 px, claro/escuro) e leitor de tela real.

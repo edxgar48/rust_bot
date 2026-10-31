@@ -6,8 +6,9 @@ use rust_spider::orquestracao::{
     carregar_existentes, descrever_faixa, faixas_faltando, hoje_de, validar_lote, PastasAtualizar,
 };
 use rust_spider::{
-    backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil, publicacao,
-    ranking, registros, tabela, tempo, trava, validacao, SpiderError,
+    backup, config, dataset, db, downloader, exportacao, manuais, orquestracao, perfil,
+    posicoes as posicoes_relatorio, publicacao, ranking, registros, tabela, tempo, trava,
+    validacao, SpiderError,
 };
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
@@ -331,6 +332,47 @@ enum Comando {
         #[arg(long, conflicts_with = "saida")]
         avaliar: bool,
     },
+    /// Índice de força das posições (Fase 1g): marca, em cada concurso, as
+    /// posições que a tabela de força ocupava nas dezenas sorteadas, trata
+    /// cada posição como se fosse uma dezena e calcula sobre elas as features
+    /// e o índice de força (G-1). Grava só nas tabelas `posicao_marcas`,
+    /// `posicao_features`, `posicao_indice`, `posicao_perfil` e
+    /// `posicao_motor_estado`; não altera nenhuma tabela existente, nem o
+    /// `perfis`. Retoma do estado salvo e calcula só os concursos novos.
+    /// Imprime o relatório e grava o CSV do próximo concurso em
+    /// `<saida>/<loteria>/`. É descrição do passado, não previsão: os sorteios
+    /// são independentes. Recusa se o índice de força ou as features não
+    /// estiverem em dia.
+    Posicoes {
+        /// Slug da loteria (ex.: lotofacil, megasena, quina); não aceita `todas`
+        loteria: String,
+        /// Perfil de pesos que dá as posições, já registrado pelo `indice`
+        /// (padrão: o perfil ativo da loteria)
+        #[arg(long)]
+        perfil: Option<String>,
+        /// Perfil de pesos do índice das posições (arquivo
+        /// `<perfis>/<loteria>/<nome>.toml`); fica registrado em `posicao_perfil`
+        #[arg(long, default_value = "posicoes_v1")]
+        perfil_posicoes: String,
+        /// Pasta onde gravar o CSV (uma subpasta por loteria)
+        #[arg(long, default_value = "posicoes")]
+        saida: PathBuf,
+        /// Caminho do banco SQLite (padrão: resultados_<loteria>.db)
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Pasta dos perfis de pesos (uma subpasta por loteria)
+        #[arg(long, default_value = "perfis")]
+        perfis: PathBuf,
+        /// Em vez de gravar, avalia a ordem G-1 (as dezenas ordenadas pelo
+        /// índice das posições) contra o acaso, com a nota A da 1f como
+        /// referência no mesmo recorte: log loss, Brier, top-k, bootstrap e a
+        /// linha linear, só nas dobras de teste 2 a 5 do walk-forward da
+        /// busca, sem os 100 primeiros concursos (aquecimento). Só lê o banco:
+        /// não grava tabelas nem CSV. O conjunto trancado fica fora (não há
+        /// `--trancado`). Descrição do passado, não previsão
+        #[arg(long, conflicts_with = "saida")]
+        avaliar: bool,
+    },
     /// Exporta os JSON do contrato `v1` para o app: `<saida>/v1/index.json` e,
     /// por loteria, `ultimo.json`, `tabela_geral.json` (snapshot do próximo
     /// concurso com o perfil ativo) e `historico.json`, com `schema_version` e
@@ -544,6 +586,10 @@ const MOTIVO_AVALIAR_UMA_LOTERIA: &str =
 const MOTIVO_RANKING_UMA_LOTERIA: &str =
     "calcule uma loteria por vez (cada uma tem seu banco, seus perfis e suas tabelas)";
 
+/// Por que `posicoes` não aceita `todas`.
+const MOTIVO_POSICOES_UMA_LOTERIA: &str =
+    "calcule uma loteria por vez (cada uma tem seu banco, seus perfis e suas tabelas)";
+
 /// Nome do comando se ele grava (e portanto toma a trava `sync.lock`, 3.4);
 /// `None` para os que só leem. Sem `_`: comando novo obriga a decidir aqui.
 /// `tabela` fica livre: lê o banco e grava só em `tabelas/`, que nenhum outro
@@ -561,6 +607,7 @@ fn nome_se_grava(comando: &Comando) -> Option<&'static str> {
         Comando::Ciclo { .. } => Some("ciclo"),
         Comando::Dataset { .. } => Some("dataset"),
         Comando::Ranking { .. } => Some("ranking"),
+        Comando::Posicoes { .. } => Some("posicoes"),
         Comando::Avaliar { trancado, .. } => trancado.then_some("avaliar --trancado"),
         Comando::Listar { .. }
         | Comando::Validar { .. }
@@ -874,6 +921,31 @@ async fn executar(cli: Cli) -> anyhow::Result<()> {
                 avaliar_ranking(cfg, &db_caminho, &perfis, nome_perfil)?;
             } else {
                 gravar_ranking(cfg, &db_caminho, &perfis, nome_perfil, &saida)?;
+            }
+        }
+        Comando::Posicoes {
+            loteria,
+            perfil,
+            perfil_posicoes,
+            saida,
+            db,
+            perfis,
+            avaliar,
+        } => {
+            let cfg = buscar_config_unica(&loteria, "posicoes", MOTIVO_POSICOES_UMA_LOTERIA)?;
+            let db_caminho = db.unwrap_or_else(|| caminho_db_padrao(cfg.slug));
+            let nome_perfil = perfil.as_deref().unwrap_or(cfg.perfil_ativo);
+            if avaliar {
+                avaliar_posicoes(cfg, &db_caminho, &perfis, nome_perfil, &perfil_posicoes)?;
+            } else {
+                gravar_posicoes(
+                    cfg,
+                    &db_caminho,
+                    &perfis,
+                    nome_perfil,
+                    &perfil_posicoes,
+                    &saida,
+                )?;
             }
         }
         Comando::Exportar {
@@ -1842,6 +1914,21 @@ fn exportar(
             absoluto(removido).display()
         );
     }
+    // Idem para o G-1 (`ranking_posicoes.json`, tarefa 2.6).
+    for p in &relatorio.posicoes {
+        if let orquestracao::SituacaoPosicoes::Omitido(motivo) = &p.situacao {
+            println!(
+                "Aviso: {}: ranking_posicoes.json omitido: {motivo}.",
+                p.slug
+            );
+        }
+    }
+    for removido in &relatorio.removidos_posicoes {
+        println!(
+            "Aviso: ranking_posicoes.json antigo removido: {}.",
+            absoluto(removido).display()
+        );
+    }
     println!(
         "Exportação concluída: {} arquivo(s) em {}. Tempo: {:.2} s.",
         relatorio.gravados.len(),
@@ -1980,6 +2067,99 @@ fn gravar_ranking(
     linha!(texto);
     texto.push_str(&ranking::formatar_relatorio(cfg, &r));
     imprimir(&texto)?;
+    let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    registrar_no_log(Nivel::Info, &tempo);
+    let _ = escrever_stderr(&format!("{tempo}\n"));
+    Ok(())
+}
+
+/// `sync posicoes`: calcula e grava as tabelas do índice de força das posições
+/// (tudo em `orquestracao`, numa transação), grava o CSV do próximo concurso em
+/// `<saida>/<loteria>/` e imprime o relatório. Banco inexistente é erro, sem
+/// criar arquivo. É aqui que se lê o relógio para `posicao_perfil.criado_em`.
+/// O CSV só é gravado depois de as tabelas serem confirmadas; o texto da saída
+/// padrão é determinístico e o tempo de execução vai para a saída de erro.
+fn gravar_posicoes(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+    nome_perfil_posicoes: &str,
+    saida: &std::path::Path,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let forca = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let posicoes = perfil::carregar(raiz_perfis, cfg, nome_perfil_posicoes)?;
+    let criado_em = agora_iso8601_utc()?;
+    let mut conn = db::abrir(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let r = orquestracao::sincronizar_posicoes(&mut conn, cfg, &forca, &posicoes, &criado_em)?;
+    let duracao = inicio.elapsed();
+
+    let pasta = saida.join(cfg.slug);
+    std::fs::create_dir_all(&pasta).map_err(|origem| SpiderError::Io {
+        caminho: pasta.clone(),
+        origem,
+    })?;
+    let arquivo = pasta.join(posicoes_relatorio::nome_arquivo(&r));
+    std::fs::write(&arquivo, posicoes_relatorio::formatar_csv(&r)).map_err(|origem| {
+        SpiderError::Io {
+            caminho: arquivo.clone(),
+            origem,
+        }
+    })?;
+
+    let mut texto = String::new();
+    linha!(
+        texto,
+        "Posições gravadas (perfil de força {}, perfil das posições {}): {} marca(s) e {} feature(s) novas, {} linha(s) em posicao_indice ({} substituída(s)).",
+        r.perfil,
+        r.perfil_posicoes,
+        r.marcas_gravadas,
+        r.features_gravadas,
+        r.indice_gravado,
+        r.indice_apagado
+    );
+    linha!(
+        texto,
+        "CSV do índice das posições do concurso {}: {}",
+        r.proximo_concurso,
+        absoluto(&arquivo).display()
+    );
+    linha!(texto);
+    texto.push_str(&posicoes_relatorio::formatar_relatorio(cfg, &r));
+    imprimir(&texto)?;
+    let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
+    registrar_no_log(Nivel::Info, &tempo);
+    let _ = escrever_stderr(&format!("{tempo}\n"));
+    Ok(())
+}
+
+/// `sync posicoes --avaliar`: avalia a ordem G-1 contra o acaso (com a nota A
+/// da 1f como referência) nas dobras de teste 2 a 5 da busca, sem o
+/// aquecimento. Tudo em `orquestracao`, que só lê o banco; aqui o banco é aberto
+/// só para leitura (inexistente é erro, sem criar arquivo) e nada é gravado: nem
+/// tabelas, nem CSV, nem registro do trancado (que fica fechado). A saída padrão
+/// é determinística; o tempo de execução vai para a saída de erro.
+fn avaliar_posicoes(
+    cfg: &config::LoteriaConfig,
+    db_caminho: &std::path::Path,
+    raiz_perfis: &std::path::Path,
+    nome_perfil: &str,
+    nome_perfil_posicoes: &str,
+) -> anyhow::Result<()> {
+    if !db_caminho.exists() {
+        anyhow::bail!("banco não encontrado: {}", db_caminho.display());
+    }
+    let forca = perfil::carregar(raiz_perfis, cfg, nome_perfil)?;
+    let posicoes = perfil::carregar(raiz_perfis, cfg, nome_perfil_posicoes)?;
+    let mut conn = db::abrir_somente_leitura(db_caminho)?;
+    let inicio = std::time::Instant::now();
+    let r = orquestracao::avaliar_g1_do_banco(&mut conn, cfg, &forca, &posicoes)?;
+    let duracao = inicio.elapsed();
+    imprimir(&posicoes_relatorio::formatar_avaliacao(cfg, &r))?;
     let tempo = format!("Tempo: {:.2} s.", duracao.as_secs_f64());
     registrar_no_log(Nivel::Info, &tempo);
     let _ = escrever_stderr(&format!("{tempo}\n"));

@@ -56,7 +56,9 @@ mod alertas;
 mod calendario;
 mod ciclo;
 mod exportar;
+mod exportar_posicoes;
 mod gravacao;
+mod posicoes;
 mod ranking_taxa;
 
 pub use aguardar::*;
@@ -64,7 +66,9 @@ pub use alertas::*;
 pub use calendario::*;
 pub use ciclo::*;
 pub use exportar::*;
+pub use exportar_posicoes::*;
 pub use gravacao::*;
+pub use posicoes::*;
 pub use ranking_taxa::*;
 
 /// Por que as features foram recalculadas do zero.
@@ -1449,6 +1453,10 @@ pub struct DadosExportacao {
     /// Ranking por taxa do próximo concurso, lido de `ranking_taxa` (opcional
     /// no contrato: ausente ou atrasado vira `Omitido`, não erro).
     pub ranking: RankingParaExportar,
+    /// G-1 (índice de força das posições) do próximo concurso, lido de
+    /// `posicao_*` (opcional no contrato, tarefa 2.6: ausente ou atrasado vira
+    /// `Omitido`, não erro).
+    pub posicoes: PosicoesParaExportar,
 }
 
 /// `sync exportar`: lê e confere (como o `sync tabela` e o `sync avaliar`)
@@ -1467,9 +1475,11 @@ pub fn dados_para_exportar(
     // Na mesma transação de leitura: o ranking é conferido contra o mesmo
     // índice que deu `tabela`. Só lê; ausente ou atrasado não é erro.
     let ranking = ler_ranking_para_exportar(&tx, cfg, &tabela, &conferido)?;
+    let posicoes = ler_posicoes_para_exportar(&tx, cfg, &tabela, &conferido)?;
     drop(tx);
     Ok(DadosExportacao {
         ranking,
+        posicoes,
         tabela,
         hash_toml: carregado.hash_toml.clone(),
         normalizacao: carregado.perfil.normalizacao,

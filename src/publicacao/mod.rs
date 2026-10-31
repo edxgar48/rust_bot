@@ -153,6 +153,7 @@ mod tests {
                 Impressao::de(historico),
             ],
             ranking_taxa: None,
+            ranking_posicoes: None,
         };
         let indice = index_json(gerado_em, &[("lotofacil", None), ("quina", Some(entrada))]);
         fs::write(saida.join("v1").join("index.json"), &indice).unwrap();

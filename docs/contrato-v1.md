@@ -12,15 +12,16 @@ segunda seção). Decisões e motivos: `docs/PLANEJAMENTO.md`, Fase 2.
 ## JSON público do app (`sync exportar`)
 
 Um `index.json` e, por loteria, **três arquivos de dados obrigatórios** e
-**um opcional** (`ranking_taxa.json`), gerados só a partir dos bancos: `sync
+**dois opcionais** (`ranking_taxa.json` e `ranking_posicoes.json`), gerados só a partir dos bancos: `sync
 exportar` não calcula o que publica: lê o último snapshot do motor
 (`features_dezena` e `indice`) e as tabelas derivadas, e recusa gravar se
 features ou índice não estiverem em dia. Pode recalcular na memória apenas para
 conferir se o que está gravado está em dia (como faz com o índice e com o
-ranking); o que vai nos arquivos é sempre o gravado. O
-arquivo opcional vem da tabela derivada `ranking_taxa` (`sync ranking`); se
-ela não existir ou não estiver em dia, o `sync exportar` publica o resto sem
-ele (ver "`ranking_taxa.json`").
+ranking); o que vai nos arquivos é sempre o gravado. Cada arquivo
+opcional vem de uma tabela derivada: `ranking_taxa.json` de `ranking_taxa` (`sync
+ranking`) e `ranking_posicoes.json` das tabelas `posicao_*` (`sync posicoes`);
+se a tabela não existir ou não estiver em dia, o `sync exportar` publica o
+resto sem o arquivo (ver "`ranking_taxa.json`" e "`ranking_posicoes.json`").
 
 ```bash
 cargo run --bin sync -- exportar <loteria|todas> [--saida publico] [--db caminho] [--perfis perfis]
@@ -55,7 +56,8 @@ v1/
 │   ├── ultimo.json             # último concurso sorteado
 │   ├── tabela_geral.json       # snapshot do próximo concurso: componentes, índice e posição por dezena
 │   ├── historico.json          # todos os concursos, compacto
-│   └── ranking_taxa.json       # OPCIONAL: ranking por taxa histórica (notas A e B) do próximo concurso
+│   ├── ranking_taxa.json       # OPCIONAL: ranking por taxa histórica (notas A e B) do próximo concurso
+│   └── ranking_posicoes.json   # OPCIONAL: G-1, índice de força das posições, por dezena, do próximo concurso
 ├── megasena/   (mesmos arquivos)
 └── quina/      (mesmos arquivos)
 ```
@@ -114,7 +116,7 @@ Campos de `loterias.<slug>` (quando não é `null`), na ordem:
 |---|---|---|---|---|
 | `ultimo_concurso` | inteiro | não | Número do último concurso sorteado; igual ao `concurso` de `ultimo.json`. | `LoteriaNoIndice::ultimo_concurso` (lido do `ultimo.json` no disco) |
 | `data` | texto | não | Data desse concurso, `AAAA-MM-DD`; igual à `data` de `ultimo.json`. | `LoteriaNoIndice::data` |
-| `arquivos` | objeto | não | Três chaves obrigatórias, nesta ordem: `ultimo`, `tabela_geral`, `historico`; e uma opcional, `ranking_taxa`, por último. | `Arquivo::chave` |
+| `arquivos` | objeto | não | Três chaves obrigatórias, nesta ordem: `ultimo`, `tabela_geral`, `historico`; e duas opcionais, `ranking_taxa` e `ranking_posicoes`, por último e nessa ordem. | `Arquivo::chave` |
 
 Chaves de `arquivos`, nesta ordem:
 
@@ -124,6 +126,7 @@ Chaves de `arquivos`, nesta ordem:
 | `tabela_geral` | objeto | não | Descritor de `tabela_geral.json`. Obrigatória. |
 | `historico` | objeto | não | Descritor de `historico.json`. Obrigatória. |
 | `ranking_taxa` | objeto | **ausente** | Descritor de `ranking_taxa.json`. **Opcional: a chave some do objeto** quando o arquivo não foi publicado (nunca vem `null`). O app trata "sem a chave" como "sem ranking por taxa" e esconde essa parte da tela. |
+| `ranking_posicoes` | objeto | **ausente** | Descritor de `ranking_posicoes.json`. **Opcional: a chave some do objeto** quando o arquivo não foi publicado (nunca vem `null`), independentemente de `ranking_taxa` estar ou não. O app trata "sem a chave" como "sem G-1" e esconde essa parte da tela. |
 
 Cada descritor tem os campos:
 
@@ -299,6 +302,75 @@ acaso. O ranking por A ou por B pode reordenar as dezenas em relação ao índic
 (`posicao_a`, `posicao_b` e `posicao_indice` podem diferir), mas isso é uma
 descrição do histórico, não uma recomendação.
 
+### `ranking_posicoes.json` (opcional)
+
+O **G-1**, o índice de força das **posições**, traduzido para as dezenas do
+**próximo** concurso, do mesmo perfil ativo e do mesmo snapshot de
+`tabela_geral.json`. Só o retrato do próximo concurso: uma linha por dezena.
+É **descrição do passado**, não previsão: os sorteios são independentes, a
+avaliação feita sobre o G-1 (`docs/PLANEJAMENTO.md`, Fase 1g) não encontrou
+vantagem sobre o acaso, e a posição de uma dezena já é função do histórico
+dela, então o G-1 é uma recodificação do mesmo histórico, não informação nova.
+Não diz que dezena vai sair. Origem: `exportacao::ranking_posicoes_json`.
+
+**O que é o G-1.** A tabela de força dá a cada dezena uma posição de 1 a N (`1`
+= a mais forte). A 1g trata a **posição como se fosse uma dezena**: em cada
+concurso passado marca quais posições a tabela de força ocupava nas dezenas
+sorteadas e roda sobre essas séries o mesmo cálculo de índice, com um perfil
+próprio (`posicoes_v1`). `g_1` é o lugar da **posição** nesse índice (`1` = a
+posição de maior total); a dezena herda o `g_1` da posição que ocupa na tabela
+de força do próximo concurso. O app não recebe totais, features nem marcas.
+
+**Quando o arquivo existe.** O `sync exportar` só o publica se as tabelas
+`posicao_*` (gravadas por `sync posicoes`) estiverem **em dia**: o estado salvo
+vai até o último sorteado; as marcas gravadas são as dos resultados e do índice
+de força atuais; `posicao_marcas` e `posicao_features` batem com o estado;
+`posicao_indice` tem as N posições do próximo concurso; e o `g_1`, o total e a
+variação gravados são exatamente os que o cálculo daria hoje com
+`posicao_features`. Ausente ou atrasado (por exemplo, saiu um concurso novo e o
+`sync posicoes` não rodou, ou um resultado antigo foi corrigido), o `sync
+exportar` **não é interrompido**: publica os outros arquivos, **não grava**
+`ranking_posicoes.json` (um arquivo antigo da pasta é removido, para o
+publicado nunca ter um G-1 de outro concurso) e **omite a chave
+`ranking_posicoes`** de `arquivos` no `index.json`. O app confere a chave,
+nunca o caminho.
+
+Cabeçalho, na ordem (de `schema_version` a `ultimo_sorteado` são os mesmos de
+`tabela_geral.json`; os quatro campos `*_posicoes` descrevem o perfil das
+posições):
+
+| Campo | Tipo | `null`? | Significado |
+|---|---|---|---|
+| `schema_version` | inteiro | não | `1`. |
+| `loteria` | texto | não | Slug. |
+| `perfil` | texto | não | Perfil de pesos da tabela de força (`padrao_v1`), o que deu as posições. |
+| `hash_toml` | texto | não | SHA-256 do `.toml` desse perfil (o mesmo de `tabela_geral.json`). |
+| `janela` | inteiro | não | Janela dos componentes do perfil de força (`0` = histórico total). |
+| `normalizacao` | texto | não | `zscore` ou `minmax`, do perfil de força. |
+| `feature_version` | inteiro | não | Versão da definição dos componentes. |
+| `concurso` | inteiro | não | **Próximo concurso** (ainda não sorteado) = `ultimo_sorteado + 1`. |
+| `ultimo_sorteado` | inteiro | não | Último concurso já sorteado; é o `concurso` de `ultimo.json`. |
+| `perfil_posicoes` | texto | não | Perfil de pesos do índice das posições (`posicoes_v1`). |
+| `hash_toml_posicoes` | texto | não | SHA-256 do `.toml` do perfil das posições, o registrado quando as posições foram calculadas. |
+| `janela_posicoes` | inteiro | não | Janela dos componentes do perfil das posições. |
+| `normalizacao_posicoes` | texto | não | `zscore` ou `minmax`, do perfil das posições. |
+| `dezenas` | lista de objetos | não | Uma entrada por dezena da loteria (25, 60 ou 80), **em ordem crescente de dezena** (diferente de `tabela_geral.json`, que vem em ordem de posição do índice). |
+
+Entrada de cada dezena, na ordem das chaves:
+
+| Campo | Tipo | `null`? | Significado |
+|---|---|---|---|
+| `dezena` | inteiro | não | Número da dezena. |
+| `posicao_indice` | inteiro | não | Posição na tabela de força, `1` a N; igual à `posicao` dessa dezena em `tabela_geral.json` (e a `posicao_indice` de `ranking_taxa.json`). |
+| `g_1` | inteiro | não | G-1: lugar, `1` a N sem repetição, da posição `posicao_indice` no índice das posições (`1` = a posição de maior total). Não é uma probabilidade. |
+| `variacao_g_1` | inteiro | **sim** | Variação **da dezena** (não da posição): o `g_1` que a dezena tinha em `ultimo_sorteado` (o `g_1` da posição que ela ocupava na tabela de força daquele concurso) − o `g_1` atual dela. Mesmo sinal e mesma ideia de `variacao_posicao` em `tabela_geral.json`: positivo = a dezena subiu no G-1, negativo = desceu, `0` = igual. Uma dezena que mudou de posição na tabela de força entre os dois concursos compara `g_1` de posições diferentes. `null` só sem concurso anterior (na prática não ocorre, mas o campo aceita `null`). |
+
+Como ler: o G-1 reordena as dezenas pelo desempenho **passado** das posições da
+tabela de força. Uma dezena com `g_1` baixo ocupa uma posição que, no
+histórico, teve maior total no cálculo do perfil; isso
+descreve o que aconteceu, não o que acontecerá. Mostre-o como um dado extra,
+com o aviso de não-previsão, nunca como recomendação.
+
 ### Valores enumerados
 
 Identificadores do contrato: ASCII, minúsculos, sem acento nem espaço. Não são
@@ -370,9 +442,10 @@ O app não precisa recalcular nada com isso: serve para mostrar de onde vem o
   índice (passo 4 de "Como o app deve usar o `index.json`"); conferir os hashes
   do índice contra o disco antes de publicar está previsto para a 2.4.
 - **Tudo ou nada**: `exportar todas` não grava nada se uma loteria falhar;
-  `exportar <loteria>` regrava só os arquivos dela. Um `ranking_taxa`
-  ausente ou atrasado **não é falha**: a loteria é exportada sem o arquivo
-  opcional (o relatório do comando diz o motivo) e não cancela as demais.
+  `exportar <loteria>` regrava só os arquivos dela. Um `ranking_taxa` ou um
+  `ranking_posicoes` ausente ou atrasado **não é falha**: a loteria é exportada
+  sem o arquivo opcional (o relatório do comando diz o motivo) e não cancela as
+  demais.
 
 ### Compatibilidade dentro de `v1`
 
@@ -396,6 +469,13 @@ O app não precisa recalcular nada com isso: serve para mostrar de onde vem o
   arquivos obrigatórios não mudam um byte). A chave **falta** quando o arquivo
   não foi publicado; o app não pode exigir nem supor que ela exista. Um
   `index.json` sem a chave tem exatamente o formato de antes de o arquivo existir.
+- **Arquivo opcional (`ranking_posicoes.json`)**: acrescentado dentro de `v1`
+  do mesmo jeito (tarefa 2.6): segunda chave opcional de `arquivos`, depois de
+  `ranking_taxa`; `schema_version` continua `1` e nenhum arquivo existente
+  (`ultimo`, `tabela_geral`, `historico`, `ranking_taxa`) muda um byte (os
+  `sha256` deles no `index.json` são os mesmos de antes). A chave **falta**
+  quando o arquivo não foi publicado; o app não pode exigir nem supor que ela
+  exista. As duas opcionais são independentes: uma pode faltar sem a outra.
 - Todo campo novo é documentado aqui, com tipo, significado e exemplo, no
   mesmo commit que o introduz no código.
 
@@ -631,6 +711,73 @@ não existe:
           "caminho": "quina/ranking_taxa.json",
           "sha256": "265a621702ff113c5875eb4a855c7951b488d33237ae6edf47473b0f4a4b620a",
           "bytes": 16526
+        }
+```
+
+`quina/ranking_posicoes.json` (arquivo opcional). Gerado em 2026-10-31 pelo
+`sync exportar`, numa cópia dos bancos (Quina até o concurso 7156), depois do
+`sync posicoes quina`: cabeçalho e 4 das 80 dezenas (1, 2, 3 e 4). **Corte**:
+as dezenas 5 a 80 vêm depois da última entrada abaixo, no mesmo formato, antes
+do `]` e do `}` finais (trecho, não JSON completo). Repare que `posicao_indice`
+é a posição da dezena em `tabela_geral.json` (a dezena 1 está na posição 29),
+que `g_1` é o lugar dessa **posição** no índice das posições (73) e que
+`variacao_g_1` é da **dezena** (a dezena 1 tinha `g_1` 41 em `ultimo_sorteado`:
+41 − 73 = −32):
+
+```json
+{
+  "schema_version": 1,
+  "loteria": "quina",
+  "perfil": "padrao_v1",
+  "hash_toml": "5bea2957a4aa375ffaf102aab3ca21d39252213f1a133b4f3538589df6d2c873",
+  "janela": 50,
+  "normalizacao": "zscore",
+  "feature_version": 1,
+  "concurso": 7157,
+  "ultimo_sorteado": 7156,
+  "perfil_posicoes": "posicoes_v1",
+  "hash_toml_posicoes": "833ab86a7469343a48dc07bc5cc8b02f101d7c0a0ad94b2983d7f048952280b0",
+  "janela_posicoes": 50,
+  "normalizacao_posicoes": "zscore",
+  "dezenas": [
+    {
+      "dezena": 1,
+      "posicao_indice": 29,
+      "g_1": 73,
+      "variacao_g_1": -32
+    },
+    {
+      "dezena": 2,
+      "posicao_indice": 76,
+      "g_1": 51,
+      "variacao_g_1": 0
+    },
+    {
+      "dezena": 3,
+      "posicao_indice": 22,
+      "g_1": 6,
+      "variacao_g_1": 7
+    },
+    {
+      "dezena": 4,
+      "posicao_indice": 14,
+      "g_1": 3,
+      "variacao_g_1": 11
+    }
+  ]
+}
+```
+
+No `index.json` desse mesmo `sync exportar`, a Quina traz, depois de
+`ranking_taxa`, a quinta chave de `arquivos`; sem as posições em dia, essa
+chave simplesmente não existe e as outras quatro têm os mesmos `sha256` de
+antes:
+
+```json
+        "ranking_posicoes": {
+          "caminho": "quina/ranking_posicoes.json",
+          "sha256": "67ce14ed7e5f1095b43579724ee7f4c10b0e33aae6c2ec6d0c2477274b6fd1b1",
+          "bytes": 8700
         }
 ```
 

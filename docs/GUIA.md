@@ -29,6 +29,7 @@ e, para as Fases 1 e 1.5, `docs/decisoes/fases-1-e-1.5.md`.
  evidencia      → lê resultados (parte A) e, para a parte B, o índice do perfil
  tabela         → CSV do concurso, com grau e direção da evidência por dezena
  ranking        → taxa histórica por posição e faixa; ordena as dezenas (descrição do passado)
+ posicoes       → índice de força das POSIÇÕES (G-1), em tabelas posicao_* próprias (descrição do passado)
 ```
 
 Cada loteria tem o próprio banco (`resultados_<loteria>.db`). As tabelas
@@ -202,6 +203,26 @@ conferências do `avaliar` (perfil registrado, features e índice em dia).
 `ranking <lot> --avaliar` **não grava nada**: avalia esse ranking contra o
 acaso, só nas dobras de teste 2 a 5 do walk-forward da busca (o trancado fica
 fora e não há `--trancado`). Não aceita `--saida`. Como ler: seção 9.
+
+### Índice de força das posições (G-1)
+
+`posicoes <lot> [--perfil padrao_v1] [--perfil-posicoes posicoes_v1] [--saida posicoes]
+[--perfis pasta]` marca, em cada concurso passado, as posições que a tabela de
+força ocupava nas dezenas sorteadas, trata cada posição como se fosse uma dezena
+e calcula sobre elas as mesmas features e o mesmo índice de força. O resultado é
+o **G-1**: a ordem das posições, que o comando traduz em ordem de dezenas (a
+dezena herda o G-1 da posição que ocupa no próximo concurso). Grava só as
+tabelas `posicao_marcas`, `posicao_features`, `posicao_indice`, `posicao_perfil`
+e `posicao_motor_estado` (nenhuma tabela existente muda, e o perfil das posições
+não entra em `perfis`) e o CSV do próximo concurso em `posicoes/<lot>/`. Retoma do
+estado salvo e calcula só os concursos novos. Uma loteria por vez e as mesmas
+conferências do `ranking` (índice de força e features em dia).
+
+`posicoes <lot> --avaliar` **não grava nada**: avalia o G-1 contra o acaso, com a
+nota A do `ranking` como referência no mesmo recorte, só nas dobras de teste 2 a
+5 do walk-forward da busca e **sem os 100 primeiros concursos** (aquecimento, em
+que a tabela de força ainda não tem histórico). O trancado fica fora e não há
+`--trancado`. Não aceita `--saida`. Como ler: seção 10.
 
 ### Dataset para o Python
 
@@ -731,3 +752,57 @@ log loss (diferença positiva) porque estima uma taxa por posição de B e esse
 aprendizado custa; é o mesmo custo descrito na seção 3, e a linha linear, que
 custa pouco, fica perto de zero. Os top-k têm p grandes. É o esperado para
 sorteios independentes.
+
+## 10. Como interpretar o `posicoes` e o `posicoes --avaliar`
+
+**Aviso antes de tudo.** O G-1 é a **descrição do passado**, não uma previsão.
+Os sorteios são independentes, e a posição que uma dezena ocupa na tabela de
+força já é função do histórico dela: o índice das posições é o **mesmo histórico
+recodificado**, não informação nova. O resultado esperado é **empatar com o
+acaso**, e a avaliação existe para conferir isso. Um G-1 que parecesse superar o
+acaso seria, até prova em contrário, vazamento do futuro ou sobreajuste.
+
+### O que é o G-1
+
+- Em cada concurso, as K posições ocupadas pelas dezenas sorteadas ficam
+  **marcadas**. A posição vem de `indice` do concurso (medida antes do sorteio).
+- Cada posição 1…N passa a ter uma série de aparições, e o motor das features
+  roda sobre ela como rodaria sobre uma dezena (frequência, espaços, repetições…).
+  As features de uma posição em *t* só usam as marcas até *t−1*.
+- **G-1** é a classificação 1…N das posições por esse índice (1 = a de maior
+  total). Cada dezena herda o G-1 da posição que ocupa no concurso.
+- O perfil das posições (`posicoes_v1`) começa com os pesos do `padrao_v1`, até
+  haver uma busca de pesos.
+
+### O `posicoes --avaliar`
+
+- **Mesma régua** do `ranking --avaliar` (seção 9): dobras de teste 2 a 5, log
+  loss e Brier com a calibração da 1c, a linha linear da 1e, o top-k contra a
+  hipergeométrica e o veredito pelo bootstrap por blocos.
+- **Aquecimento.** Os concursos 1 a 100 ficam fora da avaliação inteira,
+  calibração inclusive; o 101 é o primeiro concurso da série (recebe o acaso por
+  construção e não é avaliado) e as dobras se dividem a partir do 102. Por isso os
+  números **não** são comparáveis com os do `ranking --avaliar`, que parte do
+  concurso 1. A nota A é reavaliada no mesmo recorte para a comparação valer.
+- **Registro.** A avaliação só lê o banco: o perfil das posições não precisa
+  estar registrado em `posicao_perfil` (a saída avisa quando não está).
+- **Múltiplos testes e trancado fechado.** Valem os avisos da seção 9: vários
+  p-valores sem correção, e nenhum uso do conjunto trancado.
+
+**Resultado com `padrao_v1` e `posicoes_v1` em 2026-10-31** (dobras de teste 2 a
+5, sem o aquecimento; veredito de G-1 pelo bootstrap; top-k com k = K, p exato do
+trecho inteiro; diferenças de log loss em relação ao acaso, positivas = pior):
+
+| Loteria | Trecho avaliado | G-1: log loss, diferença (p do bootstrap) | G-1: top-k (p) | G-1: log loss linear, diferença | A, mesmo recorte: log loss (p) / top-k (p) |
+|---|---|---|---|---|---|
+| Lotofácil | 765–3416 (2652) | +2,13e-4 (0,96), não supera | 8,9581 × 9,0000, p 0,96 | +6,95e-7 | +2,65e-4 (1,00) / 9,0083, p 0,37 |
+| Mega-Sena | 633–2759 (2127) | +3,21e-4 (1,00), não supera | 0,5891 × 0,6000, p 0,77 | +8,19e-6 | +3,13e-4 (1,00) / 0,6060, p 0,35 |
+| Quina | 1366–6421 (5056) | +1,74e-4 (1,00), não supera | 0,3095 × 0,3125, p 0,66 | +6,91e-8 | +1,26e-4 (1,00) / 0,3159, p 0,33 |
+
+Leitura: nas três loterias o G-1 **não supera o acaso**, e a referência A também
+não. O log loss com a calibração por posição fica **pior** que o acaso (diferença
+positiva) porque estimar uma taxa por posição tem custo, o mesmo descrito na
+seção 3; a linha linear, que custa pouco, fica praticamente em zero. Os top-k têm
+p grandes, com o G-1 até um pouco abaixo do acaso nas três loterias. É o
+esperado para sorteios independentes: recodificar o histórico em posições não cria
+informação.

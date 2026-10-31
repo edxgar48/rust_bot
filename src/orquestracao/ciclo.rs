@@ -20,9 +20,9 @@
 use super::gravacao::{atualizar_reaproveitando_backup, hoje_de};
 use super::{
     carregar_existentes, descrever_faixa, exportar_com_relatorio, faixas_faltando,
-    processar_e_salvar, sincronizar_features, sincronizar_indice, sincronizar_ranking_com,
-    DesfechoAtualizacao, Evento, PastasAtualizar, RelatorioRanking, ResultadoComRelatorio,
-    SituacaoRanking,
+    processar_e_salvar, sincronizar_features, sincronizar_indice, sincronizar_posicoes,
+    sincronizar_ranking_com, DesfechoAtualizacao, Evento, PastasAtualizar, RelatorioPosicoes,
+    RelatorioRanking, ResultadoComRelatorio, SituacaoPosicoes, SituacaoRanking, PERFIL_POSICOES,
 };
 use crate::avaliacao::SEMENTE_ESPERADO;
 use crate::backup;
@@ -129,6 +129,29 @@ pub enum EventoCiclo {
     RankingAntigoRemovido {
         caminho: PathBuf,
     },
+    /// G-1 regenerado (`sync posicoes`, sem o relatório/CSV).
+    PosicoesEmDia {
+        perfil_posicoes: String,
+        linhas: usize,
+        ultimo: u32,
+    },
+    /// O passo das posições deu erro: o ciclo segue sem o
+    /// `ranking_posicoes.json` (a falha vira alerta pela regra das noites
+    /// seguidas).
+    PosicoesFalhou {
+        slug: &'static str,
+        mensagem: String,
+    },
+    /// O `ranking_posicoes.json` ficou fora da exportação (não é erro).
+    PosicoesOmitido {
+        slug: &'static str,
+        motivo: String,
+    },
+    /// Um `ranking_posicoes.json` antigo foi apagado da saída por causa da
+    /// omissão.
+    PosicoesAntigoRemovido {
+        caminho: PathBuf,
+    },
     /// Arquivos da loteria gravados na saída.
     Exportada {
         slug: &'static str,
@@ -201,6 +224,9 @@ impl EventoCiclo {
             | EventoCiclo::RankingFalhou { .. }
             | EventoCiclo::RankingOmitido { .. }
             | EventoCiclo::RankingAntigoRemovido { .. }
+            | EventoCiclo::PosicoesFalhou { .. }
+            | EventoCiclo::PosicoesOmitido { .. }
+            | EventoCiclo::PosicoesAntigoRemovido { .. }
             | EventoCiclo::FalhaTransitoria { .. }
             | EventoCiclo::ConcursoNaoSaiu { .. } => super::Destino::Erro,
             _ => super::Destino::Padrao,
@@ -220,6 +246,9 @@ impl EventoCiclo {
             | EventoCiclo::RankingFalhou { .. }
             | EventoCiclo::RankingOmitido { .. }
             | EventoCiclo::RankingAntigoRemovido { .. }
+            | EventoCiclo::PosicoesFalhou { .. }
+            | EventoCiclo::PosicoesOmitido { .. }
+            | EventoCiclo::PosicoesAntigoRemovido { .. }
             | EventoCiclo::FalhaTransitoria { .. }
             | EventoCiclo::ConcursoNaoSaiu { .. } => Nivel::Aviso,
             EventoCiclo::JanelaEncerrada { pendentes, .. } if !pendentes.is_empty() => Nivel::Aviso,
@@ -296,6 +325,27 @@ impl fmt::Display for EventoCiclo {
             EventoCiclo::RankingAntigoRemovido { caminho } => write!(
                 f,
                 "Aviso: ranking_taxa.json antigo removido: {}.",
+                caminho.display()
+            ),
+            EventoCiclo::PosicoesEmDia {
+                perfil_posicoes,
+                linhas,
+                ultimo,
+            } => write!(
+                f,
+                "Posições (perfil {perfil_posicoes}): {linhas} linha(s) em posicao_indice; em dia até o {ultimo}."
+            ),
+            EventoCiclo::PosicoesFalhou { slug, mensagem } => write!(
+                f,
+                "Aviso: as posições de {slug} falharam ({mensagem}); o ciclo segue e o \
+                 ranking_posicoes.json fica fora desta exportação (rode `sync posicoes {slug}`)."
+            ),
+            EventoCiclo::PosicoesOmitido { slug, motivo } => {
+                write!(f, "Aviso: {slug}: ranking_posicoes.json omitido: {motivo}.")
+            }
+            EventoCiclo::PosicoesAntigoRemovido { caminho } => write!(
+                f,
+                "Aviso: ranking_posicoes.json antigo removido: {}.",
                 caminho.display()
             ),
             EventoCiclo::Exportada { slug, arquivos } => {
@@ -398,6 +448,18 @@ pub struct RankingDoCiclo {
     pub omitido: Option<String>,
 }
 
+/// O que aconteceu com o G-1 (`sync posicoes`) no ciclo de uma loteria. Mesmo
+/// tratamento do ranking (tarefa 2.6): nunca reprova a loteria; o resto é
+/// publicado sem o `ranking_posicoes.json`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PosicoesDoCiclo {
+    /// O passo do `sync posicoes` deu erro (mensagem com a cadeia de causas);
+    /// é isto que conta como falha da noite para os alertas.
+    pub falha: Option<String>,
+    /// Motivo de o `ranking_posicoes.json` não ter entrado na exportação.
+    pub omitido: Option<String>,
+}
+
 /// Como terminou o ciclo de uma loteria.
 #[derive(Debug)]
 pub struct ResumoLoteria {
@@ -411,6 +473,7 @@ pub struct ResumoLoteria {
     /// Os arquivos da loteria foram gravados na saída.
     pub exportada: bool,
     pub ranking: RankingDoCiclo,
+    pub posicoes: PosicoesDoCiclo,
     pub falha: Option<FalhaCiclo>,
 }
 
@@ -439,9 +502,14 @@ impl fmt::Display for ResumoLoteria {
                 } else {
                     ""
                 };
+                let posicoes = if self.posicoes.omitido.is_some() {
+                    ", sem ranking_posicoes.json"
+                } else {
+                    ""
+                };
                 write!(
                     f,
-                    "{}: ok (último {ultimo}, {novo}{backfill}{ranking})",
+                    "{}: ok (último {ultimo}, {novo}{backfill}{ranking}{posicoes})",
                     self.slug
                 )
             }
@@ -568,6 +636,7 @@ pub(super) struct Progresso {
     pub(super) backfill: bool,
     pub(super) exportada: bool,
     pub(super) ranking: RankingDoCiclo,
+    pub(super) posicoes: PosicoesDoCiclo,
 }
 
 impl Progresso {
@@ -579,6 +648,7 @@ impl Progresso {
             backfill: self.backfill,
             exportada: self.exportada,
             ranking: self.ranking.clone(),
+            posicoes: self.posicoes.clone(),
             falha,
         }
     }
@@ -792,8 +862,8 @@ where
     // 5. índice do perfil ativo.
     let carregado =
         perfil::carregar(pastas.perfis, cfg, cfg.perfil_ativo).map_err(em(EtapaCiclo::Indice))?;
+    let criado_em = tempo::iso8601_utc(agora().map_err(em(EtapaCiclo::Indice))?);
     {
-        let criado_em = tempo::iso8601_utc(agora().map_err(em(EtapaCiclo::Indice))?);
         let mut conn = db::abrir(db_caminho).map_err(em(EtapaCiclo::Indice))?;
         let resumo = sincronizar_indice(&mut conn, cfg, &carregado, &criado_em)
             .map_err(em(EtapaCiclo::Indice))?;
@@ -827,6 +897,29 @@ where
         }
     }
 
+    // 5c. posições / G-1 (tarefa 2.6). Mesmo tratamento do ranking: falha NÃO
+    // derruba a loteria (aviso no log e alerta pela contagem de noites) e o
+    // exportar abaixo omite o `ranking_posicoes.json` sozinho. Só a função de
+    // biblioteca que grava as tabelas; relatório e CSV são da CLI `sync
+    // posicoes`. O `criado_em` é o do índice (só vale no primeiro registro do
+    // perfil das posições).
+    progresso.posicoes = PosicoesDoCiclo::default();
+    match posicoes_do_ciclo(cfg, db_caminho, pastas.perfis, &carregado, &criado_em) {
+        Ok(r) => obs(Evento::Ciclo(EventoCiclo::PosicoesEmDia {
+            perfil_posicoes: r.perfil_posicoes,
+            linhas: r.indice_gravado,
+            ultimo: r.ultimo_concurso,
+        })),
+        Err(e) => {
+            let mensagem = cadeia_do_erro(&e);
+            obs(Evento::Ciclo(EventoCiclo::PosicoesFalhou {
+                slug: cfg.slug,
+                mensagem: mensagem.clone(),
+            }));
+            progresso.posicoes.falha = Some(mensagem);
+        }
+    }
+
     // 6. exportar só esta loteria; o `index.json` reflete o que há no disco.
     let alvo = [(cfg, db_caminho.to_path_buf())];
     let resultado = exportar_com_relatorio(&alvo, pastas.perfis, pastas.saida, || {
@@ -848,6 +941,21 @@ where
             }
             for caminho in relatorio.removidos {
                 obs(Evento::Ciclo(EventoCiclo::RankingAntigoRemovido {
+                    caminho,
+                }));
+            }
+            for p in &relatorio.posicoes {
+                if let SituacaoPosicoes::Omitido(motivo) = &p.situacao {
+                    let motivo = motivo.to_string();
+                    obs(Evento::Ciclo(EventoCiclo::PosicoesOmitido {
+                        slug: p.slug,
+                        motivo: motivo.clone(),
+                    }));
+                    progresso.posicoes.omitido = Some(motivo);
+                }
+            }
+            for caminho in relatorio.removidos_posicoes {
+                obs(Evento::Ciclo(EventoCiclo::PosicoesAntigoRemovido {
                     caminho,
                 }));
             }
@@ -875,6 +983,20 @@ fn ranking_do_ciclo(
 ) -> Result<RelatorioRanking> {
     let mut conn = db::abrir(db_caminho)?;
     sincronizar_ranking_com(&mut conn, cfg, carregado, 2, SEMENTE_ESPERADO)
+}
+
+/// Grava as tabelas das posições (a mesma função do `sync posicoes`) com o
+/// perfil das posições [`PERFIL_POSICOES`], lido de `<perfis>/<loteria>/`.
+fn posicoes_do_ciclo(
+    cfg: &LoteriaConfig,
+    db_caminho: &Path,
+    raiz_perfis: &Path,
+    forca: &perfil::PerfilCarregado,
+    criado_em: &str,
+) -> Result<RelatorioPosicoes> {
+    let posicoes = perfil::carregar(raiz_perfis, cfg, PERFIL_POSICOES)?;
+    let mut conn = db::abrir(db_caminho)?;
+    sincronizar_posicoes(&mut conn, cfg, forca, &posicoes, criado_em)
 }
 
 /// Baixa a planilha completa pelo caminho do `baixar` (com backup antes) e

@@ -62,6 +62,7 @@
 //! fica fechado.
 
 mod aleatoriedade;
+mod avaliacao_g1;
 mod avaliacao_ranking;
 mod bootstrap;
 mod calibracao;
@@ -86,6 +87,7 @@ pub use aleatoriedade::{
     bonferroni, holm, p_valor_qui_quadrado, qui_quadrado_frequencia, testar_aleatoriedade,
     teste_de_runs, QuiQuadradoFrequencia, ResumoAleatoriedade, RunsDezena, TesteRuns, ALFA,
 };
+pub use avaliacao_g1::{avaliar_g1, AvaliacaoG1, LinhaG1, AQUECIMENTO};
 pub use avaliacao_ranking::{
     avaliar_ranking, AvaliacaoOrdemA, AvaliacaoOrdemB, AvaliacaoRanking, DobraDeTeste, PorTrecho,
 };

@@ -13,11 +13,16 @@ mod estado;
 mod features;
 mod indice;
 mod pesos;
+mod posicoes;
 
 pub use estado::EstadoMotor;
 pub use features::FeaturesDezena;
 pub use indice::{calcular_indice, IndiceDezena};
 pub use pesos::{Normalizacao, Pesos};
+pub use posicoes::{
+    calcular_posicoes, config_posicoes, dezenas_via_posicao, marcar, marcar_historico,
+    DezenaViaPosicao,
+};
 
 use crate::config::LoteriaConfig;
 use crate::error::Result;
