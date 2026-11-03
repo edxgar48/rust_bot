@@ -26,7 +26,7 @@ const SEMENTE: u64 = 0x2545_F491_4F6C_DD1D;
 /// Histórico pequeno: o snapshot é do concurso 13, com janela 10.
 const N: u32 = 12;
 const GERADO_EM: &str = "2026-10-05T10:00:00Z";
-const SLUGS: [&str; 3] = ["lotofacil", "megasena", "quina"];
+const SLUGS: [&str; 4] = ["lotofacil", "megasena", "quina", "lotomania"];
 
 /// O `padrao_v1` é o perfil ativo das três loterias, o único que o CLI lê.
 const PERFIL_MODELO: &str = r#"nome = "padrao_v1"
@@ -500,7 +500,7 @@ fn todos_os_arquivos_sao_utf8_sem_bom_sem_cr_e_terminam_em_um_lf() {
     gravar_tudo(&p.saida(), &lotes_das_tres(), GERADO_EM);
     let arquivos = listar(&disco::pasta_versao(&p.saida()));
     // 3 loterias x 3 arquivos + index.
-    assert_eq!(arquivos.len(), 10);
+    assert_eq!(arquivos.len(), 13);
     for caminho in arquivos {
         let bytes = std::fs::read(&caminho).expect("arquivo");
         let nome = caminho.display();
@@ -635,20 +635,29 @@ fn loterias_sem_arquivos_ficam_null_no_index_na_ordem_do_config() {
     assert!(v["loterias"]["lotofacil"].is_null());
     assert!(v["loterias"]["quina"].is_null());
     assert!(v["loterias"]["megasena"].is_object());
-    assert_eq!(v["loterias"].as_object().expect("objeto").len(), 3);
+    assert_eq!(v["loterias"].as_object().expect("objeto").len(), 4);
 
-    // Ordem do texto: lotofacil, megasena, quina (o `serde_json` ordenaria
-    // por conta própria, então confere pelo texto).
+    // Ordem do texto: lotofacil, megasena, quina, lotomania (o `serde_json`
+    // ordenaria por conta própria, então confere pelo texto).
     let pos = |s: &str| {
         t.find(&format!("\"{s}\": "))
             .unwrap_or_else(|| panic!("{s}"))
     };
-    assert!(pos("lotofacil") < pos("megasena") && pos("megasena") < pos("quina"));
+    assert!(
+        pos("lotofacil") < pos("megasena")
+            && pos("megasena") < pos("quina")
+            && pos("quina") < pos("lotomania")
+    );
     assert!(t.contains("    \"lotofacil\": null,\n"), "{t}");
-    assert!(t.contains("    \"quina\": null\n  }\n}\n"), "{t}");
+    assert!(t.contains("    \"quina\": null,\n"), "{t}");
+    assert!(t.contains("    \"lotomania\": null\n  }\n}\n"), "{t}");
     // Só os arquivos da megasena foram criados.
     let pasta = disco::pasta_versao(&p.saida());
-    assert!(!pasta.join("lotofacil").exists() && !pasta.join("quina").exists());
+    assert!(
+        !pasta.join("lotofacil").exists()
+            && !pasta.join("quina").exists()
+            && !pasta.join("lotomania").exists()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -689,7 +698,7 @@ fn nao_sobram_arquivos_tmp_apos_gravar_nem_apos_regravar() {
     // Regrava só uma loteria por cima.
     disco::gravar(&p.saida(), &[lote("quina", N)], &SLUGS, GERADO_EM).expect("regravação");
     let arquivos = listar(&p.saida());
-    assert_eq!(arquivos.len(), 10);
+    assert_eq!(arquivos.len(), 13);
     for a in arquivos {
         let nome = a.file_name().expect("nome").to_string_lossy().into_owned();
         assert!(nome.ends_with(".json"), "sobra: {}", a.display());
@@ -825,13 +834,13 @@ fn acrescentar_concurso(p: &Pasta, slug: &str, n: u32, indice: bool) {
 }
 
 #[test]
-fn cli_exportar_todas_grava_os_dez_arquivos_iguais_aos_da_biblioteca() {
+fn cli_exportar_todas_grava_os_treze_arquivos_iguais_aos_da_biblioteca() {
     let (p, perfis) = ambiente_das_tres("cli_todas", N);
     let saida = p.saida();
     let out = sync(&p.0, &args_exportar("todas", &saida, &perfis, &[]));
     assert!(out.status.success(), "{}", stderr(&out));
 
-    assert_eq!(listar(&saida).len(), 10);
+    assert_eq!(listar(&saida).len(), 13);
     for l in lotes_das_tres() {
         for (nome, bytes) in [
             ("ultimo.json", &l.ultimo),
@@ -966,7 +975,7 @@ fn cli_exportar_uma_loteria_preserva_os_arquivos_das_outras_e_refaz_o_index() {
             assert_eq!(a["bytes"], bytes.len() as u64);
         }
     }
-    assert_eq!(listar(&saida).len(), 10, "sem sobras");
+    assert_eq!(listar(&saida).len(), 13, "sem sobras");
 }
 
 #[test]
@@ -1100,8 +1109,8 @@ fn tudo_ou_nada_grava_todas_quando_todas_passam() {
         panic!("esperava Gravado, veio {r:?}");
     };
     // index.json + 3 arquivos por loteria.
-    assert_eq!(gravados.len(), 10);
-    assert_eq!(listar(&p.saida()).len(), 10);
+    assert_eq!(gravados.len(), 13);
+    assert_eq!(listar(&p.saida()).len(), 13);
     let v = json(&ler(&p.saida(), "index.json"));
     assert_eq!(v["gerado_em"], GERADO_EM);
 }

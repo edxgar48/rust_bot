@@ -3393,6 +3393,7 @@ mod tests {
                 PathBuf::from("resultados_lotofacil.db"),
                 PathBuf::from("resultados_megasena.db"),
                 PathBuf::from("resultados_quina.db"),
+                PathBuf::from("resultados_lotomania.db"),
             ]
         );
     }

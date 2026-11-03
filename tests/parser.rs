@@ -191,6 +191,45 @@ fn quina_primeiros_concursos() {
         .all(|r| r.dezenas.len() == config.qtd_dezenas));
 }
 
+/// A planilha da Lotomania traz células numéricas com "-" (ganhadores sem
+/// prêmio), que o calamine recusa sozinho: o parser corrige e lê de novo. A
+/// dezena "00" chega como 0.
+#[test]
+fn lotomania_le_planilha_com_celulas_numericas_com_traco() {
+    let caminho = fixture("lotomania.xlsx");
+    assert!(
+        open_workbook_auto(&caminho)
+            .expect("abrir fixture")
+            .worksheet_range_at(0)
+            .expect("primeira aba")
+            .is_err(),
+        "a fixture deveria reproduzir o erro do calamine"
+    );
+    let config = loteria("lotomania");
+    let resultados = parsear_arquivo(&caminho, config).expect("parsear");
+    let s = "lotomania";
+    assert_eq!(
+        resultados,
+        vec![
+            res(
+                s,
+                1,
+                "1999-10-02",
+                &[0, 6, 11, 14, 16, 21, 22, 25, 32, 33, 34, 46, 61, 70, 73, 78, 88, 89, 90, 95]
+            ),
+            res(
+                s,
+                2,
+                "1999-10-09",
+                &[8, 11, 14, 17, 18, 24, 29, 37, 44, 49, 51, 55, 62, 63, 64, 76, 82, 84, 93, 97]
+            ),
+        ]
+    );
+    assert!(resultados
+        .iter()
+        .all(|r| r.dezenas.len() == config.qtd_dezenas));
+}
+
 /// Linhas vazias, curtas, cabeçalho repetido, data fora do formato
 /// `DD/MM/AAAA` (inclusive célula de data do Excel) e dezena faltando ou não
 /// numérica são puladas sem derrubar a planilha.

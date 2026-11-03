@@ -2,8 +2,11 @@ use crate::config::LoteriaConfig;
 use crate::error::{Result, SpiderError};
 use crate::log_arquivo::{diagnosticar, Nivel};
 use crate::model::Resultado;
-use calamine::{open_workbook_auto, Data, DataType, Reader};
+use calamine::{open_workbook_auto, Data, DataType, Range, Reader, Xlsx};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 /// Lê a planilha de resultados (.xlsx, apesar do link às vezes sugerir .htm)
 /// e extrai os concursos, de acordo com o mapeamento de colunas em `config`.
@@ -13,11 +16,7 @@ pub fn parsear_arquivo(caminho: &Path, config: &LoteriaConfig) -> Result<Vec<Res
         detalhe,
     };
 
-    let mut planilha = open_workbook_auto(caminho).map_err(|e| erro_planilha(e.to_string()))?;
-    let intervalo = planilha
-        .worksheet_range_at(0)
-        .ok_or_else(|| erro_planilha("a planilha não tem nenhuma aba".to_string()))?
-        .map_err(|e| erro_planilha(e.to_string()))?;
+    let intervalo = abrir_aba(caminho).map_err(erro_planilha)?;
 
     let mut resultados = Vec::new();
     let mut linhas_com_colunas_suficientes = 0usize;
@@ -60,6 +59,80 @@ pub fn parsear_arquivo(caminho: &Path, config: &LoteriaConfig) -> Result<Vec<Res
     }
 
     Ok(resultados)
+}
+
+/// Abre a primeira aba. Se o leitor recusar a planilha, tenta de novo depois de
+/// corrigir as células numéricas com "-": a planilha da Lotomania marca assim
+/// (`t="n"`) a coluna de ganhadores sem prêmio e o calamine aborta com
+/// "invalid float literal". O erro devolvido é o da leitura original.
+fn abrir_aba(caminho: &Path) -> std::result::Result<Range<Data>, String> {
+    let primeiro = match ler_primeira_aba(open_workbook_auto(caminho).map_err(|e| e.to_string())?) {
+        Ok(intervalo) => return Ok(intervalo),
+        Err(erro) => erro,
+    };
+    let corrigida = corrigir_celulas_com_traco(caminho).ok_or_else(|| primeiro.clone())?;
+    let planilha = Xlsx::new(Cursor::new(corrigida)).map_err(|_| primeiro.clone())?;
+    ler_primeira_aba(planilha).map_err(|_| primeiro)
+}
+
+fn ler_primeira_aba<RS: Read + std::io::Seek, R: Reader<RS>>(
+    mut planilha: R,
+) -> std::result::Result<Range<Data>, String>
+where
+    R::Error: std::fmt::Display,
+{
+    planilha
+        .worksheet_range_at(0)
+        .ok_or_else(|| "a planilha não tem nenhuma aba".to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Reescreve o `.xlsx` em memória trocando `t="n"` por `t="str"` nas células
+/// cujo valor é só "-". `None` se não for um zip legível ou se nada mudou.
+fn corrigir_celulas_com_traco(caminho: &Path) -> Option<Vec<u8>> {
+    let mut origem = ZipArchive::new(std::fs::File::open(caminho).ok()?).ok()?;
+    let mut destino = ZipWriter::new(Cursor::new(Vec::new()));
+    let mut mudou = false;
+    for i in 0..origem.len() {
+        let mut parte = origem.by_index(i).ok()?;
+        let nome = parte.name().to_string();
+        let mut bytes = Vec::new();
+        parte.read_to_end(&mut bytes).ok()?;
+        if nome.starts_with("xl/worksheets/") && nome.ends_with(".xml") {
+            for (de, para) in [
+                (&b"t=\"n\"><x:v>-</x:v>"[..], &b"t=\"str\"><x:v>-</x:v>"[..]),
+                (&b"t=\"n\"><v>-</v>"[..], &b"t=\"str\"><v>-</v>"[..]),
+            ] {
+                if let Some(trocado) = substituir_bytes(&bytes, de, para) {
+                    bytes = trocado;
+                    mudou = true;
+                }
+            }
+        }
+        destino
+            .start_file(nome, SimpleFileOptions::default())
+            .ok()?;
+        destino.write_all(&bytes).ok()?;
+    }
+    mudou.then(|| destino.finish().ok().map(Cursor::into_inner))?
+}
+
+/// `entrada` com todas as ocorrências de `de` trocadas por `para`; `None` se
+/// `de` não aparece. Trabalha em bytes porque a planilha da Caixa não é UTF-8.
+fn substituir_bytes(entrada: &[u8], de: &[u8], para: &[u8]) -> Option<Vec<u8>> {
+    let mut saida = Vec::with_capacity(entrada.len());
+    let mut resto = entrada;
+    let mut achou = false;
+    while let Some(pos) = resto.windows(de.len()).position(|janela| janela == de) {
+        saida.extend_from_slice(&resto[..pos]);
+        saida.extend_from_slice(para);
+        resto = &resto[pos + de.len()..];
+        achou = true;
+    }
+    achou.then(|| {
+        saida.extend_from_slice(resto);
+        saida
+    })
 }
 
 fn interpretar_linha(celulas: &[Data], config: &LoteriaConfig) -> Option<Resultado> {

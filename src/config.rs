@@ -335,6 +335,39 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
             dias_depois: 4,
         }],
     },
+    LoteriaConfig {
+        slug: "lotomania",
+        nome_exibicao: "Lotomania",
+        pagina_url: "https://loterias.caixa.gov.br/Paginas/Lotomania.aspx",
+        seletor_botao_download: "#btnResultados",
+        seletor_concurso_data: "#tituloResultadoConcurso",
+        seletor_dezenas: "#ulDezenas li",
+        qtd_dezenas: 20,
+        dezena_min: 0,
+        dezena_max: 99,
+        volante: Volante {
+            linhas: 10,
+            colunas: 10,
+        },
+        coluna_concurso: 0,
+        coluna_data: 1,
+        primeira_coluna_dezena: 2,
+        // 90% dos 2994 concursos do banco real em 2026-11-03 (mesma regra das
+        // outras loterias: o piso de 10% de trancado).
+        ultimo_concurso_busca: 2694,
+        perfil_ativo: "padrao_v1",
+        // Dias vistos nos últimos 200 concursos do banco real em 2026-11-03:
+        // segunda, quarta e sexta; terça, quinta e sábado aparecem uma ou duas
+        // vezes (sorteios isolados, p. ex. 2026-10-03). Sem sorteio especial:
+        // desde 2021 a única parada maior que 5 dias foi de 7 dias (concursos
+        // 2760 e 2761, abril de 2025).
+        dias_sorteio: &[DiaSemana::Segunda, DiaSemana::Quarta, DiaSemana::Sexta],
+        procurar_a_partir_das: HoraLocal {
+            hora: 21,
+            minuto: 0,
+        },
+        sorteios_especiais: &[],
+    },
 ];
 
 impl LoteriaConfig {
@@ -481,7 +514,7 @@ mod tests {
                 .collect();
             assert_eq!(slugs, esperado, "{argumento}");
         }
-        assert_eq!(esperado, ["lotofacil", "megasena", "quina"]);
+        assert_eq!(esperado, ["lotofacil", "megasena", "quina", "lotomania"]);
     }
 
     #[test]
@@ -510,6 +543,7 @@ mod tests {
             ("lotofacil", 1, 25, 5, 5),
             ("megasena", 1, 60, 6, 10),
             ("quina", 1, 80, 8, 10),
+            ("lotomania", 0, 99, 10, 10),
         ];
         for (slug, min, max, linhas, colunas) in esperado {
             let l = buscar(slug).expect("loteria configurada");
@@ -521,7 +555,12 @@ mod tests {
     #[test]
     fn corte_da_busca_por_loteria() {
         // Decisão de 2026-10-05 (PLANEJAMENTO.md, 1c, tabela do trancado).
-        for (slug, corte) in [("lotofacil", 3416), ("megasena", 2759), ("quina", 6421)] {
+        for (slug, corte) in [
+            ("lotofacil", 3416),
+            ("megasena", 2759),
+            ("quina", 6421),
+            ("lotomania", 2694),
+        ] {
             let l = buscar(slug).expect("loteria configurada");
             assert_eq!(l.ultimo_concurso_busca, corte, "{slug}");
         }
@@ -568,6 +607,12 @@ mod tests {
 
         let quina = buscar("quina").expect("loteria configurada");
         assert_eq!(quina.posicao_no_volante(80), Some((7, 9)));
+
+        // Lotomania: 00 a 99, a dezena 00 é a primeira casa do volante.
+        let lotomania = buscar("lotomania").expect("loteria configurada");
+        assert_eq!(lotomania.posicao_no_volante(0), Some((0, 0)));
+        assert_eq!(lotomania.posicao_no_volante(99), Some((9, 9)));
+        assert_eq!(lotomania.posicao_no_volante(100), None);
     }
 
     #[test]

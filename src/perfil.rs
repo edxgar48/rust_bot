@@ -349,6 +349,10 @@ repeticao_atual           = 0
                 "quina",
                 "5bea2957a4aa375ffaf102aab3ca21d39252213f1a133b4f3538589df6d2c873",
             ),
+            (
+                "lotomania",
+                "7e04e8fb39d1eedead8199c4347000e6a72d701077803b102610a7ae04496e07",
+            ),
         ];
         for (slug, hash) in esperados {
             let carregado = carregar(&raiz_do_repositorio(), cfg(slug), "padrao_v1").expect("lê");
@@ -556,9 +560,9 @@ repeticao_atual           = 0
 
     #[test]
     fn loteria_inexistente_e_erro() {
-        let texto = trocar(VALIDO, "\"quina\"", "\"lotomania\"");
+        let texto = trocar(VALIDO, "\"quina\"", "\"timemania\"");
         let motivo = motivo_do_erro(&texto);
-        assert!(motivo.contains("lotomania"), "{motivo}");
+        assert!(motivo.contains("timemania"), "{motivo}");
     }
 
     #[test]

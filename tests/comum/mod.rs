@@ -71,6 +71,7 @@ pub fn todas_as_fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ("lotofacil.xlsx", bytes_xlsx(&lotofacil())),
         ("megasena.xlsx", bytes_xlsx(&megasena())),
         ("quina.xlsx", bytes_xlsx(&quina())),
+        ("lotomania.xlsx", bytes_xlsx(&lotomania())),
         ("bordas_megasena.xlsx", bytes_xlsx(&bordas_megasena())),
         ("sem_resultados.xlsx", bytes_xlsx(&sem_resultados())),
         ("estreita.xlsx", bytes_xlsx(&estreita())),
@@ -179,6 +180,36 @@ const CABECALHO_QUINA: &[&str] = &[
     "observação",
 ];
 
+/// Só as colunas até o fim das bolas e três de prêmios: o suficiente para o
+/// layout (concurso, data e 20 bolas, `primeira_coluna_dezena = 2`).
+const CABECALHO_LOTOMANIA: &[&str] = &[
+    "Concurso",
+    "Data Sorteio",
+    "Bola1",
+    "Bola2",
+    "Bola3",
+    "Bola4",
+    "Bola5",
+    "Bola6",
+    "Bola7",
+    "Bola8",
+    "Bola9",
+    "Bola10",
+    "Bola11",
+    "Bola12",
+    "Bola13",
+    "Bola14",
+    "Bola15",
+    "Bola16",
+    "Bola17",
+    "Bola18",
+    "Bola19",
+    "Bola20",
+    "Ganhadores 20 acertos",
+    "Cidade / UF",
+    "Rateio 20 acertos",
+];
+
 /// Linhas copiadas das planilhas reais. Sem rustfmt para manter uma linha
 /// de planilha por bloco compacto, em vez de uma célula por linha.
 #[rustfmt::skip]
@@ -267,6 +298,23 @@ mod reais {
         S("R$124.185.246,00"), N("78"), S("R$1.592.119,00"), N("4033"), S("R$40.954,00"), N("0"),
         S("R$0,00"), S("R$0,00"), S("R$0,00"), S("R$0,00"), S("R$0,00"), S(""),
     ];
+    // Na Lotomania a dezena 100 vem como "00" e as bolas já vêm em ordem
+    // crescente. A coluna dos ganhadores com 16 acertos (N("-")) é numérica
+    // com "-": é o que o calamine recusa sozinho.
+    pub const LOTOMANIA_1: &[Celula] = &[
+        N("1"), S("02/10/1999"), N("00"), N("06"), N("11"), N("14"), N("16"), N("21"), N("22"),
+        N("25"), N("32"), N("33"), N("34"), N("46"), N("61"), N("70"), N("73"), N("78"), N("88"),
+        N("89"), N("90"), N("95"), N("0"), S(""), S("R$0,00"), N("1"), S("R$118.746,87"),
+        N("46"), S("R$2.581,46"), N("446"), S("R$132,62"), N("2716"), S("R$21,78"), N("-"),
+        S("-"), N("0"), S("R$0,00"), S("R$178.120,31"),
+    ];
+    pub const LOTOMANIA_2: &[Celula] = &[
+        N("2"), S("09/10/1999"), N("08"), N("11"), N("14"), N("17"), N("18"), N("24"), N("29"),
+        N("37"), N("44"), N("49"), N("51"), N("55"), N("62"), N("63"), N("64"), N("76"), N("82"),
+        N("84"), N("93"), N("97"), N("0"), S(""), S("R$0,00"), N("14"), S("R$23.661,54"),
+        N("180"), S("R$1.840,34"), N("1803"), S("R$91,53"), N("10587"), S("R$15,59"), N("-"),
+        S("-"),
+    ];
     pub const QUINA_5: &[Celula] = &[
         N("5"), S("27/03/1994"), N("19"), N("44"), N("53"), N("54"), N("71"), N("1"), S(""),
         S("R$147.595.715,00"), N("137"), S("R$1.077.341,00"), N("5338"), S("R$36.774,00"), N("0"),
@@ -303,6 +351,14 @@ pub fn quina() -> Planilha {
         nome_aba: "QUINA",
         cabecalho: CABECALHO_QUINA,
         linhas: vec![QUINA_1, QUINA_2, QUINA_3, QUINA_4, QUINA_5],
+    }
+}
+
+pub fn lotomania() -> Planilha {
+    Planilha {
+        nome_aba: "LOTOMANIA",
+        cabecalho: CABECALHO_LOTOMANIA,
+        linhas: vec![LOTOMANIA_1, LOTOMANIA_2],
     }
 }
 
