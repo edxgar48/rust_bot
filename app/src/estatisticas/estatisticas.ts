@@ -28,13 +28,13 @@ export interface EstatisticasJanela {
   readonly primeiroConcurso: number | null;
   readonly ultimoConcurso: number | null;
 
-  /** `frequencia[d - 1]` = quantas vezes a dezena d saiu na janela. */
+  /** `frequencia[d - primeiraDezena]` = quantas vezes a dezena d saiu na janela. */
   readonly frequencia: readonly number[];
   /** Esperado ao acaso por dezena: tamanho · k / total (igual para todas). */
   readonly frequenciaEsperada: number;
 
   /**
-   * `atraso[d - 1]` = concursos desde a última aparição dentro da janela.
+   * `atraso[d - primeiraDezena]` = concursos desde a última aparição dentro da janela.
    * `null` = a dezena não saiu na janela (o atraso real é pelo menos `tamanho`,
    * mas a janela não permite dizer quanto).
    */
@@ -99,15 +99,20 @@ function paresDoVolante(total: number): number {
 
 /**
  * Calcula todas as estatísticas de uma janela numa única passada sobre os concursos.
- * Não aloca nada por concurso. Dezena fora de 1..total (impossível após o validador)
- * é ignorada em vez de lançar.
+ * Não aloca nada por concurso. Dezena fora do volante (impossível após o validador)
+ * é ignorada em vez de lançar. Os vetores por dezena começam na primeira dezena do
+ * volante (1; 0 na Lotomania): `frequencia[d - primeiraDezena]`.
  */
 export function calcularEstatisticas(
   slug: Slug,
   concursos: readonly ConcursoHistorico[],
   janela: JanelaEstatistica,
 ): EstatisticasJanela {
-  const { totalDezenas: total, dezenasSorteadas: k } = PARAMETROS_LOTERIA[slug];
+  const {
+    totalDezenas: total,
+    dezenasSorteadas: k,
+    primeiraDezena: primeira,
+  } = PARAMETROS_LOTERIA[slug];
   const tamanho = tamanhoEfetivo(janela, concursos.length);
   const inicio = concursos.length - tamanho;
 
@@ -118,7 +123,7 @@ export function calcularEstatisticas(
   const distribuicaoRepetidas = new Array<number>(k + 1).fill(0);
   const distribuicaoSoma = new Array<number>(k * total + 1).fill(0);
   // Marca das dezenas do sorteio anterior: valor = posição relativa + 1 (0 = nunca).
-  const marcaAnterior = new Uint32Array(total + 1);
+  const marcaAnterior = new Uint32Array(primeira + total);
 
   let somaPares = 0;
   let somaTotal = 0;
@@ -134,9 +139,9 @@ export function calcularEstatisticas(
     let repetidas = 0;
     for (let j = 0; j < dezenas.length; j++) {
       const d = dezenas[j]!;
-      if (!Number.isInteger(d) || d < 1 || d > total) continue;
-      frequencia[d - 1]!++;
-      ultimaPosicao[d - 1] = i;
+      if (!Number.isInteger(d) || d < primeira || d >= primeira + total) continue;
+      frequencia[d - primeira]!++;
+      ultimaPosicao[d - primeira] = i;
       if (d % 2 === 0) pares++;
       soma += d;
       if (i > 0 && marcaAnterior[d] === posicaoAnterior) repetidas++;
@@ -144,7 +149,7 @@ export function calcularEstatisticas(
     // Marca as dezenas deste sorteio para o próximo (marca = i + 1).
     for (let j = 0; j < dezenas.length; j++) {
       const d = dezenas[j]!;
-      if (!Number.isInteger(d) || d < 1 || d > total) continue;
+      if (!Number.isInteger(d) || d < primeira || d >= primeira + total) continue;
       marcaAnterior[d] = i + 1;
     }
 
@@ -163,14 +168,14 @@ export function calcularEstatisticas(
   const atraso = new Array<number | null>(total);
   const ranking: AtrasoDezena[] = [];
   const semAparicao: number[] = [];
-  for (let d = 1; d <= total; d++) {
-    const ultima = ultimaPosicao[d - 1]!;
+  for (let d = primeira; d < primeira + total; d++) {
+    const ultima = ultimaPosicao[d - primeira]!;
     if (ultima < 0) {
-      atraso[d - 1] = null;
+      atraso[d - primeira] = null;
       semAparicao.push(d);
     } else {
       const a = tamanho - 1 - ultima;
-      atraso[d - 1] = a;
+      atraso[d - primeira] = a;
       ranking.push({ dezena: d, atraso: a });
     }
   }
@@ -192,7 +197,7 @@ export function calcularEstatisticas(
     mediaPares: tamanho > 0 ? somaPares / tamanho : null,
     paresEsperado: (k * paresDoVolante(total)) / total,
     soma: tamanho > 0 ? { media: somaTotal / tamanho, minimo: somaMin, maximo: somaMax } : null,
-    somaEsperada: (k * (total + 1)) / 2,
+    somaEsperada: (k * (2 * primeira + total - 1)) / 2,
     distribuicaoSoma,
     repetidas: {
       comparacoes,

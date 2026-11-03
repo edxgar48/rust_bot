@@ -112,13 +112,16 @@ describe('Início: atualizado', () => {
       'Lotofácil',
       'Mega-Sena',
       'Quina',
+      'Lotomania',
     ]);
     expect(secoes[0]?.textContent).toContain('Concurso 3803 · 13/10/2026');
     expect(secoes[1]?.textContent).toContain('Concurso 3069 · ');
     expect(secoes[2]?.textContent).toContain('Concurso 7141 · ');
+    expect(secoes[3]?.textContent).toContain('Concurso 2994 · 30/10/2026');
     const bolas = secoes.map((s) => s.querySelectorAll('[role="img"]').length);
-    expect(bolas).toEqual([15, 6, 5]);
+    expect(bolas).toEqual([15, 6, 5, 20]);
     expect(secoes[0]?.querySelector('ul')?.getAttribute('data-disposicao')).toBe('grade');
+    expect(secoes[3]?.querySelector('ul')?.getAttribute('data-disposicao')).toBe('grade');
     expect(secoes[1]?.querySelector('ul')?.getAttribute('data-disposicao')).toBe('linha');
     // As dezenas mostradas são as do ultimo.json (em ordem), com 2 dígitos.
     const esperado = JSON.parse(new TextDecoder().decode(lerFixture('lotofacil/ultimo.json')));
@@ -153,7 +156,7 @@ describe('Início: dados em cache e sem rede', () => {
       'Sem rede, mostrando dados de 14/10/2026 09:30.',
     );
     expect(alvo.textContent).toContain('Concurso 3803 · 13/10/2026');
-    expect(alvo.querySelectorAll('section [role="img"]')).toHaveLength(26);
+    expect(alvo.querySelectorAll('section [role="img"]')).toHaveLength(46);
   });
 });
 
@@ -175,7 +178,7 @@ describe('Início: dado recusado', () => {
     expect(erro?.textContent).toContain('Erro:');
     expect(erro?.textContent).toContain('Dado recusado');
     expect(alvo.textContent).toContain('Concurso 3069 · ');
-    expect(alvo.querySelectorAll('section [role="img"]')).toHaveLength(26);
+    expect(alvo.querySelectorAll('section [role="img"]')).toHaveLength(46);
     expect(botao(alvo, textos.inicio.atualizar)).toBeDefined();
   });
 });

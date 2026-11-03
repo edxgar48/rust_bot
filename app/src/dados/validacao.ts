@@ -11,6 +11,8 @@ import {
   NORMALIZACOES,
   PARAMETROS_LOTERIA,
   SLUGS,
+  dezenaValida,
+  ultimaDezena,
   type ChaveObrigatoria,
   type ConcursoHistorico,
   type DescritorArquivo,
@@ -136,9 +138,10 @@ function exigirSchema(o: Objeto, onde: string): void {
   }
 }
 
-/** Dezenas: inteiros, estritamente crescentes (logo sem repetição), em 1..total. */
+/** Dezenas: inteiros, estritamente crescentes (logo sem repetição), dentro do volante. */
 function dezenasSorteadas(v: unknown, onde: string, loteria: Slug): readonly number[] {
-  const { totalDezenas, dezenasSorteadas: quantidade } = PARAMETROS_LOTERIA[loteria];
+  const { primeiraDezena, dezenasSorteadas: quantidade } = PARAMETROS_LOTERIA[loteria];
+  const ultima = ultimaDezena(loteria);
   const itens = lista(v, onde);
   if (itens.length !== quantidade) {
     return falha(onde, `${loteria} sorteia ${quantidade} dezenas, vieram ${itens.length}.`);
@@ -146,8 +149,8 @@ function dezenasSorteadas(v: unknown, onde: string, loteria: Slug): readonly num
   const dezenas: number[] = [];
   for (const [i, item] of itens.entries()) {
     const d = inteiro(item, `${onde}[${i}]`);
-    if (d < 1 || d > totalDezenas) {
-      return falha(`${onde}[${i}]`, `dezena ${d} fora do intervalo 1 a ${totalDezenas}.`);
+    if (d < primeiraDezena || d > ultima) {
+      return falha(`${onde}[${i}]`, `dezena ${d} fora do intervalo ${primeiraDezena} a ${ultima}.`);
     }
     const anterior = dezenas[i - 1];
     if (anterior !== undefined && d <= anterior) {
@@ -279,11 +282,14 @@ export function validarHistorico(valor: unknown, esperada?: Slug): HistoricoV1 {
   return { schemaVersion: 1, loteria, concursos };
 }
 
-function dezenaDaTabela(v: unknown, onde: string, total: number): DezenaDaTabela {
+function dezenaDaTabela(v: unknown, onde: string, loteria: Slug): DezenaDaTabela {
   const o = objeto(v, onde);
   const dezena = inteiro(o.dezena, `${onde}.dezena`);
-  if (dezena < 1 || dezena > total) {
-    falha(`${onde}.dezena`, `dezena ${dezena} fora do intervalo 1 a ${total}.`);
+  if (!dezenaValida(loteria, dezena)) {
+    falha(
+      `${onde}.dezena`,
+      `dezena ${dezena} fora do intervalo ${PARAMETROS_LOTERIA[loteria].primeiraDezena} a ${ultimaDezena(loteria)}.`,
+    );
   }
   const grau: GrauEvidencia | null = enumeradoOuNulo(o, 'evidencia_grau', GRAUS_EVIDENCIA, onde);
   const direcao: DirecaoEvidencia | null = enumeradoOuNulo(
@@ -343,7 +349,7 @@ export function validarTabelaGeral(valor: unknown, esperada?: Slug): TabelaGeral
   const vistas = new Set<number>();
   for (const [i, item] of itens.entries()) {
     const onde = `${nome}.dezenas[${i}]`;
-    const d = dezenaDaTabela(item, onde, total);
+    const d = dezenaDaTabela(item, onde, loteria);
     if (d.posicao !== i + 1) {
       falha(
         `${onde}.posicao`,
@@ -420,10 +426,11 @@ export function validarRankingTaxa(valor: unknown, esperada?: Slug): RankingTaxa
     const onde = `${nome}.dezenas[${i}]`;
     const e = objeto(item, onde);
     const dezena = inteiro(e.dezena, `${onde}.dezena`);
-    if (dezena !== i + 1) {
+    const esperadaDezena = PARAMETROS_LOTERIA[loteria].primeiraDezena + i;
+    if (dezena !== esperadaDezena) {
       falha(
         `${onde}.dezena`,
-        `esperada a dezena ${i + 1} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
+        `esperada a dezena ${esperadaDezena} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
       );
     }
     const notaA = decimal9(e.nota_a, `${onde}.nota_a`);
@@ -500,10 +507,11 @@ export function validarRankingPosicoes(valor: unknown, esperada?: Slug): Ranking
     const onde = `${nome}.dezenas[${i}]`;
     const e = objeto(item, onde);
     const dezena = inteiro(e.dezena, `${onde}.dezena`);
-    if (dezena !== i + 1) {
+    const esperadaDezena = PARAMETROS_LOTERIA[loteria].primeiraDezena + i;
+    if (dezena !== esperadaDezena) {
       falha(
         `${onde}.dezena`,
-        `esperada a dezena ${i + 1} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
+        `esperada a dezena ${esperadaDezena} (lista em ordem crescente, sem repetição), veio ${dezena}.`,
       );
     }
     dezenas.push({

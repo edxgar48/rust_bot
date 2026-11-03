@@ -330,7 +330,7 @@ describe('formas inválidas', () => {
 });
 
 describe('fluxo do cliente', () => {
-  it('primeira sincronização baixa e valida os 9 arquivos reais', async () => {
+  it('primeira sincronização baixa e valida os 12 arquivos reais', async () => {
     const servidor = new ServidorFalso();
     const { cliente, armazenamento } = novoCliente(servidor);
     const r = await cliente.sincronizar();
@@ -341,7 +341,7 @@ describe('fluxo do cliente', () => {
         expect(l.arquivos[chave]?.estado, `${slug}/${chave}`).toBe('baixado');
       }
     }
-    expect(armazenamento.tamanho).toBe(10); // 9 arquivos + o index.json válido
+    expect(armazenamento.tamanho).toBe(13); // 12 arquivos + o index.json válido
   });
 
   it('segunda sincronização sem mudanças só baixa o índice', async () => {

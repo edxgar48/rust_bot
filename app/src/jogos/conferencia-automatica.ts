@@ -8,12 +8,14 @@ import type { JogoSalvo } from './jogo';
 
 /**
  * Menor número de acertos que cai numa faixa com prêmio em cada loteria (Lotofácil 11,
- * Mega-Sena 4 = quadra, Quina 2 = duque). O app não calcula o valor do prêmio.
+ * Mega-Sena 4 = quadra, Quina 2 = duque, Lotomania 16). O app não calcula o valor do prêmio;
+ * o prêmio da Lotomania por não acertar nenhuma dezena (0 acertos) não entra aqui.
  */
 export const FAIXA_PREMIO: Readonly<Record<Slug, number>> = {
   lotofacil: 11,
   megasena: 4,
   quina: 2,
+  lotomania: 16,
 };
 
 /** Quantos concursos novos cada jogo lista (os mais recentes); o resto só entra na contagem. */

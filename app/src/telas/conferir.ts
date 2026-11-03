@@ -2,7 +2,7 @@
 // jogo contra o histórico e visão da tela. O app só LÊ historico.json; nada do motor
 // é recalculado. A conferência descreve o passado e não diz nada sobre o próximo sorteio.
 import type { ConcursoHistorico, Slug } from '../dados/tipos';
-import { PARAMETROS_LOTERIA } from '../dados/tipos';
+import { PARAMETROS_LOTERIA, dezenaValida, ultimaDezena } from '../dados/tipos';
 import { textos } from '../lib/textos';
 import { estadoEData, type EstadoTela, type SituacaoTela } from './estado-tela';
 
@@ -20,6 +20,8 @@ export const QUANTIDADE_JOGO: Readonly<Record<Slug, QuantidadeJogo>> = {
   lotofacil: { minimo: 15, maximo: 20 },
   megasena: { minimo: 6, maximo: 20 },
   quina: { minimo: 5, maximo: 15 },
+  // A Lotomania tem aposta única: sempre 50 dezenas, de 00 a 99.
+  lotomania: { minimo: 50, maximo: 50 },
 };
 
 export type SituacaoQuantidade =
@@ -72,15 +74,12 @@ export interface ResultadoConferencia {
   readonly melhor: MelhorResultado | null;
 }
 
-/** Tabela de presença do jogo (dezenas fora de 1..total ou repetidas são ignoradas). */
-function marcarJogo(
-  jogo: readonly number[],
-  total: number,
-): { marca: Uint8Array; distintas: number } {
-  const marca = new Uint8Array(total + 1);
+/** Tabela de presença do jogo, indexada pela dezena (fora do volante ou repetidas são ignoradas). */
+function marcarJogo(slug: Slug, jogo: readonly number[]): { marca: Uint8Array; distintas: number } {
+  const marca = new Uint8Array(ultimaDezena(slug) + 1);
   let distintas = 0;
   for (const d of jogo) {
-    if (Number.isInteger(d) && d >= 1 && d <= total && marca[d] === 0) {
+    if (dezenaValida(slug, d) && marca[d] === 0) {
       marca[d] = 1;
       distintas++;
     }
@@ -108,7 +107,7 @@ export function conferirJogo(
   concursos: readonly ConcursoHistorico[],
 ): ResultadoConferencia {
   const { totalDezenas, dezenasSorteadas } = PARAMETROS_LOTERIA[slug];
-  const { marca, distintas } = marcarJogo(jogo, totalDezenas);
+  const { marca, distintas } = marcarJogo(slug, jogo);
   const porAcertos = new Array<number>(Math.min(distintas, dezenasSorteadas) + 1).fill(0);
   let melhorAcertos = -1;
   let melhores: number[] = [];
@@ -146,7 +145,7 @@ export function concursosComAcertos(
   acertos: number,
   limite = Infinity,
 ): number[] {
-  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  const { marca } = marcarJogo(slug, jogo);
   const saida: number[] = [];
   for (let i = concursos.length - 1; i >= 0 && saida.length < limite; i--) {
     const concurso = concursos[i] as ConcursoHistorico;
@@ -161,7 +160,7 @@ export function acertosPorConcurso(
   jogo: readonly number[],
   concursos: readonly ConcursoHistorico[],
 ): { concurso: number; acertos: number }[] {
-  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  const { marca } = marcarJogo(slug, jogo);
   return concursos.map((c) => ({ concurso: c[0], acertos: contarAcertos(marca, c[2]) }));
 }
 
@@ -183,7 +182,7 @@ export function resumirAcertosRecentes(
   concursos: readonly ConcursoHistorico[],
   limite: number,
 ): ResumoDosRecentes {
-  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  const { marca } = marcarJogo(slug, jogo);
   const recentes: { concurso: number; acertos: number }[] = [];
   let melhor: { concurso: number; acertos: number } | null = null;
   for (let i = concursos.length - 1; i >= 0; i--) {
@@ -203,7 +202,7 @@ export function acertosNoUltimoConcurso(
 ): { concurso: number; acertos: number } | null {
   const ultimo = concursos[concursos.length - 1];
   if (ultimo === undefined) return null;
-  const { marca } = marcarJogo(jogo, PARAMETROS_LOTERIA[slug].totalDezenas);
+  const { marca } = marcarJogo(slug, jogo);
   return { concurso: ultimo[0], acertos: contarAcertos(marca, ultimo[2]) };
 }
 

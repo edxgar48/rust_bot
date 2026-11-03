@@ -218,6 +218,7 @@ export const ALTURA_LINHA_REM: Readonly<Record<Slug, number>> = {
   lotofacil: 7.5,
   megasena: 6.25,
   quina: 6.25,
+  lotomania: 7.5,
 };
 
 export interface EntradaJanela {

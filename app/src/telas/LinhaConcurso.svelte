@@ -103,7 +103,8 @@
     font: var(--fonte-rotulo-g);
     font-variant-numeric: tabular-nums;
   }
-  .linha[data-loteria='lotofacil'] .disco {
+  .linha[data-loteria='lotofacil'] .disco,
+  .linha[data-loteria='lotomania'] .disco {
     --lado: 1.75rem;
     font: var(--fonte-rotulo-m);
   }
@@ -119,6 +120,9 @@
   }
   .linha[data-loteria='lotofacil'] .bolas {
     grid-template-columns: repeat(8, 1.75rem);
+  }
+  .linha[data-loteria='lotomania'] .bolas {
+    grid-template-columns: repeat(10, 1.75rem);
   }
   .linha[data-loteria='megasena'] .bolas {
     grid-template-columns: repeat(6, 2.5rem);

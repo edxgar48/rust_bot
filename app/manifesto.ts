@@ -17,7 +17,7 @@ export const manifesto: Partial<ManifestOptions> = {
   name: 'Fezinha',
   short_name: 'Fezinha',
   description:
-    'Resultados, estatísticas e conferência de jogos da Lotofácil, Mega-Sena e Quina. Não prevê sorteios.',
+    'Resultados, estatísticas e conferência de jogos da Lotofácil, Mega-Sena, Quina e Lotomania. Não prevê sorteios.',
   lang: 'pt-BR',
   dir: 'ltr',
   display: 'standalone',

@@ -47,7 +47,8 @@
     return () => observador.disconnect();
   });
 
-  const extremos = $derived(extremosFrequencia(estatisticas.frequencia));
+  const primeiraDezena = $derived(PARAMETROS_LOTERIA[estatisticas.slug].primeiraDezena);
+  const extremos = $derived(extremosFrequencia(estatisticas.frequencia, primeiraDezena));
   // Só recalcula quando muda a janela/loteria (estatisticas) ou a largura medida.
   // Janela efetiva (estatisticas.tamanho), nunca a pedida: a faixa usa os concursos que existem.
   const acaso = $derived(montarResumoAcaso(estatisticas));
@@ -57,6 +58,7 @@
       frequencia: estatisticas.frequencia,
       esperado: estatisticas.frequenciaEsperada,
       faixa,
+      primeiraDezena,
       largura,
     }),
   );
@@ -66,7 +68,12 @@
   const nomeLoteria = $derived(textos.loterias[estatisticas.slug]);
   const total = $derived(PARAMETROS_LOTERIA[estatisticas.slug].totalDezenas);
   const linhas = $derived(
-    linhasTabelaFrequencia(estatisticas.frequencia, estatisticas.frequenciaEsperada, faixa),
+    linhasTabelaFrequencia(
+      estatisticas.frequencia,
+      estatisticas.frequenciaEsperada,
+      faixa,
+      primeiraDezena,
+    ),
   );
   const marcaMaior = $derived(
     !extremos.todasIguais && extremos.dezenasMaximo.length <= MAXIMO_EMPATADOS_MARCADOS,

@@ -25,11 +25,11 @@
     rotulo: textos.loterias[s],
   }));
 
-  // Posições de exemplo: permutação fixa de 1..N (7 é coprimo com 25, 60 e 80).
+  // Posições de exemplo: permutação fixa de 1..N (7 é coprimo com 25, 60, 80 e 100).
   const posicoes = $derived.by(() => {
     const dezenas = dezenasDoVolante(loteria);
     const total = dezenas.length;
-    return Object.fromEntries(dezenas.map((d) => [d, (((d - 1) * 7) % total) + 1]));
+    return Object.fromEntries(dezenas.map((d, i) => [d, ((i * 7) % total) + 1]));
   });
   let selecionadas = $state<number[]>([3, 12, 25]);
   function alternar(n: number): void {

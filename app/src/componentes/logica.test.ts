@@ -16,14 +16,16 @@ describe('layoutVolante', () => {
     expect(layoutVolante('lotofacil')).toEqual({ linhas: 5, colunas: 5, total: 25 });
     expect(layoutVolante('megasena')).toEqual({ linhas: 6, colunas: 10, total: 60 });
     expect(layoutVolante('quina')).toEqual({ linhas: 8, colunas: 10, total: 80 });
+    expect(layoutVolante('lotomania')).toEqual({ linhas: 10, colunas: 10, total: 100 });
   });
-  it('linhas x colunas cobre todas as dezenas, de 1 a N', () => {
+  it('linhas x colunas cobre todas as dezenas, da primeira à última', () => {
     for (const slug of SLUGS) {
       const { linhas, colunas } = layoutVolante(slug);
       const dezenas = dezenasDoVolante(slug);
       expect(linhas * colunas).toBe(PARAMETROS_LOTERIA[slug].totalDezenas);
-      expect(dezenas[0]).toBe(1);
-      expect(dezenas.at(-1)).toBe(linhas * colunas);
+      const { primeiraDezena } = PARAMETROS_LOTERIA[slug];
+      expect(dezenas[0]).toBe(primeiraDezena);
+      expect(dezenas.at(-1)).toBe(primeiraDezena + linhas * colunas - 1);
     }
   });
 });

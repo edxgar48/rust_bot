@@ -235,7 +235,7 @@
     flex-wrap: wrap;
     gap: var(--esp-2);
   }
-  /* Lotofácil: 15 dezenas em grade de 5 colunas. */
+  /* Lotofácil e Lotomania: 15 e 20 dezenas em grade de 5 colunas. */
   .bolas[data-disposicao='grade'] {
     display: grid;
     grid-template-columns: repeat(5, 2.5rem);

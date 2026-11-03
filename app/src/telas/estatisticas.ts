@@ -160,7 +160,7 @@ export function montarResumoAcaso(e: EstatisticasJanela): ResumoAcaso | null {
   const faixa = faixaDaFrequencia(e.slug, e.tamanho);
   if (faixa === null) return null;
   const t = textos.estatisticas.frequencia;
-  const fora = dezenasForaDaFaixa(e.frequencia, faixa);
+  const fora = dezenasForaDaFaixa(e.frequencia, faixa, PARAMETROS_LOTERIA[e.slug].primeiraDezena);
   return {
     faixa,
     fora,

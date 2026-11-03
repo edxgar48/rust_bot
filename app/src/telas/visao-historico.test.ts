@@ -350,7 +350,12 @@ describe('janelaVirtual', () => {
   });
 
   it('cada loteria tem altura de linha fixa em rem', () => {
-    expect(ALTURA_LINHA_REM).toEqual({ lotofacil: 7.5, megasena: 6.25, quina: 6.25 });
+    expect(ALTURA_LINHA_REM).toEqual({
+      lotofacil: 7.5,
+      megasena: 6.25,
+      quina: 6.25,
+      lotomania: 7.5,
+    });
   });
 });
 

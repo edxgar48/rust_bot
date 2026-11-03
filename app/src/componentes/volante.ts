@@ -4,7 +4,12 @@ import { PARAMETROS_LOTERIA, type Slug } from '../dados/tipos';
 
 export const NUMERO_FAIXAS = 5;
 
-const COLUNAS: Readonly<Record<Slug, number>> = { lotofacil: 5, megasena: 10, quina: 10 };
+const COLUNAS: Readonly<Record<Slug, number>> = {
+  lotofacil: 5,
+  megasena: 10,
+  quina: 10,
+  lotomania: 10,
+};
 
 export interface LayoutVolante {
   readonly linhas: number;
@@ -12,16 +17,17 @@ export interface LayoutVolante {
   readonly total: number;
 }
 
-/** Lotofácil 5x5, Mega-Sena 6x10, Quina 8x10. */
+/** Lotofácil 5x5, Mega-Sena 6x10, Quina 8x10, Lotomania 10x10. */
 export function layoutVolante(slug: Slug): LayoutVolante {
   const total = PARAMETROS_LOTERIA[slug].totalDezenas;
   const colunas = COLUNAS[slug];
   return { linhas: total / colunas, colunas, total };
 }
 
-/** Dezenas do volante, de 1 a N. */
+/** Dezenas do volante, da primeira (1; 00 na Lotomania) à última. */
 export function dezenasDoVolante(slug: Slug): number[] {
-  return Array.from({ length: PARAMETROS_LOTERIA[slug].totalDezenas }, (_, i) => i + 1);
+  const { totalDezenas, primeiraDezena } = PARAMETROS_LOTERIA[slug];
+  return Array.from({ length: totalDezenas }, (_, i) => i + primeiraDezena);
 }
 
 /**

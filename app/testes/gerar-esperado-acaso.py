@@ -54,7 +54,9 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 FIX = RAIZ / "app" / "testes" / "fixtures"
-PARAMS = {"lotofacil": (25, 15), "megasena": (60, 6), "quina": (80, 5)}
+PARAMS = {"lotofacil": (25, 15), "megasena": (60, 6), "quina": (80, 5), "lotomania": (100, 20)}
+# Menor dezena do volante: 1, exceto na Lotomania (00 a 99).
+PRIMEIRA = {"lotomania": 0}
 JANELAS_NOMINAIS = ["10", "50", "100", "total"]
 
 # Constantes de src/avaliacao/topk/tests.rs (testes que o back-end já passa).
@@ -68,13 +70,15 @@ PROGRAMA_RUST = """
 use rust_spider::avaliacao::Hipergeometrica;
 
 fn main() {
-    let casos: [(&str, u32, u32, u32); 6] = [
+    let casos: [(&str, u32, u32, u32); 8] = [
         ("lotofacil_pares", 25, 12, 15),
         ("lotofacil_repetidas", 25, 15, 15),
         ("megasena_pares", 60, 30, 6),
         ("megasena_repetidas", 60, 6, 6),
         ("quina_pares", 80, 40, 5),
         ("quina_repetidas", 80, 5, 5),
+        ("lotomania_pares", 100, 50, 20),
+        ("lotomania_repetidas", 100, 20, 20),
     ];
     for (rot, n, s, e) in casos {
         let h = Hipergeometrica::nova(n, s, e).expect("valida");
@@ -228,8 +232,9 @@ def gerar_binomial():
                 f, _, _ = faixa_binomial(n, k, total_dezenas)
             else:
                 f = faixa
-            abaixo = [d + 1 for d, v in enumerate(j["frequencia"]) if v < f["inferior"]]
-            acima = [d + 1 for d, v in enumerate(j["frequencia"]) if v > f["superior"]]
+            p0 = PRIMEIRA.get(slug, 1)
+            abaixo = [d + p0 for d, v in enumerate(j["frequencia"]) if v < f["inferior"]]
+            acima = [d + p0 for d, v in enumerate(j["frequencia"]) if v > f["superior"]]
             fora[nome] = {"n": n, "inferior": f["inferior"], "superior": f["superior"],
                           "abaixo": abaixo, "acima": acima}
         saida[slug] = {"total_dezenas": total_dezenas, "k": k, "janelas": janelas, "fora": fora}
@@ -271,16 +276,20 @@ def gerar_soma():
         assert polinomio_somas(n, k) == somas_forca_bruta(n, k), (n, k)
     saida = {}
     for slug, (n, k) in PARAMS.items():
+        p0 = PRIMEIRA.get(slug, 1)
         casos = polinomio_somas(n, k)
+        # Com o volante começando em p0, cada dezena vale (1 - p0) a menos: a soma de k, k·(1 - p0).
+        desl = k * (1 - p0)
+        casos = casos[desl:] + [0] * desl
         total = math.comb(n, k)
         assert sum(casos) == total, slug
-        minimo = k * (k + 1) // 2
-        maximo = k * (2 * n - k + 1) // 2
+        minimo = k * (2 * p0 + k - 1) // 2
+        maximo = k * (2 * (p0 + n - 1) - k + 1) // 2
         assert all(c == 0 for c in casos[:minimo]) and all(c > 0 for c in casos[minimo:maximo + 1])
         assert all(c == 0 for c in casos[maximo + 1:])
         media = Fraction(sum(s * c for s, c in enumerate(casos)), total)
         var = Fraction(sum(s * s * c for s, c in enumerate(casos)), total) - media ** 2
-        assert media == Fraction(k * (n + 1), 2), slug
+        assert media == Fraction(k * (2 * p0 + n - 1), 2), slug
         assert var == Fraction(k * (n + 1) * (n - k), 12), slug
         assert all(casos[minimo + i] == casos[maximo - i] for i in range(maximo - minimo + 1))
         if slug == "lotofacil":

@@ -297,7 +297,9 @@ describe('Estatísticas: Por evidência, cabeçalho e textos', () => {
     const explicacao = texto(alvo.querySelector('[data-explicacao]'));
     expect(explicacao).toContain('e não o tamanho do desvio');
     expect(explicacao).toContain('"Viés" não diz se a dezena saiu mais ou menos que o esperado');
-    expect(explicacao).toContain('"muito fraca" (Mega-Sena e Quina) e "fraca" (Lotofácil)');
+    expect(explicacao).toContain(
+      '"muito fraca" (Mega-Sena, Quina e Lotomania) e "fraca" (Lotofácil)',
+    );
     expect(explicacao).toContain('o máximo que os dados podem dar a favor dele');
     expect(t).not.toContain('foge do que o acaso explicaria');
     expect(t).not.toContain('o acaso explica quase tudo');

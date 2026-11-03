@@ -56,7 +56,7 @@ describe('montarVisaoInicio', () => {
     expect(montarVisaoInicio(final)).toEqual({ tipo: 'sem_dados', texto: final.estado.texto });
   });
 
-  it('atualizado: conteúdo com 3 cartões, sem erro', async () => {
+  it('atualizado: conteúdo com 4 cartões, sem erro', async () => {
     const final = await abrir(cliente(new ServidorFalso(), new ArmazenamentoEmMemoria()));
     const v = montarVisaoInicio(final);
     if (v.tipo !== 'conteudo') throw new Error('esperava conteúdo');
@@ -68,6 +68,7 @@ describe('montarVisaoInicio', () => {
       ['lotofacil', 3803, '13/10/2026', 15, 'grade'],
       ['megasena', 3069, dataBr, 6, 'linha'],
       ['quina', 7141, dataBr, 5, 'linha'],
+      ['lotomania', 2994, dataBr, 20, 'grade'],
     ]);
   });
 

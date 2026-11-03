@@ -122,6 +122,7 @@ const PARAMS = {
   lotofacil: { total: 25, k: 15 },
   megasena: { total: 60, k: 6 },
   quina: { total: 80, k: 5 },
+  lotomania: { total: 100, k: 20 },
 } as const;
 
 const JANELAS = ['10', '50', '100', 'total'] as const;

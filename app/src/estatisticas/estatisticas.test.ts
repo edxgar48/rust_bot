@@ -218,7 +218,10 @@ describe('atraso da janela total x espaco_final de tabela_geral.json', () => {
       const e = calcularEstatisticas(slug, concursos, 'total');
       expect(tabela.dezenas).toHaveLength(PARAMETROS_LOTERIA[slug].totalDezenas);
       for (const d of tabela.dezenas) {
-        expect(e.atraso[d.dezena - 1], `dezena ${d.dezena}`).toBe(d.espaco_final);
+        expect(
+          e.atraso[d.dezena - PARAMETROS_LOTERIA[slug].primeiraDezena],
+          `dezena ${d.dezena}`,
+        ).toBe(d.espaco_final);
       }
     });
   }

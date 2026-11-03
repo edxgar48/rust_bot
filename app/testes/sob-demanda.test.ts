@@ -30,12 +30,13 @@ const abrir = (c: ReturnType<typeof cliente>) =>
   );
 
 describe('abertura enxuta', () => {
-  it('baixa só index.json e o ultimo.json das 3 loterias', async () => {
+  it('baixa só index.json e o ultimo.json das 4 loterias', async () => {
     const servidor = new ServidorFalso();
     const final = await abrir(cliente(servidor));
     expect(servidor.pedidos.sort()).toEqual([
       'index.json',
       'lotofacil/ultimo.json',
+      'lotomania/ultimo.json',
       'megasena/ultimo.json',
       'quina/ultimo.json',
     ]);
@@ -47,7 +48,7 @@ describe('abertura enxuta', () => {
   it('retrocompatível: sem opções, abrirComCache continua baixando tudo', async () => {
     const servidor = new ServidorFalso();
     const final = await abrirComCache(cliente(servidor), () => undefined);
-    expect(servidor.pedidosDeDados()).toHaveLength(9);
+    expect(servidor.pedidosDeDados()).toHaveLength(12);
     expect(final.cache?.loterias.quina?.dados.historico).not.toBeNull();
   });
 
@@ -181,6 +182,8 @@ describe('precarregar (segundo plano)', () => {
     expect(servidor.pedidosDeDados().sort()).toEqual([
       'lotofacil/historico.json',
       'lotofacil/tabela_geral.json',
+      'lotomania/historico.json',
+      'lotomania/tabela_geral.json',
       'megasena/historico.json',
       'megasena/tabela_geral.json',
       'quina/historico.json',

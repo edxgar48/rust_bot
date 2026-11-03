@@ -57,11 +57,13 @@ export interface DadosGrafico {
 }
 
 export interface EntradaGrafico {
-  /** `frequencia[d - 1]` = vezes que a dezena d saiu. */
+  /** `frequencia[d - primeiraDezena]` = vezes que a dezena d saiu. */
   readonly frequencia: readonly number[];
   readonly esperado: number;
   /** Faixa em que o acaso põe a frequência (limites inclusivos, em vezes); opcional. */
   readonly faixa?: { readonly inferior: number; readonly superior: number } | null;
+  /** Primeira dezena do volante (padrão 1; 0 na Lotomania). */
+  readonly primeiraDezena?: number;
   /** Largura disponível, em px. */
   readonly largura: number;
   readonly altura?: number;
@@ -90,12 +92,16 @@ export function passoRotulos(totalDezenas: number): number {
   return totalDezenas <= 25 ? 5 : 10;
 }
 
-/** Dezenas que levam rótulo: a 1 e os múltiplos do passo (1, 10, 20, ... 80). */
-export function dezenasRotuladas(totalDezenas: number): number[] {
+/**
+ * Dezenas que levam rótulo: a primeira e os múltiplos do passo (1, 10, 20, ... 80; na
+ * Lotomania, de 0 a 99: 0, 10, 20, ... 90).
+ */
+export function dezenasRotuladas(totalDezenas: number, primeiraDezena = 1): number[] {
   const passo = passoRotulos(totalDezenas);
+  const ultima = primeiraDezena + totalDezenas - 1;
   const saida: number[] = [];
-  if (totalDezenas >= 1) saida.push(1);
-  for (let d = passo; d <= totalDezenas; d += passo) saida.push(d);
+  if (totalDezenas >= 1) saida.push(primeiraDezena);
+  for (let d = Math.max(passo, primeiraDezena + 1); d <= ultima; d += passo) saida.push(d);
   return saida;
 }
 
@@ -127,7 +133,10 @@ export interface ExtremosFrequencia {
   readonly todasIguais: boolean;
 }
 
-export function extremosFrequencia(frequencia: readonly number[]): ExtremosFrequencia {
+export function extremosFrequencia(
+  frequencia: readonly number[],
+  primeiraDezena = 1,
+): ExtremosFrequencia {
   if (frequencia.length === 0) {
     return { maximo: 0, minimo: 0, dezenasMaximo: [], dezenasMinimo: [], todasIguais: true };
   }
@@ -140,8 +149,8 @@ export function extremosFrequencia(frequencia: readonly number[]): ExtremosFrequ
   const dezenasMaximo: number[] = [];
   const dezenasMinimo: number[] = [];
   frequencia.forEach((v, i) => {
-    if (v === maximo) dezenasMaximo.push(i + 1);
-    if (v === minimo) dezenasMinimo.push(i + 1);
+    if (v === maximo) dezenasMaximo.push(i + primeiraDezena);
+    if (v === minimo) dezenasMinimo.push(i + primeiraDezena);
   });
   return { maximo, minimo, dezenasMaximo, dezenasMinimo, todasIguais: maximo === minimo };
 }
@@ -150,9 +159,10 @@ export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
   const { frequencia, esperado } = entrada;
   const faixa = entrada.faixa ?? null;
   const n = frequencia.length;
+  const primeira = entrada.primeiraDezena ?? 1;
   const largura = Math.max(Math.round(entrada.largura), LARGURA_MINIMA_GRAFICO);
   const altura = entrada.altura ?? ALTURA_GRAFICO_PADRAO;
-  const extremos = extremosFrequencia(frequencia);
+  const extremos = extremosFrequencia(frequencia, primeira);
   const escala = escalaVertical(Math.max(extremos.maximo, esperado, faixa?.superior ?? 0, 0));
 
   const rotulosY = escala.ticks.map((t) => formatarInteiro(t));
@@ -182,7 +192,7 @@ export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
           ? 'menor'
           : null;
     return {
-      dezena: i + 1,
+      dezena: i + primeira,
       vezes,
       x: esquerda + i * passoX + folga,
       y: base - alturaBarra,
@@ -201,9 +211,9 @@ export function montarGrafico(entrada: EntradaGrafico): DadosGrafico {
     topo,
     base,
     barras,
-    ticksX: dezenasRotuladas(n).map((dezena) => ({
+    ticksX: dezenasRotuladas(n, primeira).map((dezena) => ({
       dezena,
-      x: esquerda + (dezena - 0.5) * passoX,
+      x: esquerda + (dezena - primeira + 0.5) * passoX,
       rotulo: doisDigitos(dezena),
     })),
     ticksY: escala.ticks.map((valor, i) => ({
@@ -231,9 +241,10 @@ export function linhasTabelaFrequencia(
   frequencia: readonly number[],
   esperado: number,
   faixa: { readonly inferior: number; readonly superior: number } | null = null,
+  primeiraDezena = 1,
 ): LinhaTabelaFrequencia[] {
   return frequencia.map((vezes, i) => ({
-    dezena: i + 1,
+    dezena: i + primeiraDezena,
     vezes,
     diferenca: vezes - esperado,
     posicao: faixa === null ? null : posicaoNaFaixa(vezes, faixa),

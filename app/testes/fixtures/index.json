@@ -64,6 +64,27 @@
           "bytes": 337715
         }
       }
+    },
+    "lotomania": {
+      "ultimo_concurso": 2994,
+      "data": "2026-10-30",
+      "arquivos": {
+        "ultimo": {
+          "caminho": "lotomania/ultimo.json",
+          "sha256": "c4001bcd5b825045f1f2d0f0de350a9cd95c735ecd468f715804733dc8244d4c",
+          "bytes": 187
+        },
+        "tabela_geral": {
+          "caminho": "lotomania/tabela_geral.json",
+          "sha256": "8cae047c16400aa20ccf0f04050553cfb39f5cf7f6c76140a7518575e1cccf87",
+          "bytes": 44689
+        },
+        "historico": {
+          "caminho": "lotomania/historico.json",
+          "sha256": "b664e705c55dd4a70e69d7a705bed8bb1c53bd3f59b9f99ca8f47035918ea7ee",
+          "bytes": 316317
+        }
+      }
     }
   }
 }

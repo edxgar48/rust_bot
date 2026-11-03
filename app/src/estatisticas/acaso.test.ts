@@ -245,7 +245,7 @@ describe('dezenas fora da faixa', () => {
       it(`${slug}, janela ${janela}: mesmas dezenas fora da referência independente`, () => {
         const e = calcularEstatisticas(slug, concursos, janela);
         const faixa = faixaDaFrequencia(slug, e.tamanho)!;
-        const r = dezenasForaDaFaixa(e.frequencia, faixa);
+        const r = dezenasForaDaFaixa(e.frequencia, faixa, PARAMETROS_LOTERIA[slug].primeiraDezena);
         const esp = ref.binomial[slug].fora[String(janela)]!;
         expect(e.tamanho).toBe(esp.n);
         expect([faixa.inferior, faixa.superior]).toEqual([esp.inferior, esp.superior]);

@@ -23,7 +23,7 @@ export function lerFixture(caminho: string): Uint8Array {
   return new TextEncoder().encode(lerFixtureTexto(caminho));
 }
 
-export const CAMINHOS = ['lotofacil', 'megasena', 'quina'].flatMap((s) =>
+export const CAMINHOS = ['lotofacil', 'megasena', 'quina', 'lotomania'].flatMap((s) =>
   ['ultimo', 'tabela_geral', 'historico'].map((a) => `${s}/${a}.json`),
 );
 
@@ -96,7 +96,7 @@ export class ServidorFalso {
    * atuais; um teste que comparasse "No índice" com a Força exigiria fixtures do mesmo snapshot.
    */
   async publicarRankingTaxa(
-    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina'],
+    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina', 'lotomania'],
   ): Promise<void> {
     const indice = this.indice();
     for (const slug of slugs) {
@@ -123,7 +123,7 @@ export class ServidorFalso {
    * Com `alinhado: false` serve a fixture real como veio (outro snapshot da tabela base).
    */
   async publicarRankingPosicoes(
-    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina'],
+    slugs: readonly string[] = ['lotofacil', 'megasena', 'quina', 'lotomania'],
     { alinhado = true }: { alinhado?: boolean } = {},
   ): Promise<void> {
     const indice = this.indice();

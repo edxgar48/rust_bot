@@ -17,7 +17,7 @@ export interface CartaoInicio {
   /** dd/mm/aaaa. */
   readonly data: string | null;
   readonly dezenas: readonly number[];
-  /** Lotofácil: 15 bolas em grade de 5 colunas; Mega-Sena e Quina: em linha. */
+  /** Lotofácil e Lotomania (15 e 20 bolas): grade de 5 colunas; Mega-Sena e Quina: em linha. */
   readonly disposicao: 'grade' | 'linha';
 }
 
@@ -36,7 +36,7 @@ export type VisaoInicio =
 
 function montarCartao(slug: Slug, situacao: SituacaoDados): CartaoInicio {
   const nome = textos.loterias[slug];
-  const disposicao = slug === 'lotofacil' ? 'grade' : 'linha';
+  const disposicao = slug === 'lotofacil' || slug === 'lotomania' ? 'grade' : 'linha';
   const entrada = situacao.cache?.indice.loterias[slug] ?? null;
   const ultimo = situacao.cache?.loterias[slug]?.dados.ultimo ?? null;
   if (ultimo) {

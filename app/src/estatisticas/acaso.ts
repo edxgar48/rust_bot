@@ -175,7 +175,7 @@ export function posicaoNaFaixa(
 }
 
 export interface DezenasForaDaFaixa {
-  /** `posicao[d - 1]` = situação da dezena d. */
+  /** `posicao[d - primeiraDezena]` = situação da dezena d. */
   readonly posicao: readonly PosicaoNaFaixa[];
   readonly abaixo: readonly number[];
   readonly acima: readonly number[];
@@ -191,13 +191,14 @@ export interface DezenasForaDaFaixa {
 export function dezenasForaDaFaixa(
   frequencia: readonly number[],
   faixa: FaixaCentral,
+  primeiraDezena = 1,
 ): DezenasForaDaFaixa {
   const abaixo: number[] = [];
   const acima: number[] = [];
   const posicao = frequencia.map((vezes, i) => {
     const pos = posicaoNaFaixa(vezes, faixa);
-    if (pos === 'abaixo') abaixo.push(i + 1);
-    else if (pos === 'acima') acima.push(i + 1);
+    if (pos === 'abaixo') abaixo.push(i + primeiraDezena);
+    else if (pos === 'acima') acima.push(i + primeiraDezena);
     return pos;
   });
   return {
@@ -366,16 +367,16 @@ export function linhasVisiveis(comparacao: ComparacaoDistribuicao): LinhaCompara
 export interface DistribuicaoSoma {
   readonly total: number;
   readonly k: number;
-  /** Menor e maior soma possíveis: 1+2+...+k e (total−k+1)+...+total. */
+  /** Menor e maior soma possíveis: as k menores e as k maiores dezenas do volante. */
   readonly minimo: number;
   readonly maximo: number;
-  /** `casos[s]` = quantos subconjuntos de k dezenas distintas de 1..total somam s (BigInt). */
+  /** `casos[s]` = quantos subconjuntos de k dezenas distintas do volante somam s (BigInt). */
   readonly casos: readonly bigint[];
   /** C(total, k): a soma de `casos`. */
   readonly totalCasos: bigint;
   /** `pmf[s]` = casos[s] / totalCasos, s de 0 a k · total. */
   readonly pmf: readonly number[];
-  /** k · (total + 1) / 2, exato. */
+  /** k · (primeira + última dezena) / 2, exato. */
   readonly media: number;
   readonly faixa: FaixaCentral;
 }
@@ -404,25 +405,36 @@ export function contarSomas(total: number, k: number): bigint[] {
   return c[k]!;
 }
 
+/** Move `casos` `deslocamento` somas para baixo (positivo) ou para cima, mantendo o tamanho. */
+function deslocarSomas(casos: readonly bigint[], deslocamento: number): bigint[] {
+  if (deslocamento === 0) return [...casos];
+  const zeros = new Array<bigint>(Math.abs(deslocamento)).fill(0n);
+  return deslocamento > 0
+    ? [...casos.slice(deslocamento), ...zeros]
+    : [...zeros, ...casos.slice(0, deslocamento)];
+}
+
 const memoSoma = new Map<Slug, DistribuicaoSoma>();
 
 /** Soma de uma dezena-sorteio ao acaso: distribuição exata e faixa central de 95%. */
 export function distribuicaoSomaAoAcaso(slug: Slug): DistribuicaoSoma {
   const guardada = memoSoma.get(slug);
   if (guardada) return guardada;
-  const { totalDezenas: total, dezenasSorteadas: k } = PARAMETROS_LOTERIA[slug];
-  const casos = contarSomas(total, k);
+  const { totalDezenas: total, dezenasSorteadas: k, primeiraDezena } = PARAMETROS_LOTERIA[slug];
+  // `contarSomas` conta sobre 1..total; com o volante começando em `primeiraDezena`, cada
+  // dezena vale `1 - primeiraDezena` a menos e a soma de k dezenas, k · (1 - primeiraDezena).
+  const casos = deslocarSomas(contarSomas(total, k), k * (1 - primeiraDezena));
   const totalCasos = combinacao(total, k);
   const pmf = casos.map((c) => Number(c) / Number(totalCasos));
   const d: DistribuicaoSoma = {
     total,
     k,
-    minimo: (k * (k + 1)) / 2,
-    maximo: (k * (2 * total - k + 1)) / 2,
+    minimo: (k * (2 * primeiraDezena + k - 1)) / 2,
+    maximo: (k * (2 * (primeiraDezena + total - 1) - k + 1)) / 2,
     casos,
     totalCasos,
     pmf,
-    media: (k * (total + 1)) / 2,
+    media: (k * (2 * primeiraDezena + total - 1)) / 2,
     faixa: faixaCentral(pmf),
   };
   memoSoma.set(slug, d);

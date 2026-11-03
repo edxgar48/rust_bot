@@ -122,7 +122,7 @@ describe('Entenda: De onde vêm os dados', () => {
   it('com tabelas em cache: valores reais, hash abreviado com o completo à mão', async () => {
     const { c, situacao } = await clienteComTabelas();
     const alvo = montar(c, situacao);
-    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(3));
+    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(4));
     const dados = secao(alvo, 'De onde vêm os dados');
     const t = texto(dados);
     expect(t).toContain('Resultados planilhas oficiais da Caixa');
@@ -157,8 +157,8 @@ describe('Entenda: De onde vêm os dados', () => {
     await vi.waitFor(() => expect(texto(alvo)).toContain('tabela de força ainda não baixada'));
     expect(alvo.querySelectorAll('.loteria code')).toHaveLength(0);
     const dados = texto(secao(alvo, 'De onde vêm os dados'));
-    expect(dados.match(/tabela de força ainda não baixada/g)).toHaveLength(3);
-    expect(dados.match(/Último concurso \d+ \(/g)).toHaveLength(3);
+    expect(dados.match(/tabela de força ainda não baixada/g)).toHaveLength(4);
+    expect(dados.match(/Último concurso \d+ \(/g)).toHaveLength(4);
   });
 
   it('sem nada: "ainda não atualizado" e "ainda sem dados", sem quebrar e sem usar a rede', async () => {
@@ -181,7 +181,7 @@ describe('Entenda: De onde vêm os dados', () => {
     const { c, situacao } = await clienteComTabelas(servidor);
     const antes = servidor.pedidos.length;
     const alvo = montar(c, situacao);
-    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(3));
+    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(4));
     expect(servidor.pedidos.length).toBe(antes);
   });
 
@@ -216,7 +216,7 @@ describe('Entenda: De onde vêm os dados', () => {
     await c.sincronizar({ arquivos: ['tabela_geral'] });
     props.situacao = await abrir(c);
     flushSync();
-    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(3));
+    await vi.waitFor(() => expect(alvo.querySelectorAll('.loteria summary code')).toHaveLength(4));
     expect(lerCache).toHaveBeenCalledTimes(2);
   });
 });

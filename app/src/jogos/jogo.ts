@@ -1,7 +1,7 @@
 // Modelo e validação pura dos jogos salvos no aparelho (6.3). Nada aqui toca em
 // armazenamento, rede ou DOM. Um jogo é só um conjunto de dezenas escolhido pela
 // pessoa: o app não o avalia, apenas o guarda e o confere contra o passado.
-import { PARAMETROS_LOTERIA, SLUGS, type Slug } from '../dados/tipos';
+import { SLUGS, dezenaValida, type Slug } from '../dados/tipos';
 import { QUANTIDADE_JOGO } from '../telas/conferir';
 
 /** Tamanho máximo do nome de um jogo, em caracteres. */
@@ -63,15 +63,14 @@ export function validarNome(nome: unknown): Validacao<string | null> {
 }
 
 /**
- * Dezenas de um jogo: inteiros distintos de 1 ao total da loteria, na quantidade
+ * Dezenas de um jogo: inteiros distintos do volante da loteria, na quantidade
  * que a loteria aceita. Devolve em ordem crescente (aceita entrada desordenada).
  */
 export function validarDezenas(slug: Slug, dezenas: unknown): Validacao<number[]> {
   if (!Array.isArray(dezenas)) return falha('dezenas');
-  const { totalDezenas } = PARAMETROS_LOTERIA[slug];
   const vistas = new Set<number>();
   for (const d of dezenas as unknown[]) {
-    if (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > totalDezenas) {
+    if (!dezenaValida(slug, d)) {
       return falha('dezenas');
     }
     if (vistas.has(d)) return falha('dezenas');

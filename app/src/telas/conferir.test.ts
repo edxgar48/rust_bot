@@ -34,18 +34,20 @@ const QUINA_MAO: readonly ConcursoHistorico[] = [
 ];
 
 describe('quantidades válidas por loteria', () => {
-  it('Lotofácil 15-20, Mega-Sena 6-20, Quina 5-15', () => {
+  it('Lotofácil 15-20, Mega-Sena 6-20, Quina 5-15, Lotomania 50', () => {
     expect(QUANTIDADE_JOGO).toEqual({
       lotofacil: { minimo: 15, maximo: 20 },
       megasena: { minimo: 6, maximo: 20 },
       quina: { minimo: 5, maximo: 15 },
+      lotomania: { minimo: 50, maximo: 50 },
     });
   });
 
   it('cada faixa cabe no volante e o mínimo é o que se sorteia', () => {
     for (const slug of SLUGS) {
       const { minimo, maximo } = QUANTIDADE_JOGO[slug];
-      expect(minimo).toBe(PARAMETROS_LOTERIA[slug].dezenasSorteadas);
+      // Lotomania: aposta única de 50 dezenas, e se sorteiam 20.
+      expect(minimo).toBe(slug === 'lotomania' ? 50 : PARAMETROS_LOTERIA[slug].dezenasSorteadas);
       expect(maximo).toBeLessThanOrEqual(PARAMETROS_LOTERIA[slug].totalDezenas);
       expect(maximo).toBeGreaterThanOrEqual(minimo);
     }
@@ -266,6 +268,11 @@ describe('conferirJogo contra as fixtures reais', () => {
       Array.from({ length: 15 }, (_, i) => i * 5 + 2),
       [1, 2, 3, 4, 5, 6, 7],
     ],
+    lotomania: [
+      Array.from({ length: 50 }, (_, i) => i * 2),
+      Array.from({ length: 50 }, (_, i) => i + 50),
+      Array.from({ length: 50 }, (_, i) => (i * 7) % 100),
+    ],
   };
 
   for (const slug of SLUGS) {
@@ -348,6 +355,13 @@ describe('montarVisaoConferir', () => {
     if (v.tipo !== 'conteudo') return;
     expect(v.nomeLoteria).toBe('Quina');
     expect(v.subtitulo).toBe('Quina · escolha de 5 a 15 dezenas');
+    const lm = montarVisaoConferir(
+      'lotomania',
+      pronta(cacheCom('lotomania', historico('lotomania'))),
+      AGORA,
+    );
+    if (lm.tipo !== 'conteudo') throw new Error('esperava conteúdo');
+    expect(lm.subtitulo).toBe('Lotomania · escolha 50 dezenas');
     expect(v.estado).toBe('atualizado');
     expect(v.erro).toBe(false);
     expect(v.concursos).toBe(h.concursos);

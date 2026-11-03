@@ -2,7 +2,7 @@
 // Campos opcionais futuros e campos anuláveis chegam aqui como `null`;
 // campos desconhecidos do JSON não são copiados.
 
-export const SLUGS = ['lotofacil', 'megasena', 'quina'] as const;
+export const SLUGS = ['lotofacil', 'megasena', 'quina', 'lotomania'] as const;
 export type Slug = (typeof SLUGS)[number];
 
 // Os três arquivos obrigatórios (o padrão de sincronização e de leitura do cache) e o
@@ -12,17 +12,36 @@ export type ChaveObrigatoria = (typeof CHAVES_ARQUIVO)[number];
 export type ChaveArquivo = ChaveObrigatoria | 'ranking_taxa' | 'ranking_posicoes';
 
 export interface ParametrosLoteria {
-  /** Quantidade de dezenas do volante (25, 60 ou 80). */
+  /** Quantidade de dezenas do volante (25, 60, 80 ou 100). */
   readonly totalDezenas: number;
-  /** Quantidade de dezenas sorteadas por concurso (15, 6 ou 5). */
+  /** Quantidade de dezenas sorteadas por concurso (15, 6, 5 ou 20). */
   readonly dezenasSorteadas: number;
+  /** Menor dezena do volante: 1, exceto na Lotomania, que vai de 00 a 99. */
+  readonly primeiraDezena: number;
 }
 
 export const PARAMETROS_LOTERIA: Readonly<Record<Slug, ParametrosLoteria>> = {
-  lotofacil: { totalDezenas: 25, dezenasSorteadas: 15 },
-  megasena: { totalDezenas: 60, dezenasSorteadas: 6 },
-  quina: { totalDezenas: 80, dezenasSorteadas: 5 },
+  lotofacil: { totalDezenas: 25, dezenasSorteadas: 15, primeiraDezena: 1 },
+  megasena: { totalDezenas: 60, dezenasSorteadas: 6, primeiraDezena: 1 },
+  quina: { totalDezenas: 80, dezenasSorteadas: 5, primeiraDezena: 1 },
+  lotomania: { totalDezenas: 100, dezenasSorteadas: 20, primeiraDezena: 0 },
 };
+
+/** Maior dezena do volante da loteria. */
+export function ultimaDezena(slug: Slug): number {
+  const { totalDezenas, primeiraDezena } = PARAMETROS_LOTERIA[slug];
+  return primeiraDezena + totalDezenas - 1;
+}
+
+/** A dezena pertence ao volante da loteria (inteira e dentro da faixa)? */
+export function dezenaValida(slug: Slug, dezena: unknown): dezena is number {
+  return (
+    typeof dezena === 'number' &&
+    Number.isInteger(dezena) &&
+    dezena >= PARAMETROS_LOTERIA[slug].primeiraDezena &&
+    dezena <= ultimaDezena(slug)
+  );
+}
 
 // Identificadores enumerados do contrato ("Valores enumerados").
 export const GRAUS_EVIDENCIA = [

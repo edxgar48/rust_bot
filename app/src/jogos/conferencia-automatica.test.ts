@@ -29,8 +29,8 @@ function jogo(
 }
 
 describe('faixa de prêmio por loteria', () => {
-  it('Lotofácil 11, Mega-Sena 4, Quina 2', () => {
-    expect(FAIXA_PREMIO).toEqual({ lotofacil: 11, megasena: 4, quina: 2 });
+  it('Lotofácil 11, Mega-Sena 4, Quina 2, Lotomania 16', () => {
+    expect(FAIXA_PREMIO).toEqual({ lotofacil: 11, megasena: 4, quina: 2, lotomania: 16 });
   });
 });
 

@@ -57,6 +57,7 @@ export const textos = {
     lotofacil: 'Lotofácil',
     megasena: 'Mega-Sena',
     quina: 'Quina',
+    lotomania: 'Lotomania',
   },
   inicio: {
     titulo: 'Resultados',
@@ -417,7 +418,7 @@ export const textos = {
     intro:
       'Cada grupo junta as dezenas que têm o mesmo grau e a mesma direção de evidência na tabela de força. Dentro do grupo, as dezenas seguem a ordem de posição da tabela (1º = maior índice).',
     explicacao:
-      'O grau mede quanto os dados convencem da hipótese que eles favorecem (viés ou acaso), e não o tamanho do desvio. "Viés" não diz se a dezena saiu mais ou menos que o esperado. Para o acaso, "muito fraca" (Mega-Sena e Quina) e "fraca" (Lotofácil) já são o máximo que os dados podem dar a favor dele; por isso quase todas as dezenas ficam em graus fracos. Agrupar não prevê o sorteio, e nenhum grupo tem mais chance de sair que outro.',
+      'O grau mede quanto os dados convencem da hipótese que eles favorecem (viés ou acaso), e não o tamanho do desvio. "Viés" não diz se a dezena saiu mais ou menos que o esperado. Para o acaso, "muito fraca" (Mega-Sena, Quina e Lotomania) e "fraca" (Lotofácil) já são o máximo que os dados podem dar a favor dele; por isso quase todas as dezenas ficam em graus fracos. Agrupar não prevê o sorteio, e nenhum grupo tem mais chance de sair que outro.',
     ordem: 'A ordem dos grupos segue o grau da evidência, não a chance de a dezena sair.',
     resumo: {
       titulo: 'Quantas dezenas em cada grupo',
@@ -543,7 +544,9 @@ export const textos = {
     secaoJogos: 'Meus jogos',
     titulo: 'Conferir jogo',
     subtitulo: (loteria: string, minimo: number, maximo: number) =>
-      `${loteria} · escolha de ${minimo} a ${maximo} dezenas`,
+      minimo === maximo
+        ? `${loteria} · escolha ${minimo} dezenas`
+        : `${loteria} · escolha de ${minimo} a ${maximo} dezenas`,
     rotuloLoteria: 'Loteria',
     carregando: 'Carregando o histórico…',
     tentarDeNovo: 'Tentar de novo',

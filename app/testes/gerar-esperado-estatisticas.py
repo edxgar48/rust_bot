@@ -9,7 +9,7 @@ app/testes/fixtures/<loteria>/ é exatamente o que o banco tem até o último co
 da fixture; o esperado é calculado até esse concurso (o banco pode estar adiante).
 
 Saída por loteria e por janela (10, 50, 100, total): tamanho, primeiro/último concurso,
-frequencia[d-1], atraso[d-1] (null = não saiu na janela), distribuicao_pares,
+frequencia[d-primeira], atraso[d-primeira] (null = não saiu na janela), distribuicao_pares,
 soma_total/min/max (inteiros, para a média ser calculada pelo teste), e
 distribuicao_repetidas (só concursos com o anterior na janela).
 Fora do build do app; rode de novo quando as fixtures forem renovadas.
@@ -21,12 +21,15 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 FIX = RAIZ / "app" / "testes" / "fixtures"
-PARAMS = {"lotofacil": (25, 15), "megasena": (60, 6), "quina": (80, 5)}
+PARAMS = {"lotofacil": (25, 15), "megasena": (60, 6), "quina": (80, 5), "lotomania": (100, 20)}
+# Menor dezena do volante: 1, exceto na Lotomania (00 a 99). Os vetores por dezena começam nela.
+PRIMEIRA = {"lotomania": 0}
 JANELAS = [10, 50, 100, "total"]
 
 
 def gerar(slug):
     total, k = PARAMS[slug]
+    primeira = PRIMEIRA.get(slug, 1)
     fix = json.loads((FIX / slug / "historico.json").read_text(encoding="utf-8"))
     ultimo = fix["concursos"][-1][0]
     con = sqlite3.connect(RAIZ / f"resultados_{slug}.db")
@@ -69,8 +72,9 @@ def gerar(slug):
             "tamanho": ultimo - ini + 1,
             "primeiro_concurso": ini,
             "ultimo_concurso": ultimo,
-            "frequencia": [freq.get(d, 0) for d in range(1, total + 1)],
-            "atraso": [ultimo - ult[d] if d in ult else None for d in range(1, total + 1)],
+            "frequencia": [freq.get(d, 0) for d in range(primeira, primeira + total)],
+            "atraso": [ultimo - ult[d] if d in ult else None
+                       for d in range(primeira, primeira + total)],
             "distribuicao_pares": pares,
             "soma_total": sum(somas),
             "soma_min": min(somas),
