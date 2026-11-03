@@ -132,7 +132,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [x] L.3 Pipeline completo com dados reais: importar, validar, features, índice, posições, ranking, avaliar, evidência, aleatoriedade, dataset, tabela e exportar
 - [x] L.4 Testes Rust, ML (corte e dobras) e fixtures atualizados para quatro loterias
 - [x] L.5 App: `primeiraDezena`, jogo de 50 dezenas, faixa de prêmio 16, cartão e fixtures da Lotomania
-- [ ] L.6 Publicar `lotomania/` no repositório de dados (`sync ciclo lotomania` ou `exportar` + `publicar`) — ação do usuário
+- [x] L.6 Publicar `lotomania/` no repositório de dados (`exportar lotomania` + `publicar`; commit 6a86718 em rust_spider_dados, 2026-11-03)
 - [ ] L.7 Rodar a busca de pesos do `ml/` para a Lotomania (opcional; hoje só `padrao_v1`)
 
 ## Decisões em aberto
@@ -181,7 +181,7 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
   app lint, check, 1251 testes e build. Em `ml/tests/fixtures/dobras_rust.json` entrou
   a Lotomania; as duas `avaliar_*.txt` da Lotofácil já estavam defasadas (bloco da
   calibração linear) e não foram tocadas. **Não feito**: publicar (L.6) e busca de
-  pesos (L.7). Nada foi commitado.
+  pesos (L.7). Nada foi commitado. Depois, no mesmo dia, L.6 feita: `lotomania/` publicado no repositório de dados.
 
 - 2026-10-03 — 0.1: "layout do volante" não está detalhado no plano. Interpretação
   adotada (sem decisão do usuário, revisável): grade linhas × colunas do volante
