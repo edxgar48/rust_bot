@@ -42,7 +42,7 @@ CONCURSOS = 40
 SEMENTE = 20261006
 #: (perfil, pasta de perfis)
 PERFIS = [("padrao_v1", RAIZ / "perfis"), ("teste_minmax_v1", PERFIS_TESTE)]
-LOTERIAS_REAIS = ("lotofacil", "megasena", "quina")
+LOTERIAS_REAIS = ("lotofacil", "megasena", "quina", "lotomania")
 
 
 def rodar(*args: str) -> str:

@@ -113,7 +113,12 @@ def test_tabela_de_cortes_igual_a_do_rust():
     assert do_config == dict(CORTES_BUSCA)
     dobras = json.loads((FIXTURES / "dobras_rust.json").read_text(encoding="utf-8"))
     assert {k: v["corte"] for k, v in dobras.items()} == dict(CORTES_BUSCA)
-    assert dict(CORTES_BUSCA) == {"lotofacil": 3416, "megasena": 2759, "quina": 6421}
+    assert dict(CORTES_BUSCA) == {
+        "lotofacil": 3416,
+        "megasena": 2759,
+        "quina": 6421,
+        "lotomania": 2694,
+    }
 
 
 def test_tabela_injetada_nao_troca_corte_de_loteria_real(tmp_path, fixture_lotofacil):
@@ -160,7 +165,7 @@ def test_recusa_corte_diferente_da_tabela_injetada(tmp_path):
         ler_dataset(m, cortes=CORTES_TESTE)
 
 
-@pytest.mark.parametrize("loteria", ["teste", "lotomania", "LOTOFACIL"])
+@pytest.mark.parametrize("loteria", ["teste", "timemania", "LOTOFACIL"])
 def test_recusa_loteria_desconhecida(tmp_path, loteria):
     # Sem `cortes`, vale a tabela de produção: loteria fora dela é recusada,
     # mesmo com o manifesto todo coerente.

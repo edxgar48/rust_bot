@@ -128,7 +128,7 @@ def test_dobras_iguais_aos_limites_reais_do_rust():
     # Vetor gerado pelo exemplo `referencia_avaliacao` nos bancos reais
     # (cópias), só com os limites: do 2º concurso do índice ao corte.
     vetor = json.loads((FIXTURES / "dobras_rust.json").read_text(encoding="utf-8"))
-    assert set(vetor) == {"lotofacil", "megasena", "quina"}
+    assert set(vetor) == {"lotofacil", "megasena", "quina", "lotomania"}
     for loteria, v in vetor.items():
         dobras = dividir_em_dobras(v["primeiro_indice"] + 1, v["corte"])
         assert [list(d) for d in dobras] == v["dobras"], loteria

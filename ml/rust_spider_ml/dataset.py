@@ -85,7 +85,7 @@ TRECHO_BUSCA = "busca"
 #: conjunto trancado. Reforço do lado Python: o manifesto tem de declarar
 #: exatamente este corte. Mudou no Rust → muda aqui (o pytest confere).
 CORTES_BUSCA: Mapping[str, int] = MappingProxyType(
-    {"lotofacil": 3416, "megasena": 2759, "quina": 6421}
+    {"lotofacil": 3416, "megasena": 2759, "quina": 6421, "lotomania": 2694}
 )
 
 _CAMPOS_MANIFESTO: dict[str, type] = {
