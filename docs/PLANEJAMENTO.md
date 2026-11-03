@@ -272,7 +272,8 @@ da fase que a tarefa toca. Regras que as fases seguintes usam:
     até o corte da busca. **Veredito**: bootstrap circular, blocos de 50,
     B = 10 000, semente fixa, α = 5%.
   - **Trancado**: corte fixo `ultimo_concurso_busca` no `LoteriaConfig` —
-    Lotofácil 3416, Mega-Sena 2759, Quina 6421; uso único, só com
+    Lotofácil 3416, Mega-Sena 2759, Quina 6421, Lotomania 2694 (acrescentada em
+    2026-11-03, ver "Fase L"); uso único, só com
     `--trancado`, registrado em `registros/trancado_<loteria>.json`. Nada que
     escolhe perfil lê acima do corte.
   - **Aleatoriedade**: qui-quadrado corrigido para sorteio sem reposição e
@@ -935,6 +936,38 @@ Tarefas:
 **Pronto quando:** uma semana rodando agendado sem intervenção, cada concurso
 novo publicado no mesmo dia, e uma falha simulada dispara o alerta.
 
+### Fase L — Lotomania (decisões de 2026-11-03)
+
+Quarta loteria do projeto, sem mudar o desenho: um banco
+(`resultados_lotomania.db`), `resultados` intocada, tudo o mais em tabelas
+derivadas. Slug `lotomania`, perfil ativo `padrao_v1`.
+
+- **Dezenas**: sorteia 20 de 100, de **00 a 99** (a Caixa grava o "00" como 0
+  na planilha, então `dezena_min = 0`, `dezena_max = 99`). Volante 10×10, a
+  dezena 00 é a primeira casa. É a primeira loteria com `dezena_min = 0`:
+  todo código que indexa por dezena usa `dezena - dezena_min` (Rust) ou
+  `primeiraDezena` (app); nada pode supor 1..N.
+- **Planilha**: mesmo `#btnResultados` e mesmas colunas (concurso, data e 20
+  bolas a partir da coluna 2). A planilha traz células numéricas (`t="n"`) com
+  "-" nas colunas de prêmio, que o calamine recusa; o parser tenta a leitura
+  normal e, se falhar, corrige essas células em memória e lê de novo
+  (`parser::abrir_aba`). As outras três planilhas seguem pelo caminho normal.
+- **Calendário**: segunda, quarta e sexta, a partir das 21h00 (dias vistos nos
+  últimos 200 concursos do banco real; terça, quinta e sábado só isolados).
+  Sem sorteio especial: desde 2021 a maior parada foi de 7 dias.
+- **Corte do trancado**: 2694 = 90% dos 2994 concursos do banco em 2026-11-03,
+  mesma regra das outras (10% de trancado, número fixo).
+- **Perfis**: `padrao_v1` e `posicoes_v1` com os pesos das outras loterias. Não
+  há `busca_v1` da Lotomania (a busca de pesos do `ml/` não foi rodada).
+- **App**: o jogo da Lotomania é uma aposta única de **50 dezenas**; a faixa de
+  prêmio automática é 16 acertos ou mais (o prêmio por 0 acertos não é
+  sinalizado). O cartão da Início usa a grade de 5 colunas, como a Lotofácil.
+- **Fora do escopo**: valor dos prêmios, rateio e "espelho" de apostas.
+- **Pronto quando**: `sync` roda do download à exportação com dados reais, a
+  suíte Rust/Python/app passa, os números das avaliações estão em
+  `PROGRESSO.md` e a publicação inclui `lotomania/` (esta última é ação do
+  usuário).
+
 ## Ordem e dependências
 
 0 → 1a → 1b → 1c → 1.5 → 1d → 1e → 1f → 1g → 2 → 3. O contrato da Fase 2 é o ponto de encontro
@@ -951,7 +984,7 @@ com o planejamento do front-end.
   quais dezenas e combinações o público mais joga, a partir dos ganhadores
   por faixa, para indicar jogos que dividem menos o prêmio — não muda a
   chance de acertar, muda quanto se recebe. Vem depois da 1d.
-- Outras loterias (Dupla Sena, Timemania, Dia de Sorte, +Milionária, Lotomania).
+- Outras loterias (Dupla Sena, Timemania, Dia de Sorte, +Milionária). A Lotomania entrou em 2026-11-03 (Fase L).
 - API própria (axum), se o front-end precisar de algo dinâmico.
 - Modelos de ML rodando em Rust (`burn`, `candle` ou ONNX).
 - Robustez da raspagem (`downloader.rs`): avaliar XPath em vez de seletores

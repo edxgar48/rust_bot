@@ -62,7 +62,7 @@ v1/
 └── quina/      (mesmos arquivos)
 ```
 
-Slugs: `lotofacil`, `megasena`, `quina` (os de `LoteriaConfig::slug`). O
+Slugs: `lotofacil`, `megasena`, `quina`, `lotomania` (os de `LoteriaConfig::slug`). Na `lotomania` as dezenas vão de **0 a 99** (a dezena 00), não de 1 a N: o app e o Python usam a primeira dezena da loteria, não 1. O
 caminho de cada arquivo está no `index.json` (campo `caminho`, relativo a
 `v1/`); o app não precisa montar caminhos por conta própria.
 
@@ -107,7 +107,7 @@ Ordem das chaves e significado. Origem: `exportacao::index_json`.
 |---|---|---|---|
 | `schema_version` | inteiro | não | Versão do esquema, `1` (`exportacao::SCHEMA_VERSION`). |
 | `gerado_em` | texto | não | Quando o índice foi gravado: ISO-8601 UTC com segundos, `Z` no fim. **Único campo não determinístico de todo o contrato**: muda a cada `sync exportar`, mesmo sem dados novos. Não use para decidir se há novidade; use `sha256`. |
-| `loterias` | objeto | não | Uma chave por loteria do config, **na ordem do config** (`lotofacil`, `megasena`, `quina`). |
+| `loterias` | objeto | não | Uma chave por loteria do config, **na ordem do config** (`lotofacil`, `megasena`, `quina`, `lotomania`). |
 | `loterias.<slug>` | objeto | **sim** | `null` se a loteria ainda não tem arquivos na saída (por exemplo, só uma loteria foi exportada até agora). O app deve tolerar. |
 
 Campos de `loterias.<slug>` (quando não é `null`), na ordem:
@@ -841,14 +841,14 @@ sem data de geração). Origem: `dataset::Manifesto` / `dataset::manifesto`.
 
 | Campo | Tipo | Significado |
 |---|---|---|
-| `loteria` | texto | Slug da loteria (`lotofacil`, `megasena`, `quina`), igual a `LoteriaConfig::slug`. |
+| `loteria` | texto | Slug da loteria (`lotofacil`, `megasena`, `quina`, `lotomania`), igual a `LoteriaConfig::slug`. |
 | `feature_version` | inteiro | Versão das features do arquivo (`motor::FEATURE_VERSION`). |
 | `formato` | texto | `parquet` ou `csv`. |
 | `arquivo` | texto | Nome do arquivo de dados, na mesma pasta do manifesto (sem caminho). |
 | `colunas` | lista de texto | As 16 colunas do arquivo, na ordem (ver abaixo). |
 | `primeiro_concurso` | inteiro | Primeiro concurso incluído (o Python exige `1`, porque a impressão dos incluídos cobre desde o concurso 1). |
 | `ultimo_concurso` | inteiro | Último concurso incluído. Sem `--trancado`, ≤ `ultimo_concurso_busca`. |
-| `ultimo_concurso_busca` | inteiro | Corte fixo da busca: `LoteriaConfig::ultimo_concurso_busca` (Lotofácil 3416, Mega-Sena 2759, Quina 6421). Concursos acima dele são o conjunto trancado. |
+| `ultimo_concurso_busca` | inteiro | Corte fixo da busca: `LoteriaConfig::ultimo_concurso_busca` (Lotofácil 3416, Mega-Sena 2759, Quina 6421, Lotomania 2694). Concursos acima dele são o conjunto trancado. |
 | `trecho` | texto | Trecho incluído: `busca` (padrão) ou `busca+trancado` (com `--trancado`). |
 | `concursos` | inteiro | Número de concursos incluídos. |
 | `linhas` | inteiro | Número de linhas de dados (sem o cabeçalho do CSV) = concursos × dezenas × janelas. |

@@ -3,7 +3,7 @@
 Baixa o arquivo de resultados publicado pela Caixa, extrai os concursos e
 grava em um banco SQLite (e exporta em JSON), para alimentar outro sistema.
 
-**Estado: funcionando ponta a ponta para Lotofácil, Mega-Sena e Quina**,
+**Estado: funcionando ponta a ponta para Lotofácil, Mega-Sena, Quina e Lotomania**,
 validado contra o site real em 2026-09-29 (3791, 3063 e 7129 concursos
 extraídos e gravados corretamente, respectivamente).
 
@@ -747,7 +747,7 @@ O que fazer quando o ciclo não roda sozinho. Cada procedimento tem **sintoma**,
   `cache/` e `registros/`). Abaixo, `sync` é `target\release\sync.exe` (o que o
   Agendador usa) ou, sem o release compilado, `cargo run --bin sync --`; os
   dois são equivalentes.
-- `<loteria>` é `lotofacil`, `megasena` ou `quina`. O perfil ativo das três é
+- `<loteria>` é `lotofacil`, `megasena`, `quina` ou `lotomania`. O perfil ativo das quatro é
   `padrao_v1` (`perfil_ativo` em `src/config.rs`).
 - Quase tudo o que corrige algo **grava** e por isso toma a trava (`sync.lock`).
   Faça **fora da janela 23h–01h** (a tarefa agendada segura a trava a noite
@@ -1347,9 +1347,11 @@ pelo próprio Rust com `ml/.venv/Scripts/python ml/ferramentas/gerar_fixture.py`
 
 ## Estado atual / o que falta confirmar
 
-- **Lotofácil, Mega-Sena e Quina**: seletor de download (`#btnResultados`),
+- **Lotofácil, Mega-Sena, Quina e Lotomania**: seletor de download (`#btnResultados`),
   layout de colunas da planilha e seletores de raspagem da página (`atualizar`)
-  confirmados contra o site real.
+  confirmados contra o site real (a Lotomania, em 2026-11-03: dezenas de 00 a 99,
+  `dezena_min = 0`; a planilha tem células numéricas com "-", que o parser corrige
+  em memória quando o leitor recusa).
 - Para adicionar outra loteria da Caixa, o caminho mais rápido é assumir o
   mesmo `#btnResultados` e o mesmo layout de colunas, e só ajustar se o
   `importar`/`baixar` acusar layout inesperado (ver item abaixo).

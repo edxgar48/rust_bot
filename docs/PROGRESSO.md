@@ -125,6 +125,16 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 - [ ] 8.5 Runbook
 - [ ] 8.6 Verificação de contrato no build (inclui renovar as fixtures do app, hoje uma rodada atrás de publico/v1)
 
+## Fase L — Lotomania · `engenheiro-dados` / `engenheiro-app`
+
+- [x] L.1 `LoteriaConfig` da Lotomania (faixa 00–99, 20 dezenas, volante 10×10, calendário seg/qua/sex, corte 2694) e perfis `padrao_v1`/`posicoes_v1`
+- [x] L.2 Parser lê a planilha da Lotomania (células numéricas com "-")
+- [x] L.3 Pipeline completo com dados reais: importar, validar, features, índice, posições, ranking, avaliar, evidência, aleatoriedade, dataset, tabela e exportar
+- [x] L.4 Testes Rust, ML (corte e dobras) e fixtures atualizados para quatro loterias
+- [x] L.5 App: `primeiraDezena`, jogo de 50 dezenas, faixa de prêmio 16, cartão e fixtures da Lotomania
+- [ ] L.6 Publicar `lotomania/` no repositório de dados (`sync ciclo lotomania` ou `exportar` + `publicar`) — ação do usuário
+- [ ] L.7 Rodar a busca de pesos do `ml/` para a Lotomania (opcional; hoje só `padrao_v1`)
+
 ## Decisões em aberto
 
 - [ ] Dependências Rust com advisories do RustSec (auditoria de 2026-10-23) → adiado pelo usuário para não arriscar quebrar o app durante o desenvolvimento (ver nota de 2026-10-23)
@@ -149,6 +159,29 @@ Legenda: `[ ]` pendente · `[~]` em andamento · `[x]` concluída · `[!]` bloqu
 ## Notas
 
 <!-- O orquestrador registra aqui bloqueios, desvios do plano e decisões tomadas, com data. -->
+
+- 2026-11-03 — Fase L (Lotomania). Dados reais baixados em 2026-11-03: 2994 concursos
+  (1 em 1999-10-02 a 2994 em 2026-10-30), `validar` sem problema. **Dezena 00 = 0** na
+  planilha, então `dezena_min = 0` (primeira loteria assim). **Planilha**: o calamine
+  falhava com "invalid float literal" por células `t="n"` com "-" (colunas de
+  ganhadores); `parser::abrir_aba` corrige em memória e relê (a dependência `zip`, que
+  só era de teste, virou normal; mesma versão e features que o calamine já usa).
+  **Calendário**: segunda, quarta e sexta; sem sorteio especial. **Corte**: 2694
+  (90% de 2994). Resultados (descrição do passado, não previsão), perfil `padrao_v1`:
+  `avaliar` no trecho de busca (concursos 2–2694): log loss perfil − acaso +4,297e-4,
+  IC 95% [+2,98e-4, +5,68e-4], p = 1,0000, top-20 10779 acertos contra 10772,0
+  esperados (p 0,4687) — **não supera o acaso**, como nas outras três; `ranking
+  --avaliar`: B não supera (p 1,0000), top-20 de A 8641 e de B 8626 contra 8620,0
+  (p 0,39 e 0,47); `aleatoriedade`: 100 dezenas, 0 fixas, 1 com p ≤ α sem correção e
+  0 depois do Holm; `evidencia`: o teto a favor do acaso por dezena é "muito fraca"
+  (|log10 FB| ≤ 0,229 com n = 2994), igual à Mega-Sena e à Quina. **Combinatória**:
+  C(100,20) ≈ 5,4·10²⁰ não quebrou nada (`Hipergeometrica`, usada pelo top-k, já é
+  larga o bastante; conferida contra Python exato em `acaso-esperado.json`).
+  **Testes**: Rust verde (fmt, clippy `-D warnings`, todos os binários); pytest 175;
+  app lint, check, 1251 testes e build. Em `ml/tests/fixtures/dobras_rust.json` entrou
+  a Lotomania; as duas `avaliar_*.txt` da Lotofácil já estavam defasadas (bloco da
+  calibração linear) e não foram tocadas. **Não feito**: publicar (L.6) e busca de
+  pesos (L.7). Nada foi commitado.
 
 - 2026-10-03 — 0.1: "layout do volante" não está detalhado no plano. Interpretação
   adotada (sem decisão do usuário, revisável): grade linhas × colunas do volante

@@ -44,7 +44,7 @@ cargo build --release --bin sync
 ./target/release/sync <comando> <loteria> [opções]
 ```
 
-`<loteria>` é `lotofacil`, `megasena` ou `quina`. Alguns comandos aceitam
+`<loteria>` é `lotofacil`, `megasena`, `quina` ou `lotomania`. Alguns comandos aceitam
 também `todas`. `--help` em qualquer comando mostra as opções.
 
 ## 2. Comandos por etapa

@@ -1,6 +1,6 @@
 # rust_spider
 
-Coleta resultados de loterias da Caixa (Lotofácil, Mega-Sena, Quina), grava
+Coleta resultados de loterias da Caixa (Lotofácil, Mega-Sena, Quina, Lotomania), grava
 em SQLite e — conforme o plano — calcula estatísticas, índice de força e
 datasets de ML, exportando JSON para um app mobile.
 
