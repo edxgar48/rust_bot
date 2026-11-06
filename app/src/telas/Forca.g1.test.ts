@@ -359,3 +359,39 @@ describe('Força com G-1: aviso e detalhe', () => {
     expect(texto(document.body)).toContain(textos.avisos.naoPreveDetalhe);
   });
 });
+
+describe('Força com G-1: PDF da tabela', () => {
+  const botaoPdf = (alvo: HTMLElement) =>
+    Array.from(alvo.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.includes(textos.forca.pdf.botao),
+    );
+
+  it('com o G-1, o botão baixa um PDF nomeado pela loteria e pelo concurso', async () => {
+    const baixados: { nome: string; tipo: string }[] = [];
+    URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+      baixados.push({ nome: '', tipo: (b as Blob).type });
+      return 'blob:pdf';
+    });
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      const ultimo = baixados[baixados.length - 1];
+      if (ultimo) ultimo.nome = this.download;
+    });
+    const alvo = montar(await servidorComG1());
+    await esperarLinhas(alvo);
+    botaoPdf(alvo)?.click();
+    flushSync();
+    expect(baixados).toHaveLength(1);
+    expect(baixados[0]?.tipo).toBe('application/pdf');
+    expect(baixados[0]?.nome).toMatch(/^tabela-g1-lotofacil-concurso-\d+\.pdf$/);
+    expect(texto(alvo)).toContain('PDF salvo');
+  });
+
+  it('sem o arquivo do G-1 o botão não aparece', async () => {
+    const alvo = montar(new ServidorFalso());
+    await esperarLinhas(alvo);
+    expect(botaoPdf(alvo)).toBeUndefined();
+  });
+});

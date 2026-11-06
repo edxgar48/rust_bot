@@ -32,12 +32,14 @@
     type ExibicaoForca,
     type OrdemForca,
   } from '../lib/rotas';
+  import { baixarBytes } from '../lib/download';
   import { doisDigitos } from '../lib/numeros';
   import { textos } from '../lib/textos';
   import DetalheDezena from './DetalheDezena.svelte';
   import { montarDetalheDaDezena } from './detalhe-dezena';
   import type { EstadoTela, SituacaoTela } from './estado-tela';
   import { montarVisaoForca, ordenarLinhas } from './forca';
+  import { gerarPdfG1, nomeDoArquivoG1 } from './pdf-g1';
   import { alternarNoRascunho, dezenasDoRascunho, pedirAbertura } from './rascunho-jogo';
 
   interface Props {
@@ -117,6 +119,30 @@
     avisoRascunho = mensagem;
   }
 
+  let avisoPdf = $state<{ erro: boolean; texto: string } | null>(null);
+
+  /** Gera o PDF da tabela G-1 no aparelho e o entrega como download. */
+  function baixarPdfG1(): void {
+    if (visao.tipo !== 'conteudo' || visao.g1 === null) return;
+    const nome = nomeDoArquivoG1(loteria, visao.tabela.concurso);
+    let ok = false;
+    try {
+      const bytes = gerarPdfG1({
+        nomeLoteria: visao.nomeLoteria,
+        tabela: visao.tabela,
+        g1: visao.g1,
+        posicoesSorteadas: visao.posicoesSorteadas,
+        geradoEm: new Date(),
+      });
+      ok = baixarBytes(nome, bytes, 'application/pdf');
+    } catch {
+      ok = false;
+    }
+    avisoPdf = ok
+      ? { erro: false, texto: textos.forca.pdf.baixado(nome) }
+      : { erro: true, texto: textos.forca.pdf.falhou };
+  }
+
   function abrirEmConferir(): void {
     pedirAbertura();
     gravarLoteriaGuardada(loteria);
@@ -153,6 +179,7 @@
   function trocarLoteria(slug: Slug): void {
     if (slug === loteria) return;
     loteria = slug;
+    avisoPdf = null;
     gravarLoteriaGuardada(slug);
     inseridas = dezenasDoRascunho(slug);
     avisoRascunho = '';
@@ -282,6 +309,18 @@
       </div>
     </div>
     <p class="so-leitor" role="status">{anuncioOrdem}</p>
+  {/if}
+
+  {#if comG1}
+    <div class="acoes">
+      <button type="button" class="botao" onclick={baixarPdfG1}>
+        <Icone nome="baixar" tamanho={1.125} />
+        {textos.forca.pdf.botao}
+      </button>
+    </div>
+    {#if avisoPdf}
+      <p class="discreto" role={avisoPdf.erro ? 'alert' : 'status'}>{avisoPdf.texto}</p>
+    {/if}
   {/if}
 
   {#if visao.tipo === 'carregando'}

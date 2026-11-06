@@ -3,8 +3,17 @@
 
 /** Baixa `conteudo` como arquivo. Devolve `false` se o navegador não conseguiu. */
 export function baixarTexto(nome: string, conteudo: string, tipo = 'application/json'): boolean {
+  return baixarBlob(nome, new Blob([conteudo], { type: `${tipo};charset=utf-8` }));
+}
+
+/** Baixa bytes (por exemplo, um PDF) como arquivo. Devolve `false` se o navegador não conseguiu. */
+export function baixarBytes(nome: string, bytes: Uint8Array, tipo: string): boolean {
+  return baixarBlob(nome, new Blob([bytes as BlobPart], { type: tipo }));
+}
+
+function baixarBlob(nome: string, blob: Blob): boolean {
   try {
-    const url = URL.createObjectURL(new Blob([conteudo], { type: `${tipo};charset=utf-8` }));
+    const url = URL.createObjectURL(blob);
     const ancora = document.createElement('a');
     ancora.href = url;
     ancora.download = nome;

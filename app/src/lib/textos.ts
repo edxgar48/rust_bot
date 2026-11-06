@@ -92,6 +92,20 @@ export const textos = {
       variacaoG1: 'Variação (G‑1)',
       indiceForca: 'Índice de Força',
     },
+    // PDF da tabela G-1, para imprimir e comparar com o sorteio depois. Só existe com o G-1 na tela.
+    pdf: {
+      botao: 'Baixar PDF do G-1',
+      baixado: (arquivo: string) => `PDF salvo: ${arquivo}.`,
+      falhou: 'Não foi possível gerar o PDF neste aparelho.',
+      titulo: (loteria: string) => `Tabela G-1 · ${loteria}`,
+      subtitulo: (proximo: number, ultimoSorteado: number) =>
+        `Para o concurso ${proximo} · dados até o concurso ${ultimoSorteado}`,
+      geradoEm: (data: string) => `Gerado em ${data}`,
+      colunas: { g1: 'G-1', dezena: 'Dezena', forca: 'Força', variacao: 'Var. G-1' },
+      aviso:
+        'O G-1 descreve o passado e não prevê o sorteio. Cada sorteio é independente. Guarde esta folha para comparar com o resultado do concurso.',
+      pagina: (atual: number, total: number) => `Página ${atual} de ${total}`,
+    },
     // G-1 (7.8): um dado extra da lista, do ranking_posicoes.json. Descreve o passado.
     ordem: {
       rotuloGrupo: 'Ordenar por',
