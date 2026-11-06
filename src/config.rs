@@ -340,8 +340,11 @@ pub const LOTERIAS: &[LoteriaConfig] = &[
         nome_exibicao: "Lotomania",
         pagina_url: "https://loterias.caixa.gov.br/Paginas/Lotomania.aspx",
         seletor_botao_download: "#btnResultados",
-        seletor_concurso_data: "#tituloResultadoConcurso",
-        seletor_dezenas: "#ulDezenas li",
+        // Template AngularJS antigo, como a Lotofácil (confirmado na página
+        // real em 2026-11-05; os IDs `#tituloResultadoConcurso` e `#ulDezenas`
+        // da Quina não existem aqui).
+        seletor_concurso_data: ".title-bar h2 span.ng-binding",
+        seletor_dezenas: "ul.simple-container.lista-dezenas.lotomania li.dezena",
         qtd_dezenas: 20,
         dezena_min: 0,
         dezena_max: 99,
